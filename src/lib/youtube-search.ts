@@ -136,7 +136,7 @@ async function fetchVideoDetails(
   callContext: YoutubeApiCallContext,
   apiKey: string,
   videoIds: string[]
-): Promise<YoutubeVideosResponse["items"]> {
+): Promise<NonNullable<YoutubeVideosResponse["items"]>> {
   if (videoIds.length === 0) return [];
 
   const url = new URL(YOUTUBE_VIDEOS_URL);
