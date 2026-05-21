@@ -12,6 +12,10 @@ import {
   searchNaverChannels,
 } from "@/lib/naver-search";
 import {
+  isMetaAdsApiChannel,
+  searchMetaAdsChannel,
+} from "@/lib/meta-ads-search";
+import {
   isYoutubeApiChannel,
   searchYoutubeChannel,
 } from "@/lib/youtube-search";
@@ -110,6 +114,7 @@ export async function POST(request: NextRequest) {
 
     const naverChannelIds = selectedChannels.filter(isNaverApiChannel);
     const youtubeSelected = selectedChannels.some(isYoutubeApiChannel);
+    const metaAdsSelected = selectedChannels.some(isMetaAdsApiChannel);
     const claudeChannelIds = getClaudeWebSearchChannels(selectedChannels);
 
     const naverResults =
@@ -126,9 +131,14 @@ export async function POST(request: NextRequest) {
       ? await searchYoutubeChannel(keywords, sortOrder, period)
       : null;
 
+    const metaAdsResult = metaAdsSelected
+      ? await searchMetaAdsChannel(keywords, sortOrder, period)
+      : null;
+
     const apiResults = [
       ...naverResults,
       ...(youtubeResult ? [youtubeResult] : []),
+      ...(metaAdsResult ? [metaAdsResult] : []),
     ];
 
     let claudeParsed: MonitorResult | null = null;
@@ -173,7 +183,7 @@ export async function POST(request: NextRequest) {
         channelHighlights: [] as string[],
       };
 
-    if (naverChannelIds.length > 0 || youtubeSelected) {
+    if (naverChannelIds.length > 0 || youtubeSelected || metaAdsSelected) {
       const client = getAnthropicClient();
       const insightsPrompt = buildInsightsPrompt(keywords, channels, period);
       const insightsMessage = await createTextMessage(
@@ -204,7 +214,9 @@ export async function POST(request: NextRequest) {
       message.includes("ANTHROPIC_API_KEY") ||
       message.includes("NAVER_CLIENT_ID") ||
       message.includes("NAVER_CLIENT_SECRET") ||
-      message.includes("YOUTUBE_API_KEY")
+      message.includes("YOUTUBE_API_KEY") ||
+      message.includes("META_ACCESS_TOKEN") ||
+      message.includes("META_APP_ID")
     ) {
       status = 500;
     }

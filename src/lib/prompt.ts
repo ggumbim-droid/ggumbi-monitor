@@ -1,5 +1,6 @@
 import { getChannelMeta } from "@/lib/channels";
 import { formatPeriodForPrompt } from "@/lib/date-range";
+import { isMetaAdsApiChannel } from "@/lib/meta-ads-search";
 import { isNaverApiChannel } from "@/lib/naver-search";
 import { isYoutubeApiChannel } from "@/lib/youtube-search";
 import type {
@@ -14,7 +15,10 @@ export function getClaudeWebSearchChannels(
   selected: ChannelId[]
 ): ChannelId[] {
   return selected.filter(
-    (id) => !isNaverApiChannel(id) && !isYoutubeApiChannel(id)
+    (id) =>
+      !isNaverApiChannel(id) &&
+      !isYoutubeApiChannel(id) &&
+      !isMetaAdsApiChannel(id)
   );
 }
 
@@ -138,8 +142,8 @@ export function buildMonitorPrompt(
   const periodLabel = formatPeriodForPrompt(period.startDate, period.endDate);
 
   return `당신은 꿈비 그룹(유아용품 브랜드)의 **전 채널 통합 경쟁사 모니터링** 분석가입니다.
-web_search 도구를 사용해 아래 선택된 채널(유튜브·인스타·Meta 광고·스마트스토어 등)에서 키워드 관련 콘텐츠를 검색·수집하세요.
-네이버 카페·블로그·뉴스는 네이버 검색 API로, 유튜브는 YouTube Data API로 별도 수집되므로 이 작업에서 제외합니다.
+web_search 도구를 사용해 아래 선택된 채널(인스타·스마트스토어 등)에서 키워드 관련 콘텐츠를 검색·수집하세요.
+네이버 카페·블로그·뉴스는 네이버 검색 API로, 유튜브는 YouTube Data API로, Meta 광고는 Ad Library API로 별도 수집되므로 이 작업에서 제외합니다.
 
 ## 검색 조건
 - **모니터링 기간: ${periodLabel}** (${period.startDate} ~ ${period.endDate})
