@@ -45,10 +45,12 @@ function buildChannelInstructions(selected: ChannelId[]): string {
 - 수집: 리뷰·언박싱·광고·브랜드 관련 영상 (제목·채널명)`;
         case "instagram":
           return `### ${meta.label}
-- 검색: ${meta.searchHint}
-- 수집: 공개 게시물만 (로그인 필요 계정은 loginRequired로)`;
-        case "meta_ads":
-          return `### ${meta.label}
+- 검색: site:instagram.com "키워드" 또는 instagram.com/브랜드계정
+- 경쟁사 브랜드 계정 직접 검색 (예: instagram.com/ggumbi_official)
+- 해시태그 검색: #키워드 #유아용품 #육아 관련 공개 게시물
+- 수집: 공개 계정의 최신 게시물 (좋아요수·댓글수 포함 시 기재)
+- 광고성 게시물, 신제품 홍보, 이벤트/협찬 게시물 우선 수집
+- 로그인 필요 계정은 loginRequired로 분류`;
 - 검색: facebook.com/ads/library 에서 브랜드명·제품명 광고 검색
 - 수집: 활성/최근 광고 소재 제목·광고주·랜딩 요약`;
         case "smartstore":
