@@ -219,5 +219,5 @@ export async function searchMetaAdsChannel(
 }
 
 export function isMetaAdsApiChannel(id: ChannelId): id is "meta_ads" {
-  return id === "meta_ads";
+  return false; // Claude 웹서치로 처리
 }
