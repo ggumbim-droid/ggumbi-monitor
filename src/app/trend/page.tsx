@@ -84,7 +84,7 @@ const BRAND_COLORS = ["#FF6B35","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD
 export default function TrendPage() {
   const [selectedGroup, setSelectedGroup] = useState(KEYWORD_GROUPS[0].id);
   const [selectedPeriod, setSelectedPeriod] = useState("3months");
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<Record<string, string | number>[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -103,8 +103,9 @@ export default function TrendPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
       setChartData(data.results);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+  const err = e instanceof Error ? e : new Error("오류 발생");
+      setError(err.message);
     } finally {
       setLoading(false);
     }
