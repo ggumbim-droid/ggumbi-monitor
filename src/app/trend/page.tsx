@@ -86,21 +86,20 @@ interface CustomTooltipProps {
   active?: boolean;
   payload?: TooltipEntry[];
   label?: string;
+  hoveredBrand?: string;
 }
 
-function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
+function CustomTooltip({ active, payload, label, hoveredBrand }: CustomTooltipProps) {
   if (!active || !payload || !payload.length) return null;
-  const maxValue = Math.max(...payload.map((e) => e.value));
-  const hovered = payload.find((e) => e.value === maxValue)?.name;
   return (
     <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 16px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)", minWidth: "180px" }}>
       <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px", fontWeight: "500" }}>{label}</p>
       {payload.map((entry) => {
-        const isHighlight = entry.name === hovered;
+        const isHighlight = hoveredBrand ? entry.name === hoveredBrand : false;
         return (
-          <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "3px 0", opacity: isHighlight ? 1 : 0.5 }}>
+          <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "3px 0", opacity: hoveredBrand && !isHighlight ? 0.4 : 1 }}>
             <div style={{ width: isHighlight ? "12px" : "8px", height: isHighlight ? "12px" : "8px", borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0 }} />
-            <span style={{ fontSize: isHighlight ? "14px" : "12px", fontWeight: isHighlight ? "700" : "400", color: isHighlight ? "#111" : "#6b7280", flex: 1 }}>{entry.name}</span>
+            <span style={{ fontSize: isHighlight ? "15px" : "12px", fontWeight: isHighlight ? "700" : "400", color: isHighlight ? "#111" : "#6b7280", flex: 1 }}>{entry.name}</span>
             <span style={{ fontSize: isHighlight ? "15px" : "12px", fontWeight: isHighlight ? "700" : "400", color: entry.color }}>{entry.value.toFixed(1)}</span>
           </div>
         );
@@ -117,6 +116,7 @@ export default function TrendPage() {
   const [error, setError] = useState("");
   const [hiddenBrands, setHiddenBrands] = useState<Set<string>>(new Set());
   const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set());
+  const [hoveredBrand, setHoveredBrand] = useState<string>("");
 
   const currentGroup = KEYWORD_GROUPS.find((g) => g.id === selectedGroup)!;
 
@@ -241,16 +241,26 @@ export default function TrendPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="font-semibold text-gray-700 mb-4">{currentGroup.label} 검색량 추이</h2>
             <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={chartData}>
+              <LineChart
+                data={chartData}
+                onMouseLeave={() => setHoveredBrand("")}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="period" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip hoveredBrand={hoveredBrand} />} />
                 <Legend />
                 {currentGroup.brands.map((brand, i) => (
                   !hiddenBrands.has(brand.name) && (
-                    <Line key={brand.name} type="monotone" dataKey={brand.name}
-                      stroke={BRAND_COLORS[i]} strokeWidth={2} dot={false} />
+                    <Line
+                      key={brand.name}
+                      type="monotone"
+                      dataKey={brand.name}
+                      stroke={BRAND_COLORS[i]}
+                      strokeWidth={hoveredBrand === brand.name ? 4 : 2}
+                      dot={false}
+                      onMouseEnter={() => setHoveredBrand(brand.name)}
+                    />
                   )
                 ))}
               </LineChart>
