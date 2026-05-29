@@ -135,7 +135,7 @@ export default function HomePage() {
                 href="/trend"
                 className="rounded-xl bg-kkumbi-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-kkumbi-600"
               >
-                📊 트렌드 대시보드
+                트렌드 대시보드
               </a>
             </div>
           </div>
