@@ -65,12 +65,19 @@ const KEYWORD_GROUPS: Record<string, { label: string; brands: { name: string; ke
   },
 };
 
-function getPeriodDates(period: string): { startDate: string; endDate: string; timeUnit: string } {
+function getPeriodDates(period: string, customStart?: string, customEnd?: string): { startDate: string; endDate: string; timeUnit: string } {
   const end = new Date();
   const start = new Date();
   let timeUnit = "date";
 
-  if (period === "1week") {
+  if (period === "custom" && customStart && customEnd) {
+    const diffMs = new Date(customEnd).getTime() - new Date(customStart).getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays <= 31) timeUnit = "date";
+    else if (diffDays <= 180) timeUnit = "week";
+    else timeUnit = "month";
+    return { startDate: customStart, endDate: customEnd, timeUnit };
+  } else if (period === "1week") {
     start.setDate(end.getDate() - 7);
     timeUnit = "date";
   } else if (period === "3months") {
@@ -88,9 +95,13 @@ function getPeriodDates(period: string): { startDate: string; endDate: string; t
   return { startDate: fmt(start), endDate: fmt(end), timeUnit };
 }
 
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
+  return { startDate: fmt(start), endDate: fmt(end), timeUnit };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { groupId, period } = await request.json();
+    const { groupId, period, customStart, customEnd } = await request.json();
     const group = KEYWORD_GROUPS[groupId];
     if (!group) return NextResponse.json({ error: "그룹을 찾을 수 없습니다." }, { status: 400 });
 
@@ -100,7 +111,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "네이버 API 키가 설정되지 않았습니다." }, { status: 500 });
     }
 
-    const { startDate, endDate, timeUnit } = getPeriodDates(period);
+    const { startDate, endDate, timeUnit } = getPeriodDates(period, customStart, customEnd);
 
     // 네이버 데이터랩 API는 한번에 최대 5개 그룹
     const keywordGroups = group.brands.slice(0, 5).map((brand) => ({
