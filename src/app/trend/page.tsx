@@ -76,6 +76,39 @@ const PERIODS = [
 
 const BRAND_COLORS = ["#FF6B35","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD"];
 
+interface TooltipEntry {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipEntry[];
+  label?: string;
+}
+
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
+  if (!active || !payload || !payload.length) return null;
+  const maxValue = Math.max(...payload.map((e) => e.value));
+  const hovered = payload.find((e) => e.value === maxValue)?.name;
+  return (
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 16px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)", minWidth: "180px" }}>
+      <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px", fontWeight: "500" }}>{label}</p>
+      {payload.map((entry) => {
+        const isHighlight = entry.name === hovered;
+        return (
+          <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "3px 0", opacity: isHighlight ? 1 : 0.5 }}>
+            <div style={{ width: isHighlight ? "12px" : "8px", height: isHighlight ? "12px" : "8px", borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0 }} />
+            <span style={{ fontSize: isHighlight ? "14px" : "12px", fontWeight: isHighlight ? "700" : "400", color: isHighlight ? "#111" : "#6b7280", flex: 1 }}>{entry.name}</span>
+            <span style={{ fontSize: isHighlight ? "15px" : "12px", fontWeight: isHighlight ? "700" : "400", color: entry.color }}>{entry.value.toFixed(1)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function TrendPage() {
   const [selectedGroup, setSelectedGroup] = useState(KEYWORD_GROUPS[0].id);
   const [selectedPeriod, setSelectedPeriod] = useState("3months");
@@ -212,67 +245,7 @@ export default function TrendPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="period" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip
-  content={({ active, payload, label }) => {
-    if (!active || !payload || !payload.length) return null;
-    const hovered = payload[0]?.name;
-    return (
-      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 16px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}>
-        <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>{label}</p>
-        {payload.map((entry) => (
-          <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "2px 0", opacity: entry.name === hovered ? 1 : 0.4 }}>
-            <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: entry.color as string }} />
-            <span style={{ fontSize: entry.name === hovered ? "15px" : "12px", fontWeight: entry.name === hovered ? "700" : "400", color: entry.name === hovered ? "#111" : "#6b7280" }}>{entry.name}</span>
-            <span style={{ fontSize: entry.name === hovered ? "15px" : "12px", fontWeight: entry.name === hovered ? "700" : "400", color: entry.color as string, marginLeft: "auto", paddingLeft: "16px" }}>{Number(entry.value).toFixed(1)}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }}
-/>
-    if (!active || !payload || !payload.length) return null;
-    const hovered = payload[0]?.name;
-    return (
-      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 16px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}>
-        <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>{label}</p>
-        {payload.map((entry) => (
-          <div key={entry.name} style={{
-            display: "flex", alignItems: "center", gap: "8px", padding: "2px 0",
-            opacity: entry.name === hovered ? 1 : 0.4,
-          }}>
-            <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: entry.color as string }} />
-            <span style={{
-              fontSize: entry.name === hovered ? "15px" : "12px",
-              fontWeight: entry.name === hovered ? "700" : "400",
-              color: entry.name === hovered ? "#111" : "#6b7280",
-              transition: "all 0.1s",
-            }}>{entry.name}</span>
-            <span style={{
-              fontSize: entry.name === hovered ? "15px" : "12px",
-              fontWeight: entry.name === hovered ? "700" : "400",
-              color: entry.color as string,
-              marginLeft: "auto",
-              paddingLeft: "16px",
-            }}>{Number(entry.value).toFixed(1)}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }}
-/>
-    backgroundColor: "white",
-    border: "1px solid #e5e7eb",
-    borderRadius: "12px",
-    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
-    padding: "12px 16px",
-  }}
-  itemStyle={{ fontSize: "13px", fontWeight: "600", padding: "2px 0" }}
-  labelStyle={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px", fontWeight: "500" }}
-  formatter={(value: number, name: string) => [
-    <span key={name} style={{ fontWeight: "700", fontSize: "14px" }}>{value.toFixed(1)}</span>,
-    name
-  ]}
-/>
+                <Tooltip content={<CustomTooltip />} />
                 <Legend />
                 {currentGroup.brands.map((brand, i) => (
                   !hiddenBrands.has(brand.name) && (
