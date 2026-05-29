@@ -67,14 +67,25 @@ const KEYWORD_GROUPS = [
   },
 ];
 
-const PERIODS = [
+const PRESET_PERIODS = [
   { label: "주간", value: "1week" },
   { label: "3개월", value: "3months" },
   { label: "1년", value: "1year" },
   { label: "3년", value: "3years" },
+  { label: "직접입력", value: "custom" },
 ];
 
 const BRAND_COLORS = ["#FF6B35","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD"];
+
+function getToday() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getDateBefore(months: number) {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().split("T")[0];
+}
 
 interface TooltipEntry {
   name: string;
@@ -111,14 +122,18 @@ function CustomTooltip({ active, payload, label, hoveredBrand }: CustomTooltipPr
 export default function TrendPage() {
   const [selectedGroup, setSelectedGroup] = useState(KEYWORD_GROUPS[0].id);
   const [selectedPeriod, setSelectedPeriod] = useState("3months");
+  const [customStart, setCustomStart] = useState(getDateBefore(3));
+  const [customEnd, setCustomEnd] = useState(getToday());
   const [chartData, setChartData] = useState<Record<string, string | number>[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hiddenBrands, setHiddenBrands] = useState<Set<string>>(new Set());
   const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set());
   const [hoveredBrand, setHoveredBrand] = useState<string>("");
+  const [focusedBrand, setFocusedBrand] = useState<string>("");
 
   const currentGroup = KEYWORD_GROUPS.find((g) => g.id === selectedGroup)!;
+  const activeBrand = focusedBrand || hoveredBrand;
 
   function toggleBrand(brandName: string) {
     setHiddenBrands((prev) => {
@@ -138,16 +153,26 @@ export default function TrendPage() {
     });
   }
 
+  function handleFocusBrand(brandName: string) {
+    setFocusedBrand((prev) => prev === brandName ? "" : brandName);
+  }
+
   async function fetchTrend() {
     setLoading(true);
     setError("");
     setChartData([]);
     setHiddenBrands(new Set());
+    setFocusedBrand("");
     try {
       const res = await fetch("/api/trend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId: selectedGroup, period: selectedPeriod }),
+        body: JSON.stringify({
+          groupId: selectedGroup,
+          period: selectedPeriod,
+          customStart: selectedPeriod === "custom" ? customStart : undefined,
+          customEnd: selectedPeriod === "custom" ? customEnd : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
@@ -171,20 +196,49 @@ export default function TrendPage() {
 
         <div className="flex gap-2 mb-4 flex-wrap">
           {KEYWORD_GROUPS.map((g) => (
-            <button key={g.id} onClick={() => { setSelectedGroup(g.id); setChartData([]); setHiddenBrands(new Set()); setExpandedBrands(new Set()); }}
+            <button key={g.id} onClick={() => { setSelectedGroup(g.id); setChartData([]); setHiddenBrands(new Set()); setExpandedBrands(new Set()); setFocusedBrand(""); }}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedGroup === g.id ? "bg-orange-500 text-white" : "bg-white text-gray-600 border border-gray-200 hover:border-orange-300"}`}>
               {g.label}
             </button>
           ))}
         </div>
 
-        <div className="flex gap-2 mb-6">
-          {PERIODS.map((p) => (
-            <button key={p.value} onClick={() => setSelectedPeriod(p.value)}
-              className={`px-4 py-2 rounded text-sm font-medium transition-colors ${selectedPeriod === p.value ? "bg-gray-800 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"}`}>
-              {p.label}
-            </button>
-          ))}
+        {/* 기간 선택 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <div className="flex gap-2 flex-wrap mb-3">
+            {PRESET_PERIODS.map((p) => (
+              <button key={p.value} onClick={() => setSelectedPeriod(p.value)}
+                className={`px-4 py-2 rounded text-sm font-medium transition-colors ${selectedPeriod === p.value ? "bg-gray-800 text-white" : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {selectedPeriod === "custom" && (
+            <div className="flex items-center gap-3 mt-2">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-500">시작일</label>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  max={customEnd}
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700"
+                />
+              </div>
+              <span className="text-gray-400">~</span>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-500">종료일</label>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  min={customStart}
+                  max={getToday()}
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
@@ -217,11 +271,24 @@ export default function TrendPage() {
 
         {chartData.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-            <p className="text-sm text-gray-500 mb-2">브랜드 클릭으로 차트 표시/숨기기</p>
+            <p className="text-sm text-gray-500 mb-2">
+              브랜드 클릭 → 차트에서 강조 / 더블클릭 → 숨기기
+            </p>
             <div className="flex flex-wrap gap-2">
               {currentGroup.brands.map((brand, i) => (
-                <button key={brand.name} onClick={() => toggleBrand(brand.name)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${hiddenBrands.has(brand.name) ? "bg-gray-100 text-gray-400 border-gray-200 line-through" : "bg-white text-gray-700 border-gray-300"}`}>
+                <button
+                  key={brand.name}
+                  onClick={() => handleFocusBrand(brand.name)}
+                  onDoubleClick={() => toggleBrand(brand.name)}
+                  onMouseEnter={() => setHoveredBrand(brand.name)}
+                  onMouseLeave={() => setHoveredBrand("")}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                    hiddenBrands.has(brand.name)
+                      ? "bg-gray-100 text-gray-400 border-gray-200 line-through"
+                      : focusedBrand === brand.name
+                      ? "bg-orange-50 border-orange-400 text-orange-700 font-bold"
+                      : "bg-white text-gray-700 border-gray-300"
+                  }`}>
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: hiddenBrands.has(brand.name) ? "#ccc" : BRAND_COLORS[i] }} />
                   {brand.name}
                 </button>
@@ -239,16 +306,16 @@ export default function TrendPage() {
 
         {chartData.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="font-semibold text-gray-700 mb-4">{currentGroup.label} 검색량 추이</h2>
+            <h2 className="font-semibold text-gray-700 mb-1">{currentGroup.label} 검색량 추이</h2>
+            {focusedBrand && (
+              <p className="text-sm text-orange-500 mb-3">{focusedBrand} 강조 중 · 버튼 다시 클릭하면 해제</p>
+            )}
             <ResponsiveContainer width="100%" height={400}>
-              <LineChart
-                data={chartData}
-                onMouseLeave={() => setHoveredBrand("")}
-              >
+              <LineChart data={chartData} onMouseLeave={() => setHoveredBrand("")}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="period" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip hoveredBrand={hoveredBrand} />} />
+                <Tooltip content={<CustomTooltip hoveredBrand={activeBrand} />} />
                 <Legend />
                 {currentGroup.brands.map((brand, i) => (
                   !hiddenBrands.has(brand.name) && (
@@ -257,7 +324,8 @@ export default function TrendPage() {
                       type="monotone"
                       dataKey={brand.name}
                       stroke={BRAND_COLORS[i]}
-                      strokeWidth={hoveredBrand === brand.name ? 4 : 2}
+                      strokeWidth={activeBrand === brand.name ? 4 : activeBrand ? 1 : 2}
+                      opacity={activeBrand && activeBrand !== brand.name ? 0.3 : 1}
                       dot={false}
                       onMouseEnter={() => setHoveredBrand(brand.name)}
                     />
