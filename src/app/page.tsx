@@ -170,9 +170,9 @@ export default function TrendPage() {
         </div>
 
         {/* 키워드 구성 */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-          <h2 className="font-semibold text-gray-700 mb-3">{currentGroup.label} 키워드 구성</h2>
-          <div className="grid grid-cols-1 gap-4">
+        <details className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <summary className="font-semibold text-gray-700 cursor-pointer">{currentGroup.label} 키워드 구성 (클릭하여 펼치기)</summary>
+          <div className="mt-3 space-y-4">
             {currentGroup.brands.map((brand, i) => (
               <div key={brand.name} className="w-full">
                 <div className="flex items-center gap-2 mb-1">
@@ -188,7 +188,7 @@ export default function TrendPage() {
               </div>
             ))}
           </div>
-        </div>
+        </details>
 
         {/* 브랜드 토글 (차트 있을 때만) */}
         {chartData.length > 0 && (
