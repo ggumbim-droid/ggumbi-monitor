@@ -127,9 +127,17 @@ export default function HomePage() {
                 전 채널 통합 경쟁사 모니터링
               </h1>
             </div>
-            <p className="text-sm text-stone-500">
-              카페 · 블로그 · 뉴스 · 유튜브 · 인스타 · Meta 광고 · 스토어 · 리뷰
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-stone-500">
+                카페 · 블로그 · 뉴스 · 유튜브 · 인스타 · Meta 광고 · 스토어 · 리뷰
+              </p>
+              
+                href="/trend"
+                className="rounded-xl bg-kkumbi-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-kkumbi-600"
+              >
+                📊 트렌드 대시보드
+              </a>
+            </div>
           </div>
         </div>
       </header>
