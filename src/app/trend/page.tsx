@@ -220,6 +220,43 @@ export default function TrendPage() {
     boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
     padding: "12px 16px",
   }}
+  content={({ active, payload, label }) => {
+    if (!active || !payload || !payload.length) return null;
+    const hovered = payload[0]?.name;
+    return (
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 16px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}>
+        <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>{label}</p>
+        {payload.map((entry) => (
+          <div key={entry.name} style={{
+            display: "flex", alignItems: "center", gap: "8px", padding: "2px 0",
+            opacity: entry.name === hovered ? 1 : 0.4,
+          }}>
+            <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: entry.color as string }} />
+            <span style={{
+              fontSize: entry.name === hovered ? "15px" : "12px",
+              fontWeight: entry.name === hovered ? "700" : "400",
+              color: entry.name === hovered ? "#111" : "#6b7280",
+              transition: "all 0.1s",
+            }}>{entry.name}</span>
+            <span style={{
+              fontSize: entry.name === hovered ? "15px" : "12px",
+              fontWeight: entry.name === hovered ? "700" : "400",
+              color: entry.color as string,
+              marginLeft: "auto",
+              paddingLeft: "16px",
+            }}>{Number(entry.value).toFixed(1)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }}
+/>
+    backgroundColor: "white",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+    padding: "12px 16px",
+  }}
   itemStyle={{ fontSize: "13px", fontWeight: "600", padding: "2px 0" }}
   labelStyle={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px", fontWeight: "500" }}
   formatter={(value: number, name: string) => [
