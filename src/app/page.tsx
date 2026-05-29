@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
 import { KeywordInput } from "@/components/KeywordInput";
 import { ChannelSelect } from "@/components/ChannelSelect";
 import {
@@ -131,12 +132,12 @@ export default function HomePage() {
               <p className="text-sm text-stone-500">
                 카페 · 블로그 · 뉴스 · 유튜브 · 인스타 · Meta 광고 · 스토어 · 리뷰
               </p>
-              
+              <Link
                 href="/trend"
                 className="rounded-xl bg-kkumbi-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-kkumbi-600"
               >
                 트렌드 대시보드
-              </a>
+              </Link>
             </div>
           </div>
         </div>
