@@ -223,7 +223,7 @@ export default function TrendPage() {
   itemStyle={{ fontSize: "13px", fontWeight: "600", padding: "2px 0" }}
   labelStyle={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px", fontWeight: "500" }}
   formatter={(value: number, name: string) => [
-    <span style={{ fontWeight: "700", fontSize: "14px" }}>{value.toFixed(1)}</span>,
+    <span key={name} style={{ fontWeight: "700", fontSize: "14px" }}>{value.toFixed(1)}</span>,
     name
   ]}
 />
