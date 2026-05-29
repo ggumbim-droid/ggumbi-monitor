@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const KEYWORD_GROUPS = [
@@ -130,7 +131,7 @@ export default function TrendPage() {
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-2xl font-bold text-gray-800">키워드 트렌드 대시보드</h1>
-          <a href="/" className="text-sm text-orange-500 hover:underline">← 모니터링으로 돌아가기</a>
+          <Link href="/" className="text-sm text-orange-500 hover:underline">← 모니터링으로 돌아가기</Link>
         </div>
         <p className="text-gray-500 text-sm mb-6">네이버 검색어트렌드 기반 · 경쟁사 브랜드 비교</p>
 
