@@ -172,9 +172,9 @@ export default function TrendPage() {
         {/* 키워드 구성 */}
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
           <h2 className="font-semibold text-gray-700 mb-3">{currentGroup.label} 키워드 구성</h2>
-          <div className="flex flex-wrap gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {currentGroup.brands.map((brand, i) => (
-              <div key={brand.name} className="flex-1 min-w-48">
+              <div key={brand.name} className="w-full">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: BRAND_COLORS[i] }} />
                   <span className="font-medium text-sm text-gray-700">{brand.name}</span>
