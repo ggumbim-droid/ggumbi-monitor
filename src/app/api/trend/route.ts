@@ -6,10 +6,10 @@ const KEYWORD_GROUPS: Record<string, { label: string; brands: { name: string; ke
   folder_mat: {
     label: "폴더매트",
     brands: [
-      { name: "꿈비", keywords: ["꿈비폴더매트","꿈비매트","리코코매트","리코코폴더매트","꿈비더블원피스매트","꿈비트리플원피스매트","꿈비자이언트매트","꿈비원피스매트","꿈비클린롤매트","꿈비복도매트"] },
-      { name: "알집매트", keywords: ["알집폴더매트","알집더블제로매트","알집트리플제로매트","알집트윈매트","알집더블플립매트","알집에코실리온","알집매트더블제로매트","알집복도제로매트"] },
-      { name: "크림하우스", keywords: ["크림하우스폴더매트","크림하우스프리2","크림하우스프리2폴더매트","크림하우스프리2s","크림하우스슬라이드프리","크림하우스맞춤폴더매트","크림하우스맞춤매트"] },
-      { name: "파크론", keywords: ["파크론폴더매트","파크론빅베어베베","파크론베어베베","파크론베어베베클린","파크론접이식매트"] },
+      { name: "꿈비", keywords: ["더블원피스매트","꿈비더블원피스매트","트리플원피스매트","꿈비트리플원피스매트","자이언트매트","꿈비자이언트매트","클린롤매트","리코코클린롤매트","꿈비클린롤매트","꿈비폴더매트","꿈비복도매트","꿈비매트","리코코매트","리코코폴더매트","꿈비원피스매트"] },
+      { name: "알집매트", keywords: ["알집폴더매트","알집더블제로매트","알집트리플제로매트","알집트윈매트","알집더블플립매트","알집에코실리온","알집매트더블제로매트","알집복도제로매트","에코실리온","알집매트커버"] },
+      { name: "크림하우스", keywords: ["크림하우스폴더매트","크림하우스프리2","크림하우스프리2폴더매트","크림하우스프리2s","크림하우스프리2베이비룸","슬라이드프리","크림하우스슬라이드프리","크림하우스슬라이드프리와이드","프리그라운드2","크림하우스프리그라운드2","크림하우스맞춤매트"] },
+      { name: "파크론", keywords: ["빅베어베베","파크론빅베어베베","베어베베","파크론베어베베","파크론베어베베논슬립","파크론베어베베클린","파크론폴더매트","파크론접이식매트"] },
       { name: "모노맷", keywords: ["모노맷매트","모노맷폴더매트","모노맷한판매트","모노맷클린매트","모노맷2단매트","모노맷모노핏","모노맷맞춤폴더매트","모노맷맞춤매트"] },
     ],
   },
@@ -26,7 +26,7 @@ const KEYWORD_GROUPS: Record<string, { label: string; brands: { name: string; ke
   bumper_bed: {
     label: "범퍼침대/아기침대",
     brands: [
-      { name: "꿈비", keywords: ["꿈비범퍼침대","꿈비아기침대","꿈비하이가드범퍼침대","꿈비범퍼침대대형","꿈비범퍼침대특대형","꿈비범퍼침대슈퍼특대형","꿈비범퍼침대매트","꿈비트윈스타","꿈비월드스타","꿈비럭키스타"] },
+      { name: "꿈비", keywords: ["꿈비범퍼침대","꿈비아기침대","꿈비하이가드범퍼침대","꿈비범퍼침대대형","꿈비범퍼침대특대형","꿈비범퍼침대슈퍼특대형","꿈비범퍼침대매트","꿈비트윈스타","꿈비월드스타","꿈비럭키스타","꿈비럭키스타범퍼침대"] },
       { name: "도노도노", keywords: ["도노도노아기침대","도노도노범퍼침대","도노도노하이가드범퍼침대","도노도노패밀리범퍼침대","도노도노하이가드","도노도노범퍼침대가드","도노도노범퍼침대매트"] },
       { name: "코지스토리", keywords: ["코지스토리아기침대","코지스토리범퍼침대"] },
       { name: "바치", keywords: ["바치조이범퍼침대","바치포칠드런범퍼침대","바치범퍼침대특대형","바치범퍼침대가드","바치범퍼침대매트","바치물결범퍼침대"] },
@@ -66,18 +66,22 @@ const KEYWORD_GROUPS: Record<string, { label: string; brands: { name: string; ke
 };
 
 function getPeriodDates(period: string, customStart?: string, customEnd?: string): { startDate: string; endDate: string; timeUnit: string } {
-  const end = new Date();
-  const start = new Date();
-  let timeUnit = "date";
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
 
   if (period === "custom" && customStart && customEnd) {
     const diffMs = new Date(customEnd).getTime() - new Date(customStart).getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    let timeUnit = "month";
     if (diffDays <= 31) timeUnit = "date";
     else if (diffDays <= 180) timeUnit = "week";
-    else timeUnit = "month";
     return { startDate: customStart, endDate: customEnd, timeUnit };
-  } else if (period === "1week") {
+  }
+
+  const end = new Date();
+  const start = new Date();
+  let timeUnit = "date";
+
+  if (period === "1week") {
     start.setDate(end.getDate() - 7);
     timeUnit = "date";
   } else if (period === "3months") {
@@ -91,11 +95,6 @@ function getPeriodDates(period: string, customStart?: string, customEnd?: string
     timeUnit = "month";
   }
 
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
-  return { startDate: fmt(start), endDate: fmt(end), timeUnit };
-}
-
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
   return { startDate: fmt(start), endDate: fmt(end), timeUnit };
 }
 
@@ -113,18 +112,12 @@ export async function POST(request: NextRequest) {
 
     const { startDate, endDate, timeUnit } = getPeriodDates(period, customStart, customEnd);
 
-    // 네이버 데이터랩 API는 한번에 최대 5개 그룹
     const keywordGroups = group.brands.slice(0, 5).map((brand) => ({
       groupName: brand.name,
       keywords: brand.keywords.slice(0, 20),
     }));
 
-    const body = {
-      startDate,
-      endDate,
-      timeUnit,
-      keywordGroups,
-    };
+    const body = { startDate, endDate, timeUnit, keywordGroups };
 
     const res = await fetch(NAVER_DATALAB_URL, {
       method: "POST",
@@ -141,7 +134,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: data.errorMessage || "네이버 API 오류" }, { status: 502 });
     }
 
-    // 차트용 데이터 변환
     const periodMap: Record<string, Record<string, number>> = {};
     for (const result of data.results ?? []) {
       for (const point of result.data ?? []) {
