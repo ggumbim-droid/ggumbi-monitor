@@ -212,7 +212,21 @@ export default function TrendPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="period" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
+                <Tooltip
+  contentStyle={{
+    backgroundColor: "white",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+    padding: "12px 16px",
+  }}
+  itemStyle={{ fontSize: "13px", fontWeight: "600", padding: "2px 0" }}
+  labelStyle={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px", fontWeight: "500" }}
+  formatter={(value: number, name: string) => [
+    <span style={{ fontWeight: "700", fontSize: "14px" }}>{value.toFixed(1)}</span>,
+    name
+  ]}
+/>
                 <Legend />
                 {currentGroup.brands.map((brand, i) => (
                   !hiddenBrands.has(brand.name) && (
