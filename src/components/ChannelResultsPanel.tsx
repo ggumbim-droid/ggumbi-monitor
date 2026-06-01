@@ -28,7 +28,6 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
       </div>
     );
   }
-  }
 
   if (channelResult.channel === "instagram") {
     return <InstagramAccountsPanel />;
@@ -54,7 +53,6 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
       </div>
     );
   }
-  }
 
   if (channelResult.channel === "smartstore") {
     return <SmartstoreSection items={channelResult.publicItems} />;
@@ -68,96 +66,6 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
         emptyMessage="수집된 공개 콘텐츠가 없습니다."
       />
       <LoginSection items={channelResult.loginRequired} />
-    </div>
-  );
-}
-
-function SmartstoreReviewsSection({ channelResult }: { channelResult: ChannelResult }) {
-  const reviewDataList = (channelResult as ChannelResult & { reviewDataList?: typeof channelResult.reviewData[] }).reviewDataList;
-  const items = reviewDataList && reviewDataList.length > 0
-    ? reviewDataList
-    : channelResult.reviewData
-    ? [channelResult.reviewData]
-    : [];
-
-  const [activeIdx, setActiveIdx] = useState(0);
-  const active = items[activeIdx];
-
-  if (!active) {
-    return <p className="py-8 text-center text-sm text-stone-400">스마트스토어 리뷰 데이터를 찾을 수 없습니다.</p>;
-  }
-
-  return (
-    <div className="space-y-4">
-      {items.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {items.map((item, idx) => (
-            <button
-              key={idx}
-              onClick={() => setActiveIdx(idx)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                activeIdx === idx
-                  ? "border-kkumbi-500 bg-kkumbi-500 text-white"
-                  : "border-stone-200 bg-white text-stone-600 hover:border-kkumbi-300"
-              }`}
-            >
-              {(item?.productName ?? "").slice(0, 20)}{(item?.productName ?? "").length > 20 ? "…" : ""}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-        <div className="mb-4">
-          <h3 className="text-base font-bold text-stone-800">
-            {active.brandName ? `${active.brandName} · ` : ""}
-            {active.productName}
-          </h3>
-          <p className="mt-1 text-sm text-stone-500">
-            스마트스토어 리뷰 수 추이 · 이번 주 vs 지난 주
-          </p>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="rounded-xl bg-stone-50 p-3 text-center">
-            <p className="text-xs text-stone-500 mb-1">현재 총 리뷰</p>
-            <p className="text-lg font-bold text-stone-800">
-              {active.currentTotalReviews.toLocaleString()}개
-            </p>
-          </div>
-          <div className="rounded-xl bg-emerald-50 p-3 text-center">
-            <p className="text-xs text-stone-500 mb-1">이번 주 신규</p>
-            <p className={`text-lg font-bold ${active.thisWeekNewReviews > 0 ? "text-emerald-600" : "text-stone-400"}`}>
-              {active.thisWeekNewReviews > 0 ? `+${active.thisWeekNewReviews.toLocaleString()}` : "-"}개
-            </p>
-          </div>
-          <div className={`rounded-xl p-3 text-center ${active.changeRatePercent > 0 ? "bg-rose-50" : "bg-stone-50"}`}>
-            <p className="text-xs text-stone-500 mb-1">전주 대비</p>
-            <p className={`text-lg font-bold ${active.changeRatePercent > 0 ? "text-rose-500" : "text-stone-400"}`}>
-              {active.changeRatePercent > 0
-                ? `+${active.changeRatePercent}%`
-                : active.currentTotalReviews > 0
-                ? "첫 수집"
-                : "-"}
-            </p>
-          </div>
-        </div>
-
-        <p className="mb-4 text-sm text-stone-600 bg-kkumbi-50 rounded-lg px-4 py-2">
-          {active.interpretation}
-        </p>
-
-        <ReviewTrendChart data={active} />
-
-        {active.storeUrl && (
-          <button
-            onClick={() => window.open(active.storeUrl, "_blank")}
-            className="mt-4 w-full rounded-xl border border-kkumbi-200 py-2.5 text-sm font-semibold text-kkumbi-600 hover:bg-kkumbi-50"
-          >
-            스마트스토어 바로가기
-          </button>
-        )}
-      </div>
     </div>
   );
 }
@@ -226,7 +134,6 @@ function SmartstoreSection({ items }: { items: ChannelItem[] }) {
                 }`}>
                   {rank}
                 </span>
-
                 <div className="min-w-0 flex-1">
                   <LinkedTitle
                     title={item.title}
