@@ -59,11 +59,19 @@ export const CHANNELS: ChannelMeta[] = [
     searchHint: "smartstore.naver.com 기획전·이벤트",
   },
   {
+    {
     id: "smartstore_reviews",
     label: "스마트스토어 리뷰 추이",
     shortLabel: "리뷰 추이",
     description: "리뷰 수·주간 증감",
     searchHint: "smartstore.naver.com 상품 리뷰 수",
+  },
+  {
+    id: "naver_ranking",
+    label: "검색 노출 순위 추이",
+    shortLabel: "순위 추이",
+    description: "네이버 쇼핑 검색 순위·주간 변화",
+    searchHint: "네이버 쇼핑 검색 순위",
   },
 ];
 
