@@ -66,6 +66,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MonitorResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [reSearching, setReSearching] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const allLoginItems = useMemo(() => result?.channels.flatMap((c) => c.loginRequired) ?? [], [result]);
 
@@ -262,7 +263,32 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
                     {copied ? "복사 완료!" : "노션용 리포트 복사"}
                   </button>
                 </div>
-                <ChannelTabs channels={result.channels} selectedIds={result.selectedChannels} />
+                <ChannelTabs
+                  channels={result.channels}
+                  selectedIds={result.selectedChannels}
+                  sortOrder={sortOrder}
+                  onSortChange={async (newSort) => {
+                    setSortOrder(newSort);
+                    setReSearching(true);
+                    try {
+                      const res = await fetch("/api/monitor", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          keywords: keywords.map((k) => k.trim()).filter(Boolean),
+                          sortOrder: newSort,
+                          channels: selectedChannels,
+                          period: dateRange,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (res.ok) setResult(data);
+                    } finally {
+                      setReSearching(false);
+                    }
+                  }}
+                  reSearching={reSearching}
+                />
                 <LoginRequiredSection items={allLoginItems} />
                 <InsightsPanel insights={result.insights} />
               </>
