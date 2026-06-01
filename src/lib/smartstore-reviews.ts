@@ -99,15 +99,13 @@ export async function searchSmartstoreReviews(
     return true;
   });
 
-  const history = await getShoppingHistory();
-
-  // 리뷰 수 많은 순으로 정렬
+  // 리뷰 수 많은 순 정렬 (reviewCount 없으면 0)
   const sorted = [...deduped].sort((a, b) =>
     (parseInt(b.reviewCount ?? "0") || 0) - (parseInt(a.reviewCount ?? "0") || 0)
   );
 
-  // reviewData 형식으로 변환
-  const topProducts = sorted.slice(0, 5);
+  const history = await getShoppingHistory();
+  const topProducts = sorted.slice(0, 10);
 
   const reviewDataList = topProducts.map((item) => {
     const key = `${stripHtml(item.mallName ?? "")}:${item.productId}`;
@@ -115,18 +113,28 @@ export async function searchSmartstoreReviews(
     const records = hist?.records ?? [];
     const currentReviews = parseInt(item.reviewCount ?? "0") || 0;
     const lastRecord = records.length >= 2 ? records[records.length - 2] : null;
-    const lastWeekReviews = lastRecord?.reviewCount ?? currentReviews;
-    const thisWeekNew = currentReviews - lastWeekReviews;
-    const changeRate = lastWeekReviews
+    const lastWeekReviews = lastRecord?.reviewCount ?? 0;
+    const thisWeekNew = lastWeekReviews > 0 ? currentReviews - lastWeekReviews : 0;
+    const changeRate = lastWeekReviews > 0
       ? ((thisWeekNew / lastWeekReviews) * 100).toFixed(1)
       : "0";
 
-    // 트렌드 데이터 (최근 8주)
     const trend = records.slice(-8).map((r, idx) => ({
       date: r.date,
       reviewCount: r.reviewCount,
       label: idx === records.length - 1 ? "이번 주" : `${records.length - idx - 1}주 전`,
     }));
+
+    let interpretation = "";
+    if (records.length < 2) {
+      interpretation = currentReviews > 0
+        ? `현재 리뷰 ${currentReviews.toLocaleString()}개 · 다음 주부터 증감 추이를 확인할 수 있습니다.`
+        : "첫 수집 — 다음 주부터 변화 추이를 확인할 수 있습니다.";
+    } else if (thisWeekNew > 0) {
+      interpretation = `이번 주 ${thisWeekNew.toLocaleString()}개 리뷰 증가 (+${changeRate}%)`;
+    } else {
+      interpretation = "이번 주 리뷰 변화 없음";
+    }
 
     return {
       productName: stripHtml(item.title),
@@ -138,31 +146,30 @@ export async function searchSmartstoreReviews(
       lastWeekNewReviews: 0,
       changeRatePercent: parseFloat(changeRate),
       trend,
-      interpretation: thisWeekNew > 0
-        ? `이번 주 ${thisWeekNew.toLocaleString()}개 리뷰 증가 (+${changeRate}%)`
-        : records.length < 2
-        ? "첫 수집 — 다음 주부터 변화 추이를 확인할 수 있습니다."
-        : "이번 주 리뷰 변화 없음",
+      interpretation,
     };
   });
+
+  const defaultReviewData = {
+    productName: keywords.join(", "),
+    brandName: "",
+    storeUrl: "",
+    currentTotalReviews: 0,
+    lastWeekTotalReviews: 0,
+    thisWeekNewReviews: 0,
+    lastWeekNewReviews: 0,
+    changeRatePercent: 0,
+    trend: [],
+    interpretation: "스마트스토어 상품을 찾을 수 없습니다.",
+  };
 
   return {
     channel: "smartstore_reviews" as ChannelId,
     publicItems: [],
     loginRequired: [],
-    reviewData: reviewDataList[0] ?? {
-      productName: keywords.join(", "),
-      brandName: "",
-      storeUrl: "",
-      currentTotalReviews: 0,
-      lastWeekTotalReviews: 0,
-      thisWeekNewReviews: 0,
-      lastWeekNewReviews: 0,
-      changeRatePercent: 0,
-      trend: [],
-      interpretation: "스마트스토어 상품을 찾을 수 없습니다.",
-    },
-  };
+    reviewData: reviewDataList[0] ?? defaultReviewData,
+    ...(reviewDataList.length > 0 ? { reviewDataList } : {}),
+  } as ChannelResult & { reviewDataList: typeof reviewDataList };
 }
 
 export function isSmartstoreReviewsChannel(id: ChannelId): boolean {
