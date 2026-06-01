@@ -39,7 +39,7 @@ export function ChannelResultsPanel({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="space-y-6">
       <PublicSection
         title={`${meta.shortLabel} 공개 콘텐츠`}
         items={channelResult.publicItems}
@@ -71,43 +71,52 @@ function PublicSection({
       {items.length === 0 ? (
         <p className="py-8 text-center text-sm text-stone-400">{emptyMessage}</p>
       ) : (
-        <ul className="max-h-[480px] space-y-3 overflow-y-auto pr-1">
+        <ul className="space-y-2 max-h-[900px] overflow-y-auto pr-1">
           {items.map((item, i) => (
             <li
               key={`${item.link}-${i}`}
-              className="rounded-xl border border-stone-100 bg-stone-50/50 p-4 transition hover:border-kkumbi-200"
+              className="flex gap-3 rounded-xl border border-stone-100 bg-white p-4 transition hover:border-kkumbi-300 hover:shadow-sm"
             >
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs font-medium text-kkumbi-600">
-                  {item.source}
-                </p>
-                {item.tag && (
-                  <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-medium text-stone-600">
-                    {item.tag}
+              {/* 순번 */}
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-stone-100 text-[10px] font-bold text-stone-500">
+                {i + 1}
+              </span>
+
+              <div className="min-w-0 flex-1">
+                {/* 출처 + 날짜 */}
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-[11px] font-semibold text-kkumbi-600 bg-kkumbi-50 px-2 py-0.5 rounded-full">
+                    {item.source}
                   </span>
-                )}
-              </div>
-              <LinkedTitle title={item.title} link={item.link} />
-              {item.preview && (
-                <p className="mt-2 text-sm text-stone-500 line-clamp-2">
-                  {item.preview}
-                </p>
-              )}
-              {item.publishedAt ? (
-                <p className="mt-1 text-xs text-stone-500">
-                  게시일 · {item.publishedAt}
-                </p>
-              ) : null}
-              {item.link && (
-                <a
+                  {item.tag && (
+                    <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-medium text-stone-600">
+                      {item.tag}
+                    </span>
+                  )}
+                  {item.publishedAt && (
+                    <span className="text-[11px] text-stone-400">
+                      {item.publishedAt}
+                    </span>
+                  )}
+                </div>
+
+                {/* 제목 */}
+                
                   href={item.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-flex text-sm font-medium text-kkumbi-600 hover:underline"
+                  className="block text-sm font-semibold text-stone-800 hover:text-kkumbi-600 hover:underline leading-snug"
                 >
-                  링크 열기 →
+                  {item.title}
                 </a>
-              )}
+
+                {/* 본문 미리보기 */}
+                {item.preview && (
+                  <p className="mt-1 text-xs text-stone-500 line-clamp-2 leading-relaxed">
+                    {item.preview}
+                  </p>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -157,7 +166,7 @@ function LoginSection({
                 <p className="mt-1 text-sm text-stone-500">{item.reason}</p>
               )}
               {item.link && (
-                <a
+                
                   href={item.link}
                   target="_blank"
                   rel="noopener noreferrer"
