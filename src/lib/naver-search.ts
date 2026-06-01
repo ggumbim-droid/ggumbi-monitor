@@ -110,11 +110,14 @@ async function fetchNaverSearch(
 }
 
 function mapCafeItem(raw: Record<string, string>): ChannelItem {
+  const publishedAt = parseNewsPubDate(raw.pubDate ?? "") 
+    ?? parseBlogPostDate(raw.postdate ?? "");
   return {
     source: stripHtml(raw.cafename ?? "네이버 카페"),
     title: stripHtml(raw.title ?? "제목 없음"),
     preview: stripHtml(raw.description ?? ""),
     link: raw.link ?? "",
+    publishedAt,
   };
 }
 
@@ -184,9 +187,9 @@ export async function searchNaverChannel(
     }
   }
 
-  // 날짜 필터 적용 (카페는 날짜 없어서 전부 포함)
+  // 날짜 필터 적용
   const filtered = dedupeByLink(collected).filter((item) => {
-    if (!item.publishedAt) return true; // 날짜 없으면 포함
+    if (!item.publishedAt) return true;
     return item.publishedAt >= _period.startDate && item.publishedAt <= _period.endDate;
   });
   const publicItems = filtered.slice(0, NAVER_SEARCH_DISPLAY);
