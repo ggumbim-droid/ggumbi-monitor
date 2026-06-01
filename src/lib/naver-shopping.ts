@@ -129,16 +129,17 @@ function dedupeByProductId(items: NaverShoppingItem[]): NaverShoppingItem[] {
   });
 }
 
-function normalizeMallName(mallName: string): string {
+function normalizeMallName(mallName: string, link: string): string {
   const name = mallName.toLowerCase();
-  if (name.includes("스마트스토어") || name.includes("smartstore")) return "스마트스토어";
-  if (name.includes("쿠팡") || name.includes("coupang")) return "쿠팡";
-  if (name.includes("11번가")) return "11번가";
-  if (name.includes("롯데")) return "롯데ON";
-  if (name.includes("gmarket") || name.includes("지마켓")) return "지마켓";
-  if (name.includes("auction") || name.includes("옥션")) return "옥션";
-  if (name.includes("위메프")) return "위메프";
-  if (name.includes("티몬")) return "티몬";
+  const url = link.toLowerCase();
+  if (url.includes("smartstore.naver.com")) return "스마트스토어";
+  if (name.includes("쿠팡") || url.includes("coupang.com")) return "쿠팡";
+  if (name.includes("11번가") || url.includes("11st.co.kr")) return "11번가";
+  if (name.includes("롯데") || url.includes("lotteon.com")) return "롯데ON";
+  if (name.includes("gmarket") || url.includes("gmarket.co.kr") || name.includes("지마켓")) return "지마켓";
+  if (name.includes("auction") || url.includes("auction.co.kr") || name.includes("옥션")) return "옥션";
+  if (url.includes("wemakeprice.com") || name.includes("위메프")) return "위메프";
+  if (url.includes("tmon.co.kr") || name.includes("티몬")) return "티몬";
   return mallName;
 }
 
@@ -165,7 +166,7 @@ export async function searchSmartstore(
   // 플랫폼별 그룹화
   const platformGroups: Record<string, NaverShoppingItem[]> = {};
   for (const item of deduped) {
-    const platform = normalizeMallName(stripHtml(item.mallName ?? "기타"));
+    const platform = normalizeMallName(stripHtml(item.mallName ?? "기타"), item.link ?? "");
     if (!platformGroups[platform]) platformGroups[platform] = [];
     platformGroups[platform].push(item);
   }
