@@ -159,16 +159,6 @@ function LoginSection({
               {item.reason && (
                 <p className="mt-1 text-sm text-stone-500">{item.reason}</p>
               )}
-              {item.link && (
-                
-                  href={item.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex text-sm text-amber-700 hover:underline"
-                >
-                  링크 열기 →
-                </a>
-              )}
             </li>
           ))}
         </ul>
