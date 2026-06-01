@@ -88,7 +88,7 @@ export default function HomePage() {
   const [newKeyword, setNewKeyword] = useState("");
   const [kwError, setKwError] = useState("");
 
-  const currentGroup = groupList.find((g) => g.id === selectedGroup);
+const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
 
   useEffect(() => {
@@ -100,7 +100,7 @@ export default function HomePage() {
         setKeywordGroups(data);
         const list = Object.entries(data).map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
         setGroupList(list);
-        if (list.length > 0 && !selectedGroup) setSelectedGroup(list[0].id);
+        if (list.length > 0) setSelectedGroup(list[0].id);
       })
       .catch(() => {})
       .finally(() => setKwLoading(false));
