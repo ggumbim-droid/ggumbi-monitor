@@ -67,7 +67,7 @@ function SmartstoreReviewsSection({ channelResult }: { channelResult: ChannelRes
                   : "border-stone-200 bg-white text-stone-600 hover:border-kkumbi-300"
               }`}
             >
-              {item.productName.slice(0, 20)}{item.productName.length > 20 ? "…" : ""}
+              {(item?.productName ?? "").slice(0, 20)}{(item?.productName ?? "").length > 20 ? "…" : ""}
             </button>
           ))}
         </div>
