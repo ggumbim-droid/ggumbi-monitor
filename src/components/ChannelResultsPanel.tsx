@@ -28,7 +28,7 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
     );
   }
 
-  if (channelResult.channel === "naver_ranking" as string) {
+  if (channelResult.channel === "naver_ranking") {
     if (channelResult.publicItems.length > 0) {
       return <RankingSection items={channelResult.publicItems} />;
     }
