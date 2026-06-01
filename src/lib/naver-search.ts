@@ -215,6 +215,7 @@ export async function searchNaverChannel(
   const filtered = dedupeByLink(collected).filter((item) => {
     if (!item.publishedAt) return true;
     if (item.publishedAt > _period.endDate) return false;
+    if (channelId !== "naver_cafe" && item.publishedAt < _period.startDate) return false;
     return true;
   });
   const publicItems = filtered.slice(0, NAVER_SEARCH_DISPLAY);
