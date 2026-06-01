@@ -63,7 +63,6 @@ export function InstagramAccountsPanel() {
 
   return (
     <div className="space-y-4">
-      {/* 계정 추가 */}
       <div className="rounded-xl border border-stone-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-stone-700 mb-3">
           경쟁사 인스타그램 계정 추가
@@ -78,7 +77,7 @@ export function InstagramAccountsPanel() {
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="URL 또는 @계정명 (예: @narimong_official)"
+            placeholder="URL 또는 @계정명"
             className="flex-[2] rounded-lg border border-stone-200 px-3 py-2 text-sm"
           />
           <button
@@ -95,7 +94,6 @@ export function InstagramAccountsPanel() {
         </p>
       </div>
 
-      {/* 계정 목록 */}
       <div className="rounded-xl border border-stone-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-stone-700">
@@ -135,7 +133,7 @@ export function InstagramAccountsPanel() {
                     rel="noopener noreferrer"
                     className="rounded-lg border border-kkumbi-200 px-3 py-1.5 text-xs font-semibold text-kkumbi-600 hover:bg-kkumbi-50"
                   >
-                    바로가기 →
+                    바로가기
                   </a>
                   <button
                     onClick={() => handleDelete(account.id)}
