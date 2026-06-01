@@ -134,17 +134,18 @@ async function fetchNaverSearch(
 }
 
 function mapCafeItem(raw: Record<string, string>): ChannelItem {
+  const rawDate = (raw.pubDate ?? raw.postdate ?? "").trim();
   const publishedAt =
-    parseNewsPubDate(raw.pubDate ?? "") ??
-    parseBlogPostDate(raw.postdate ?? "") ??
-    parseRelativeDate(raw.pubDate ?? "") ??
-    parseRelativeDate(raw.postdate ?? "");
+    parseNewsPubDate(rawDate) ??
+    parseBlogPostDate(rawDate) ??
+    parseRelativeDate(rawDate);
   return {
     source: stripHtml(raw.cafename ?? "네이버 카페"),
     title: stripHtml(raw.title ?? "제목 없음"),
     preview: stripHtml(raw.description ?? ""),
     link: raw.link ?? "",
     publishedAt,
+    tag: !publishedAt && rawDate ? rawDate : undefined,
   };
 }
 
