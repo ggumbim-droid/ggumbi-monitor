@@ -24,7 +24,7 @@ function stripHtml(text: string): string {
     .trim();
 }
 
-interface NaverShoppingItem {
+export interface NaverShoppingItem {
   title: string;
   link: string;
   image: string;
@@ -73,34 +73,99 @@ async function fetchNaverShopping(
   return data.items ?? [];
 }
 
-function mapShoppingItem(raw: NaverShoppingItem): ChannelItem {
-  const price = raw.lprice
-    ? `${parseInt(raw.lprice).toLocaleString()}원`
-    : "";
-  const reviewInfo = raw.reviewCount
-    ? ` · 리뷰 ${parseInt(raw.reviewCount).toLocaleString()}개`
-    : "";
+async function saveShoppingHistory(items: NaverShoppingItem[]) {
+  try {
+    const products = items
+      .filter((item) => item.productId && item.lprice)
+      .map((item) => ({
+        productId: item.productId,
+        title: stripHtml(item.title),
+        mallName: stripHtml(item.mallName ?? ""),
+        link: item.link ?? "",
+        price: parseInt(item.lprice) || 0,
+        reviewCount: parseInt(item.reviewCount ?? "0") || 0,
+      }));
+
+    if (products.length === 0) return;
+
+    await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/shopping-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ products }),
+    });
+  } catch {
+    // 히스토리 저장 실패해도 메인 결과에 영향 없음
+  }
+}
+
+async function getShoppingHistory(): Promise<Record<string, { records: { date: string; price: number; reviewCount: number }[] }>> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/shopping-history`);
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+function formatPriceChange(current: number, previous: number): string {
+  if (!previous || previous === current) return "";
+  const diff = current - previous;
+  const pct = ((diff / previous) * 100).toFixed(1);
+  if (diff < 0) return ` ↓ (전주 ${previous.toLocaleString()}원, ${pct}%)`;
+  return ` ↑ (전주 ${previous.toLocaleString()}원, +${pct}%)`;
+}
+
+function formatReviewChange(current: number, previous: number): string {
+  if (!previous) return "";
+  const diff = current - previous;
+  if (diff === 0) return "";
+  if (diff > 0) return ` (+${diff.toLocaleString()}개)`;
+  return ` (${diff.toLocaleString()}개)`;
+}
+
+function isNewProduct(item: NaverShoppingItem): boolean {
+  return item.productType === "2";
+}
+
+function mapShoppingItem(
+  raw: NaverShoppingItem,
+  history: Record<string, { records: { date: string; price: number; reviewCount: number }[] }>,
+  rank: number
+): ChannelItem {
+  const key = `${stripHtml(raw.mallName ?? "")}:${raw.productId}`;
+  const hist = history[key];
+  const prevRecord = hist && hist.records.length >= 2
+    ? hist.records[hist.records.length - 2]
+    : null;
+
+  const currentPrice = parseInt(raw.lprice) || 0;
+  const currentReviews = parseInt(raw.reviewCount ?? "0") || 0;
+  const priceChange = prevRecord ? formatPriceChange(currentPrice, prevRecord.price) : " (첫 수집)";
+  const reviewChange = prevRecord ? formatReviewChange(currentReviews, prevRecord.reviewCount) : "";
+  const isNew = isNewProduct(raw);
+
+  const priceText = currentPrice ? `${currentPrice.toLocaleString()}원${priceChange}` : "가격 정보 없음";
+  const reviewText = currentReviews ? `리뷰 ${currentReviews.toLocaleString()}개${reviewChange}` : "";
+  const newBadge = isNew ? "[신제품] " : "";
 
   return {
     source: stripHtml(raw.mallName ?? "네이버 쇼핑"),
-    title: stripHtml(raw.title ?? "상품명 없음"),
-    preview: `${raw.brand ? `브랜드: ${raw.brand} · ` : ""}${price}${reviewInfo}`,
+    title: `${newBadge}${stripHtml(raw.title ?? "상품명 없음")}`,
+    preview: [priceText, reviewText].filter(Boolean).join(" · "),
     link: raw.link ?? "",
     publishedAt: toISODate(new Date()),
-    tag: raw.category2 || raw.category1 || undefined,
+    tag: isNew ? "신제품" : rank <= 10 ? `리뷰 TOP ${rank}` : undefined,
   };
 }
 
-function dedupeByLink(items: ChannelItem[]): ChannelItem[] {
+function dedupeByProductId(items: NaverShoppingItem[]): NaverShoppingItem[] {
   const seen = new Set<string>();
-  const result: ChannelItem[] = [];
-  for (const item of items) {
-    const key = item.link || `${item.source}:${item.title}`;
-    if (seen.has(key)) continue;
+  return items.filter((item) => {
+    const key = `${item.mallName}:${item.productId}`;
+    if (seen.has(key)) return false;
     seen.add(key);
-    result.push(item);
-  }
-  return result;
+    return true;
+  });
 }
 
 export async function searchSmartstore(
@@ -109,16 +174,43 @@ export async function searchSmartstore(
   _period: MonitorDateRange
 ): Promise<ChannelResult> {
   const sort = sortOrder === "latest" ? "date" : "sim";
-  const collected: ChannelItem[] = [];
+  const collected: NaverShoppingItem[] = [];
 
   for (const keyword of keywords) {
     const items = await fetchNaverShopping(keyword, sort);
-    for (const raw of items) {
-      collected.push(mapShoppingItem(raw));
-    }
+    collected.push(...items);
   }
 
-  const publicItems = dedupeByLink(collected).slice(0, SHOPPING_DISPLAY);
+  const deduped = dedupeByProductId(collected);
+
+  // 히스토리 저장 및 조회 병렬 처리
+  const [history] = await Promise.all([
+    getShoppingHistory(),
+    saveShoppingHistory(deduped),
+  ]);
+
+  // 리뷰 수 기준 TOP 10 정렬
+  const sortedByReview = [...deduped].sort((a, b) => {
+    return (parseInt(b.reviewCount ?? "0") || 0) - (parseInt(a.reviewCount ?? "0") || 0);
+  });
+
+  // 신제품 먼저, 그 다음 리뷰 TOP 10, 나머지
+  const newProducts = deduped.filter(isNewProduct);
+  const top10 = sortedByReview.slice(0, 10);
+  const top10Ids = new Set(top10.map((i) => i.productId));
+  const newIds = new Set(newProducts.map((i) => i.productId));
+  const rest = deduped.filter((i) => !top10Ids.has(i.productId) && !newIds.has(i.productId));
+
+  const ordered = [
+    ...newProducts,
+    ...top10,
+    ...rest,
+  ];
+
+  const publicItems = ordered.slice(0, SHOPPING_DISPLAY).map((item, idx) => {
+    const reviewRank = sortedByReview.findIndex((i) => i.productId === item.productId) + 1;
+    return mapShoppingItem(item, history, reviewRank);
+  });
 
   return {
     channel: "smartstore" as ChannelId,
