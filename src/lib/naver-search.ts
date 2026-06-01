@@ -184,8 +184,12 @@ export async function searchNaverChannel(
     }
   }
 
-  // 모니터링 기간은 UI 참고용 — API 결과는 기간 필터 없이 게시일과 함께 표시
-  const publicItems = dedupeByLink(collected).slice(0, NAVER_SEARCH_DISPLAY);
+  // 날짜 필터 적용 (카페는 날짜 없어서 전부 포함)
+  const filtered = dedupeByLink(collected).filter((item) => {
+    if (!item.publishedAt) return true; // 날짜 없으면 포함
+    return item.publishedAt >= _period.startDate && item.publishedAt <= _period.endDate;
+  });
+  const publicItems = filtered.slice(0, NAVER_SEARCH_DISPLAY);
 
   return {
     channel: channelId as ChannelId,
