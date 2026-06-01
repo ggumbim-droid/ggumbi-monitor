@@ -77,13 +77,11 @@ function PublicSection({
               key={`${item.link}-${i}`}
               className="flex gap-3 rounded-xl border border-stone-100 bg-white p-4 transition hover:border-kkumbi-300 hover:shadow-sm"
             >
-              {/* 순번 */}
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-stone-100 text-[10px] font-bold text-stone-500">
                 {i + 1}
               </span>
 
               <div className="min-w-0 flex-1">
-                {/* 출처 + 날짜 */}
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <span className="text-[11px] font-semibold text-kkumbi-600 bg-kkumbi-50 px-2 py-0.5 rounded-full">
                     {item.source}
@@ -100,17 +98,13 @@ function PublicSection({
                   )}
                 </div>
 
-                {/* 제목 */}
-                
-                  href={item.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block text-sm font-semibold text-stone-800 hover:text-kkumbi-600 hover:underline leading-snug"
-                >
-                  {item.title}
-                </a>
+                <LinkedTitle
+                  title={item.title}
+                  link={item.link}
+                  className="block text-sm font-semibold text-stone-800 leading-snug"
+                  linkClassName="hover:text-kkumbi-600 hover:underline"
+                />
 
-                {/* 본문 미리보기 */}
                 {item.preview && (
                   <p className="mt-1 text-xs text-stone-500 line-clamp-2 leading-relaxed">
                     {item.preview}
