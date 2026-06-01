@@ -1,10 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { getChannelMeta } from "@/lib/channels";
 import { LinkedTitle } from "@/components/LinkedTitle";
 import { ReviewTrendChart } from "@/components/ReviewTrendChart";
 import { InstagramAccountsPanel } from "@/components/InstagramAccountsPanel";
-import type { ChannelResult } from "@/types/monitor";
+import type { ChannelResult, ChannelItem } from "@/types/monitor";
 
 interface ChannelResultsPanelProps {
   channelResult: ChannelResult;
@@ -38,6 +39,10 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
     return <InstagramAccountsPanel />;
   }
 
+  if (channelResult.channel === "smartstore") {
+    return <SmartstoreSection items={channelResult.publicItems} />;
+  }
+
   return (
     <div className="space-y-6">
       <PublicSection
@@ -46,6 +51,112 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
         emptyMessage="수집된 공개 콘텐츠가 없습니다."
       />
       <LoginSection items={channelResult.loginRequired} />
+    </div>
+  );
+}
+
+function SmartstoreSection({ items }: { items: ChannelItem[] }) {
+  // 플랫폼별 그룹화
+  const platformMap: Record<string, ChannelItem[]> = {};
+  for (const item of items) {
+    const platform = item.tag ?? item.source ?? "기타";
+    if (!platformMap[platform]) platformMap[platform] = [];
+    platformMap[platform].push(item);
+  }
+
+  const platforms = Object.keys(platformMap);
+  const [activePlatform, setActivePlatform] = useState(platforms[0] ?? "");
+
+  if (platforms.length === 0) {
+    return <p className="py-8 text-center text-sm text-stone-400">수집된 스토어 콘텐츠가 없습니다.</p>;
+  }
+
+  const activeItems = platformMap[activePlatform] ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* 플랫폼 탭 버튼 */}
+      <div className="flex flex-wrap gap-2">
+        {platforms.map((platform) => (
+          <button
+            key={platform}
+            onClick={() => setActivePlatform(platform)}
+            className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
+              activePlatform === platform
+                ? "border-kkumbi-500 bg-kkumbi-500 text-white"
+                : "border-stone-200 bg-white text-stone-600 hover:border-kkumbi-300"
+            }`}
+          >
+            {platform}
+            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
+              activePlatform === platform ? "bg-white/30 text-white" : "bg-stone-100 text-stone-500"
+            }`}>
+              {platformMap[platform].length}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* 선택된 플랫폼 상품 목록 */}
+      <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+        <header className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-bold text-stone-800">{activePlatform} 상품</h2>
+          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+            {activeItems.length}건
+          </span>
+        </header>
+
+        <ul className="space-y-3">
+          {activeItems.map((item, i) => {
+            const rankMatch = item.source.match(/TOP (\d+)/);
+            const rank = rankMatch ? parseInt(rankMatch[1]) : i + 1;
+            const [priceText, reviewText] = (item.preview ?? "").split(" · ");
+
+            return (
+              <li
+                key={`${item.link}-${i}`}
+                className="flex gap-3 rounded-xl border border-stone-100 bg-stone-50 p-4 transition hover:border-kkumbi-300 hover:shadow-sm"
+              >
+                {/* 순번 */}
+                <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  rank <= 3 ? "bg-kkumbi-500 text-white" : "bg-stone-200 text-stone-600"
+                }`}>
+                  {rank}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  {/* 제목 */}
+                  <LinkedTitle
+                    title={item.title}
+                    link={item.link}
+                    className="block text-sm font-semibold text-stone-800 leading-snug"
+                    linkClassName="hover:text-kkumbi-600 hover:underline"
+                  />
+
+                  {/* 가격 + 리뷰 */}
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {priceText && (
+                      <span className={`text-xs font-semibold ${
+                        priceText.includes("↓") ? "text-blue-600" :
+                        priceText.includes("↑") ? "text-rose-500" : "text-stone-700"
+                      }`}>
+                        {priceText}
+                      </span>
+                    )}
+                    {reviewText && (
+                      <span className={`text-xs font-medium ${
+                        reviewText.includes("+") ? "text-emerald-600" : "text-stone-500"
+                      }`}>
+                        {reviewText}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
