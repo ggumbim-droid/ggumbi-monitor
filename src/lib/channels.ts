@@ -59,7 +59,6 @@ export const CHANNELS: ChannelMeta[] = [
     searchHint: "smartstore.naver.com 기획전·이벤트",
   },
   {
-    {
     id: "smartstore_reviews",
     label: "스마트스토어 리뷰 추이",
     shortLabel: "리뷰 추이",
