@@ -85,17 +85,13 @@ async function saveShoppingHistory(items: NaverShoppingItem[]) {
         price: parseInt(item.lprice) || 0,
         reviewCount: parseInt(item.reviewCount ?? "0") || 0,
       }));
-
     if (products.length === 0) return;
-
     await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/shopping-history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ products }),
     });
-  } catch {
-    // 히스토리 저장 실패해도 메인 결과에 영향 없음
-  }
+  } catch {}
 }
 
 async function getShoppingHistory(): Promise<Record<string, { records: { date: string; price: number; reviewCount: number }[] }>> {
@@ -133,6 +129,19 @@ function dedupeByProductId(items: NaverShoppingItem[]): NaverShoppingItem[] {
   });
 }
 
+function normalizeMallName(mallName: string): string {
+  const name = mallName.toLowerCase();
+  if (name.includes("스마트스토어") || name.includes("smartstore")) return "스마트스토어";
+  if (name.includes("쿠팡") || name.includes("coupang")) return "쿠팡";
+  if (name.includes("11번가")) return "11번가";
+  if (name.includes("롯데")) return "롯데ON";
+  if (name.includes("gmarket") || name.includes("지마켓")) return "지마켓";
+  if (name.includes("auction") || name.includes("옥션")) return "옥션";
+  if (name.includes("위메프")) return "위메프";
+  if (name.includes("티몬")) return "티몬";
+  return mallName;
+}
+
 export async function searchSmartstore(
   keywords: string[],
   sortOrder: SortOrder,
@@ -153,13 +162,32 @@ export async function searchSmartstore(
     saveShoppingHistory(deduped),
   ]);
 
-  // 리뷰 수 기준 TOP 10 정렬
-  const sortedByReview = [...deduped].sort((a, b) => {
-    return (parseInt(b.reviewCount ?? "0") || 0) - (parseInt(a.reviewCount ?? "0") || 0);
-  });
-  const top10Ids = new Set(sortedByReview.slice(0, 10).map((i) => i.productId));
+  // 플랫폼별 그룹화
+  const platformGroups: Record<string, NaverShoppingItem[]> = {};
+  for (const item of deduped) {
+    const platform = normalizeMallName(stripHtml(item.mallName ?? "기타"));
+    if (!platformGroups[platform]) platformGroups[platform] = [];
+    platformGroups[platform].push(item);
+  }
 
-  const publicItems = deduped.slice(0, SHOPPING_DISPLAY).map((item) => {
+  // 각 플랫폼별 리뷰 TOP 5 정렬 후 합치기
+  const ordered: { item: NaverShoppingItem; platform: string; rank: number }[] = [];
+
+  // 스마트스토어 먼저, 나머지는 리뷰 수 많은 플랫폼 순
+  const platformOrder = ["스마트스토어", ...Object.keys(platformGroups).filter((p) => p !== "스마트스토어")];
+
+  for (const platform of platformOrder) {
+    const items = platformGroups[platform];
+    if (!items) continue;
+    const sorted = [...items].sort((a, b) =>
+      (parseInt(b.reviewCount ?? "0") || 0) - (parseInt(a.reviewCount ?? "0") || 0)
+    );
+    sorted.slice(0, 5).forEach((item, idx) => {
+      ordered.push({ item, platform, rank: idx + 1 });
+    });
+  }
+
+  const publicItems: ChannelItem[] = ordered.map(({ item, platform, rank }) => {
     const key = `${stripHtml(item.mallName ?? "")}:${item.productId}`;
     const hist = history[key];
     const prevRecord = hist && hist.records.length >= 2
@@ -182,16 +210,13 @@ export async function searchSmartstore(
       ? `리뷰 ${currentReviews.toLocaleString()}개${reviewChange}`
       : "";
 
-    const reviewRank = sortedByReview.findIndex((i) => i.productId === item.productId) + 1;
-    const tag = top10Ids.has(item.productId) ? `리뷰 TOP ${reviewRank}` : undefined;
-
     return {
-      source: stripHtml(item.mallName ?? "네이버 쇼핑"),
+      source: `${platform} TOP ${rank}`,
       title: stripHtml(item.title ?? "상품명 없음"),
       preview: [priceText, reviewText].filter(Boolean).join(" · "),
       link: item.link ?? "",
       publishedAt: toISODate(new Date()),
-      tag,
+      tag: platform,
     } as ChannelItem;
   });
 
