@@ -71,10 +71,18 @@ async function kvGet(key: string) {
     headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
   });
   const data = await res.json();
-  // Upstash REST API returns { result: "..." }
   const raw = data.result ?? data.value ?? null;
   if (!raw) return null;
-  if (typeof raw === "string") return raw;
+  // 이중 JSON 문자열인 경우 한 번 더 파싱
+  if (typeof raw === "string") {
+    try {
+      const inner = JSON.parse(raw);
+      if (typeof inner === "string") return inner;
+      return raw;
+    } catch {
+      return raw;
+    }
+  }
   return JSON.stringify(raw);
 }
 
