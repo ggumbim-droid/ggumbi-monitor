@@ -79,13 +79,11 @@ async function kvGet(key: string) {
 }
 
 async function kvSet(key: string, value: string) {
-  await fetch(`${KV_REST_API_URL}/set/${key}`, {
+  await fetch(`${KV_REST_API_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${KV_REST_API_TOKEN}`,
-      "Content-Type": "application/json",
     },
-    body: JSON.stringify({ value }),
   });
 }
 
@@ -93,7 +91,11 @@ export async function GET() {
   try {
     const stored = await kvGet("keyword_groups");
     if (stored) {
-      return NextResponse.json(JSON.parse(stored));
+      try {
+        return NextResponse.json(JSON.parse(stored));
+      } catch {
+        // 파싱 실패시 기본값 반환
+      }
     }
     await kvSet("keyword_groups", JSON.stringify(DEFAULT_GROUPS));
     return NextResponse.json(DEFAULT_GROUPS);
