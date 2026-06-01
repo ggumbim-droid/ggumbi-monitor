@@ -71,41 +71,39 @@ async function kvGet(key: string) {
     headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
   });
   const data = await res.json();
+  // Upstash REST API wraps value in { value: "..." }
   const raw = data.result ?? data.value ?? null;
   if (!raw) return null;
-  // 이중 JSON 문자열인 경우 한 번 더 파싱
+  // 이중 JSON 문자열 처리
   if (typeof raw === "string") {
     try {
-      const inner = JSON.parse(raw);
-      if (typeof inner === "string") return inner;
-      return raw;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "object") return parsed;
+      if (typeof parsed === "string") return JSON.parse(parsed);
     } catch {
-      return raw;
+      return null;
     }
   }
-  return JSON.stringify(raw);
+  return raw;
 }
 
-async function kvSet(key: string, value: string) {
-  await fetch(`${KV_REST_API_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
+async function kvSet(key: string, value: object) {
+  const jsonStr = JSON.stringify(value);
+  await fetch(`${KV_REST_API_URL}/set/${key}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${KV_REST_API_TOKEN}`,
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify(jsonStr),
   });
 }
 
 export async function GET() {
   try {
     const stored = await kvGet("keyword_groups");
-    if (stored) {
-      try {
-        return NextResponse.json(JSON.parse(stored));
-      } catch {
-        // 파싱 실패시 기본값 반환
-      }
-    }
-    await kvSet("keyword_groups", JSON.stringify(DEFAULT_GROUPS));
+    if (stored) return NextResponse.json(stored);
+    await kvSet("keyword_groups", DEFAULT_GROUPS);
     return NextResponse.json(DEFAULT_GROUPS);
   } catch {
     return NextResponse.json(DEFAULT_GROUPS);
@@ -118,7 +116,7 @@ export async function POST(request: NextRequest) {
     const { action, groupId, brandName, keyword } = body;
 
     const stored = await kvGet("keyword_groups");
-    const groups = stored ? JSON.parse(stored) : { ...DEFAULT_GROUPS };
+    const groups = stored ?? { ...DEFAULT_GROUPS };
 
     if (!groups[groupId]) {
       return NextResponse.json({ error: "그룹을 찾을 수 없습니다." }, { status: 400 });
@@ -132,12 +130,8 @@ export async function POST(request: NextRequest) {
     if (action === "add") {
       const trimmed = keyword.trim();
       if (!trimmed) return NextResponse.json({ error: "키워드를 입력해 주세요." }, { status: 400 });
-      if (brand.keywords.includes(trimmed)) {
-        return NextResponse.json({ error: "이미 존재하는 키워드입니다." }, { status: 400 });
-      }
-      if (brand.keywords.length >= 20) {
-        return NextResponse.json({ error: "키워드는 최대 20개까지 등록 가능합니다." }, { status: 400 });
-      }
+      if (brand.keywords.includes(trimmed)) return NextResponse.json({ error: "이미 존재하는 키워드입니다." }, { status: 400 });
+      if (brand.keywords.length >= 20) return NextResponse.json({ error: "키워드는 최대 20개까지 등록 가능합니다." }, { status: 400 });
       brand.keywords.push(trimmed);
     } else if (action === "delete") {
       brand.keywords = brand.keywords.filter((k: string) => k !== keyword);
@@ -145,7 +139,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "올바르지 않은 action입니다." }, { status: 400 });
     }
 
-    await kvSet("keyword_groups", JSON.stringify(groups));
+    await kvSet("keyword_groups", groups);
     return NextResponse.json(groups);
   } catch {
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
