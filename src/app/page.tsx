@@ -57,7 +57,6 @@ function CustomTooltip({ active, payload, label, hoveredBrand }: { active?: bool
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"monitor" | "trend">("monitor");
 
-  // 모니터링 상태
   const [keywords, setKeywords] = useState<string[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<ChannelId[]>(ALL_CHANNEL_IDS);
   const [dateRange, setDateRange] = useState<MonitorDateRange>(getDefaultDateRange);
@@ -70,7 +69,6 @@ export default function HomePage() {
   const abortRef = useRef<AbortController | null>(null);
   const allLoginItems = useMemo(() => result?.channels.flatMap((c) => c.loginRequired) ?? [], [result]);
 
-  // 트렌드 상태
   const [keywordGroups, setKeywordGroups] = useState<KeywordGroups>({});
   const [groupList, setGroupList] = useState<KeywordGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -89,7 +87,7 @@ export default function HomePage() {
   const [newKeyword, setNewKeyword] = useState("");
   const [kwError, setKwError] = useState("");
 
-const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
+  const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
 
   useEffect(() => {
@@ -197,6 +195,7 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
       setGroupList(list);
     } catch {}
   }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-kkumbi-50 via-white to-kkumbi-50/30">
       <header className="border-b border-kkumbi-100 bg-white/80 backdrop-blur">
@@ -208,7 +207,6 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
             </div>
             <p className="text-sm text-stone-500">카페 · 블로그 · 뉴스 · 유튜브 · 인스타 · Meta 광고 · 스토어 · 리뷰</p>
           </div>
-          {/* 탭 */}
           <div className="flex gap-1 mt-4">
             <button onClick={() => setActiveTab("monitor")}
               className={`px-5 py-2 rounded-t-lg text-sm font-semibold transition-colors ${activeTab === "monitor" ? "bg-kkumbi-500 text-white" : "bg-white text-stone-500 border border-stone-200 hover:bg-stone-50"}`}>
@@ -223,8 +221,6 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
       </header>
 
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
-
-        {/* ── 경쟁사 모니터링 탭 ── */}
         {activeTab === "monitor" && (
           <>
             <section className="rounded-2xl border border-kkumbi-100 bg-white p-6 shadow-lg shadow-kkumbi-100/40">
@@ -296,12 +292,9 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
           </>
         )}
 
-        {/* ── 트렌드 탭 ── */}
         {activeTab === "trend" && (
           <div className="space-y-4">
             {kwLoading && <p className="text-sm text-gray-400">키워드 불러오는 중...</p>}
-
-            {/* 그룹 탭 */}
             <div className="flex gap-2 flex-wrap">
               {groupList.map((g) => (
                 <button key={g.id} onClick={() => { setSelectedGroup(g.id); setChartData([]); setHiddenBrands(new Set()); setFocusedBrand(""); setExpandedBrands(new Set()); }}
@@ -310,8 +303,6 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
                 </button>
               ))}
             </div>
-
-            {/* 기간 선택 */}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex gap-2 flex-wrap mb-3">
                 {PRESET_PERIODS.map((p) => (
@@ -337,8 +328,6 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
                 </div>
               )}
             </div>
-
-            {/* 키워드 구성 + 추가/삭제 */}
             {currentGroup && (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <h2 className="font-semibold text-gray-700 mb-3">{currentGroup.label} 키워드 구성</h2>
@@ -373,7 +362,6 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
                             className="text-xs text-orange-400 px-1">+{brand.keywords.length - 5}개 더보기</button>
                         )}
                       </div>
-                      {/* 키워드 추가 인풋 */}
                       {addingBrand?.groupId === selectedGroup && addingBrand?.brandName === brand.name && (
                         <div className="mt-2 flex gap-2 items-center">
                           <input value={newKeyword} onChange={(e) => setNewKeyword(e.target.value)}
@@ -392,8 +380,6 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
                 </div>
               </div>
             )}
-
-            {/* 브랜드 토글 */}
             {chartData.length > 0 && currentGroup && (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <p className="text-sm text-gray-500 mb-2">브랜드 클릭 → 강조 / 더블클릭 → 숨기기</p>
@@ -412,16 +398,11 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
                 </div>
               </div>
             )}
-
-            {/* 조회 버튼 */}
             <button onClick={fetchTrend} disabled={trendLoading}
               className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50">
               {trendLoading ? "데이터 조회 중..." : "트렌드 조회"}
             </button>
-
             {trendError && <div className="text-red-500 text-sm">{trendError}</div>}
-
-            {/* 차트 */}
             {chartData.length > 0 && currentGroup && (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h2 className="font-semibold text-gray-700 mb-4">{currentGroup.label} 검색량 추이</h2>
