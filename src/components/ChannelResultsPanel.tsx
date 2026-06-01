@@ -14,6 +14,21 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
   const meta = getChannelMeta(channelResult.channel);
 
   if (channelResult.channel === "smartstore_reviews") {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-8 text-center">
+        <p className="text-2xl mb-3">🔧</p>
+        <h3 className="text-base font-bold text-stone-700 mb-2">스마트스토어 리뷰 추이 — 추후 개발 예정</h3>
+        <p className="text-sm text-stone-500">
+          네이버 API 정책상 리뷰 수 자동 수집이 제한되어 현재 개발 중입니다.
+        </p>
+        <p className="mt-2 text-xs text-stone-400">
+          대신 <span className="font-semibold text-kkumbi-500">검색 노출 순위 추이</span> 탭을 이용해주세요.
+        </p>
+      </div>
+    );
+  }
+
+  if (channelResult.channel === "naver_ranking" as string) {
     if (channelResult.publicItems.length > 0) {
       return <RankingSection items={channelResult.publicItems} />;
     }
@@ -293,7 +308,6 @@ function PublicSection({
           {items.length}건
         </span>
       </header>
-
       {items.length === 0 ? (
         <p className="py-8 text-center text-sm text-stone-400">{emptyMessage}</p>
       ) : (
@@ -346,9 +360,7 @@ function LoginSection({ items }: { items: ChannelResult["loginRequired"] }) {
   return (
     <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
       <header className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-bold text-amber-900">
-          로그인·직접 확인 필요
-        </h2>
+        <h2 className="text-base font-bold text-amber-900">로그인·직접 확인 필요</h2>
         <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
           {items.length}건
         </span>
@@ -357,9 +369,7 @@ function LoginSection({ items }: { items: ChannelResult["loginRequired"] }) {
         로그인·회원 전용·비공개 등 자동 수집이 불가한 항목입니다.
       </p>
       {items.length === 0 ? (
-        <p className="py-8 text-center text-sm text-amber-700/60">
-          로그인 필요 항목이 없습니다.
-        </p>
+        <p className="py-8 text-center text-sm text-amber-700/60">로그인 필요 항목이 없습니다.</p>
       ) : (
         <ul className="max-h-[480px] space-y-3 overflow-y-auto pr-1">
           {items.map((item, i) => (
