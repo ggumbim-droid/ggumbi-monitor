@@ -96,13 +96,17 @@ const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
     setKwLoading(true);
     fetch("/api/keywords")
       .then((r) => r.json())
-      .then((data: KeywordGroups) => {
-        setKeywordGroups(data);
-        const list = Object.entries(data).map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
+      .then((data: unknown) => {
+        if (!data || typeof data !== "object") return;
+        const groups = data as KeywordGroups;
+        setKeywordGroups(groups);
+        const list = Object.entries(groups)
+          .filter(([, g]) => g && Array.isArray(g.brands))
+          .map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
         setGroupList(list);
         if (list.length > 0) setSelectedGroup(list[0].id);
       })
-      .catch(() => {})
+      .catch((e) => console.error("키워드 로드 실패:", e))
       .finally(() => setKwLoading(false));
   }, [activeTab]);
 
