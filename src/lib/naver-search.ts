@@ -8,7 +8,7 @@ import type {
 } from "@/types/monitor";
 
 const NAVER_API_CALL_DELAY_MS = 300;
-const NAVER_SEARCH_DISPLAY = 20;
+const NAVER_SEARCH_DISPLAY = 50;
 
 const NAVER_ENDPOINTS: Record<"naver_cafe" | "naver_blog" | "naver_news", string> = {
   naver_cafe: "https://openapi.naver.com/v1/search/cafearticle.json",
@@ -212,7 +212,7 @@ export async function searchNaverChannel(
   }
 
   const filtered = dedupeByLink(collected).filter((item) => {
-    if (!item.publishedAt) return false;
+    if (!item.publishedAt) return true;
     if (item.publishedAt > _period.endDate) return false;
     return true;
   });
