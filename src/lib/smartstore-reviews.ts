@@ -162,7 +162,6 @@ export async function searchSmartstoreReviews(
       trend: [],
       interpretation: "스마트스토어 상품을 찾을 수 없습니다.",
     },
-    reviewDataList,
   };
 }
 
