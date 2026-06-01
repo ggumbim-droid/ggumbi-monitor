@@ -160,12 +160,12 @@ export async function searchNaverRanking(
   });
 
   return {
-    channel: "smartstore_reviews" as ChannelId,
+    channel: "naver_ranking" as ChannelId,
     publicItems,
     loginRequired: [],
   };
 }
 
 export function isNaverRankingChannel(id: ChannelId): boolean {
-  return id === "smartstore_reviews";
+  return id === "naver_ranking";
 }
