@@ -1,7 +1,9 @@
 "use client";
-
-import { CHANNELS, ALL_CHANNEL_IDS } from "@/lib/channels";
+import { CHANNELS } from "@/lib/channels";
 import type { ChannelId } from "@/types/monitor";
+
+const DEFAULT_CHANNEL_IDS: ChannelId[] = ["naver_cafe", "naver_blog", "naver_news", "youtube"];
+const COMING_SOON_IDS: ChannelId[] = ["meta_ads", "smartstore_reviews"];
 
 interface ChannelSelectProps {
   selected: ChannelId[];
@@ -9,18 +11,16 @@ interface ChannelSelectProps {
   disabled?: boolean;
 }
 
-export function ChannelSelect({
-  selected,
-  onChange,
-  disabled,
-}: ChannelSelectProps) {
-  const allSelected = selected.length === ALL_CHANNEL_IDS.length;
+export function ChannelSelect({ selected, onChange, disabled }: ChannelSelectProps) {
+  const activeChannels = CHANNELS.filter((c) => !COMING_SOON_IDS.includes(c.id));
+  const allSelected = activeChannels.every((c) => selected.includes(c.id));
 
   const toggleAll = () => {
-    onChange(allSelected ? [] : [...ALL_CHANNEL_IDS]);
+    onChange(allSelected ? [] : activeChannels.map((c) => c.id));
   };
 
   const toggle = (id: ChannelId) => {
+    if (COMING_SOON_IDS.includes(id)) return;
     if (selected.includes(id)) {
       onChange(selected.filter((c) => c !== id));
     } else {
@@ -43,15 +43,17 @@ export function ChannelSelect({
           {allSelected ? "전체 해제" : "전체 선택"}
         </button>
       </div>
-
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {CHANNELS.map((channel) => {
+          const isComingSoon = COMING_SOON_IDS.includes(channel.id);
           const checked = selected.includes(channel.id);
           return (
             <label
               key={channel.id}
               className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
-                checked
+                isComingSoon
+                  ? "cursor-not-allowed border-stone-100 bg-stone-50 opacity-60"
+                  : checked
                   ? "border-kkumbi-400 bg-kkumbi-50 shadow-sm"
                   : "border-stone-200 bg-white hover:border-kkumbi-200"
               } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
@@ -59,16 +61,21 @@ export function ChannelSelect({
               <input
                 type="checkbox"
                 checked={checked}
-                disabled={disabled}
+                disabled={disabled || isComingSoon}
                 onChange={() => toggle(channel.id)}
                 className="mt-0.5 h-4 w-4 rounded border-kkumbi-300 text-kkumbi-600 focus:ring-kkumbi-400"
               />
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-stone-800">
                   {channel.label}
+                  {isComingSoon && (
+                    <span className="ml-2 rounded-full bg-stone-200 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
+                      개발 예정
+                    </span>
+                  )}
                 </span>
                 <span className="mt-0.5 block text-xs text-stone-500">
-                  {channel.description}
+                  {isComingSoon ? "추후 개발 예정" : channel.description}
                 </span>
               </span>
             </label>
@@ -78,3 +85,5 @@ export function ChannelSelect({
     </div>
   );
 }
+
+export { DEFAULT_CHANNEL_IDS };
