@@ -45,12 +45,16 @@ function buildChannelInstructions(selected: ChannelId[]): string {
 - 수집: 리뷰·언박싱·광고·브랜드 관련 영상 (제목·채널명)`;
         case "instagram":
           return `### ${meta.label}
-- 검색: site:instagram.com "키워드" 또는 instagram.com/브랜드계정
-- 경쟁사 브랜드 계정 직접 검색 (예: instagram.com/ggumbi_official)
-- 해시태그 검색: #키워드 #유아용품 #육아 관련 공개 게시물
-- 수집: 공개 계정의 최신 게시물 (좋아요수·댓글수 포함 시 기재)
-- 광고성 게시물, 신제품 홍보, 이벤트/협찬 게시물 우선 수집
-- 로그인 필요 계정은 loginRequired로 분류`;
+- 아래 검색을 순서대로 최소 5회 이상 실행하세요
+- 검색1: site:instagram.com "키워드" 최신 게시물
+- 검색2: site:instagram.com "키워드" 신제품 OR 출시 OR 이벤트
+- 검색3: site:instagram.com #키워드 #유아용품 #육아용품
+- 검색4: 경쟁사 브랜드명 instagram 공식계정 검색 (예: "나리몽 instagram", "리틀클라우드 instagram")
+- 검색5: 키워드 "인스타그램" 신제품 OR 할인 OR 협찬
+- 수집 우선순위: ① 경쟁사 공식계정 게시물 ② 신제품·프로모션·이벤트 게시물 ③ 인플루언서 협찬 게시물
+- 각 게시물마다 source(계정명), title(게시물 내용 요약), link(URL), publishedAt(날짜), tag(신제품/프로모션/협찬 등) 포함
+- 공개 게시물만 publicItems, 로그인 필요는 loginRequired
+- 최소 5건 이상 수집 목표`;
         case "meta_ads":
           return `### ${meta.label}
 - 검색: facebook.com/ads/library 에서 브랜드명·제품명 광고 검색
