@@ -127,14 +127,12 @@ export function InstagramAccountsPanel() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  
-                    href={account.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => window.open(account.url, "_blank")}
                     className="rounded-lg border border-kkumbi-200 px-3 py-1.5 text-xs font-semibold text-kkumbi-600 hover:bg-kkumbi-50"
                   >
                     바로가기
-                  </a>
+                  </button>
                   <button
                     onClick={() => handleDelete(account.id)}
                     className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-50"
