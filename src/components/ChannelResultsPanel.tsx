@@ -14,12 +14,46 @@ interface ChannelResultsPanelProps {
 export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps) {
   const meta = getChannelMeta(channelResult.channel);
 
-  if (channelResult.channel === "smartstore_reviews" && channelResult.reviewData) {
-    return <SmartstoreReviewsSection channelResult={channelResult} />;
+  if (channelResult.channel === "smartstore_reviews") {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-8 text-center">
+        <p className="text-2xl mb-3">🔧</p>
+        <h3 className="text-base font-bold text-stone-700 mb-2">스마트스토어 리뷰 추이 — 추후 개발 예정</h3>
+        <p className="text-sm text-stone-500">
+          네이버 API 정책상 리뷰 수 자동 수집이 제한되어 현재 개발 중입니다.
+        </p>
+        <p className="mt-2 text-xs text-stone-400">
+          대신 상단 <span className="font-semibold text-kkumbi-500">스마트스토어 / 자사몰</span> 탭에서 가격 변화 추이를 확인하세요.
+        </p>
+      </div>
+    );
+  }
   }
 
   if (channelResult.channel === "instagram") {
     return <InstagramAccountsPanel />;
+  }
+
+  if (channelResult.channel === "meta_ads") {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-8 text-center">
+        <p className="text-2xl mb-3">🔧</p>
+        <h3 className="text-base font-bold text-stone-700 mb-2">Meta 광고 라이브러리 — 추후 개발 예정</h3>
+        <p className="text-sm text-stone-500">
+          Meta Ad Library API 승인 절차 진행 중입니다.
+        </p>
+        <p className="mt-2 text-xs text-stone-400">
+          지금은 <span className="font-semibold">facebook.com/ads/library</span> 에서 직접 확인해주세요.
+        </p>
+        <button
+          onClick={() => window.open("https://www.facebook.com/ads/library", "_blank")}
+          className="mt-4 rounded-xl border border-stone-300 px-5 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100"
+        >
+          Meta 광고 라이브러리 바로가기
+        </button>
+      </div>
+    );
+  }
   }
 
   if (channelResult.channel === "smartstore") {
