@@ -212,7 +212,7 @@ export async function searchNaverChannel(
   }
 
   const filtered = dedupeByLink(collected).filter((item) => {
-    if (!item.publishedAt) return true;
+    if (!item.publishedAt) return false;
     return item.publishedAt >= _period.startDate && item.publishedAt <= _period.endDate;
   });
   const publicItems = filtered.slice(0, NAVER_SEARCH_DISPLAY);
