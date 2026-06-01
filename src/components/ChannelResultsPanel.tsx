@@ -3,21 +3,17 @@
 import { getChannelMeta } from "@/lib/channels";
 import { LinkedTitle } from "@/components/LinkedTitle";
 import { ReviewTrendChart } from "@/components/ReviewTrendChart";
+import { InstagramAccountsPanel } from "@/components/InstagramAccountsPanel";
 import type { ChannelResult } from "@/types/monitor";
 
 interface ChannelResultsPanelProps {
   channelResult: ChannelResult;
 }
 
-export function ChannelResultsPanel({
-  channelResult,
-}: ChannelResultsPanelProps) {
+export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps) {
   const meta = getChannelMeta(channelResult.channel);
 
-  if (
-    channelResult.channel === "smartstore_reviews" &&
-    channelResult.reviewData
-  ) {
+  if (channelResult.channel === "smartstore_reviews" && channelResult.reviewData) {
     const r = channelResult.reviewData;
     return (
       <div className="space-y-4">
@@ -36,6 +32,10 @@ export function ChannelResultsPanel({
         )}
       </div>
     );
+  }
+
+  if (channelResult.channel === "instagram") {
+    return <InstagramAccountsPanel />;
   }
 
   return (
@@ -80,7 +80,6 @@ function PublicSection({
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-stone-100 text-[10px] font-bold text-stone-500">
                 {i + 1}
               </span>
-
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <span className="text-[11px] font-semibold text-kkumbi-600 bg-kkumbi-50 px-2 py-0.5 rounded-full">
@@ -97,14 +96,12 @@ function PublicSection({
                     </span>
                   )}
                 </div>
-
                 <LinkedTitle
                   title={item.title}
                   link={item.link}
                   className="block text-sm font-semibold text-stone-800 leading-snug"
                   linkClassName="hover:text-kkumbi-600 hover:underline"
                 />
-
                 {item.preview && (
                   <p className="mt-1 text-xs text-stone-500 line-clamp-2 leading-relaxed">
                     {item.preview}
@@ -119,11 +116,7 @@ function PublicSection({
   );
 }
 
-function LoginSection({
-  items,
-}: {
-  items: ChannelResult["loginRequired"];
-}) {
+function LoginSection({ items }: { items: ChannelResult["loginRequired"] }) {
   return (
     <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
       <header className="mb-4 flex items-center justify-between">
@@ -137,7 +130,6 @@ function LoginSection({
       <p className="mb-3 text-xs text-amber-800/80">
         로그인·회원 전용·비공개 등 자동 수집이 불가한 항목입니다.
       </p>
-
       {items.length === 0 ? (
         <p className="py-8 text-center text-sm text-amber-700/60">
           로그인 필요 항목이 없습니다.
@@ -145,10 +137,7 @@ function LoginSection({
       ) : (
         <ul className="max-h-[480px] space-y-3 overflow-y-auto pr-1">
           {items.map((item, i) => (
-            <li
-              key={`login-${i}`}
-              className="rounded-xl border border-amber-200 bg-white p-4"
-            >
+            <li key={`login-${i}`} className="rounded-xl border border-amber-200 bg-white p-4">
               <p className="text-xs font-medium text-amber-700">{item.source}</p>
               <LinkedTitle
                 title={item.title}
