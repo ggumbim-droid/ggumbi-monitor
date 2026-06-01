@@ -24,9 +24,8 @@ import {
   searchSmartstore,
 } from "@/lib/naver-shopping";
 import {
-  isSmartstoreReviewsChannel,
-  searchSmartstoreReviews,
-} from "@/lib/smartstore-reviews";
+  searchNaverRanking,
+} from "@/lib/naver-ranking";
 import {
   parseInsightsResponse,
   parseMonitorResponse,
@@ -124,10 +123,10 @@ export async function POST(request: NextRequest) {
     const youtubeSelected = selectedChannels.some(isYoutubeApiChannel);
     const metaAdsSelected = selectedChannels.some(isMetaAdsApiChannel);
     const smartstoreSelected = selectedChannels.some(isSmartstoreChannel);
-    const smartstoreReviewsSelected = selectedChannels.some(isSmartstoreReviewsChannel);
+    const rankingSelected = selectedChannels.some((id) => id === "smartstore_reviews");
     const claudeChannelIds = getClaudeWebSearchChannels(
       selectedChannels.filter(
-        (id) => !isSmartstoreChannel(id) && !isSmartstoreReviewsChannel(id)
+        (id) => !isSmartstoreChannel(id) && id !== "smartstore_reviews"
       )
     );
 
@@ -148,8 +147,8 @@ export async function POST(request: NextRequest) {
       ? await searchSmartstore(keywords, sortOrder, period)
       : null;
 
-    const smartstoreReviewsResult = smartstoreReviewsSelected
-      ? await searchSmartstoreReviews(keywords)
+    const rankingResult = rankingSelected
+      ? await searchNaverRanking(keywords, sortOrder, period)
       : null;
 
     const apiResults = [
@@ -157,7 +156,7 @@ export async function POST(request: NextRequest) {
       ...(youtubeResult ? [youtubeResult] : []),
       ...(metaAdsResult ? [metaAdsResult] : []),
       ...(smartstoreResult ? [smartstoreResult] : []),
-      ...(smartstoreReviewsResult ? [smartstoreReviewsResult] : []),
+      ...(rankingResult ? [rankingResult] : []),
     ];
 
     let claudeParsed: MonitorResult | null = null;
@@ -207,7 +206,7 @@ export async function POST(request: NextRequest) {
       youtubeSelected ||
       metaAdsSelected ||
       smartstoreSelected ||
-      smartstoreReviewsSelected
+      rankingSelected
     ) {
       const client = getAnthropicClient();
       const insightsPrompt = buildInsightsPrompt(keywords, channels, period);
