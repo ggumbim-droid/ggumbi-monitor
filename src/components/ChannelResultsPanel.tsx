@@ -15,16 +15,14 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
   const meta = getChannelMeta(channelResult.channel);
 
   if (channelResult.channel === "smartstore_reviews") {
+    if (channelResult.publicItems.length > 0) {
+      return <RankingSection items={channelResult.publicItems} />;
+    }
     return (
       <div className="rounded-2xl border border-stone-200 bg-stone-50 p-8 text-center">
-        <p className="text-2xl mb-3">🔧</p>
-        <h3 className="text-base font-bold text-stone-700 mb-2">스마트스토어 리뷰 추이 — 추후 개발 예정</h3>
-        <p className="text-sm text-stone-500">
-          네이버 API 정책상 리뷰 수 자동 수집이 제한되어 현재 개발 중입니다.
-        </p>
-        <p className="mt-2 text-xs text-stone-400">
-          대신 상단 <span className="font-semibold text-kkumbi-500">스마트스토어 / 자사몰</span> 탭에서 가격 변화 추이를 확인하세요.
-        </p>
+        <p className="text-2xl mb-3">📊</p>
+        <h3 className="text-base font-bold text-stone-700 mb-2">검색 노출 순위 추이</h3>
+        <p className="text-sm text-stone-500">수집된 순위 데이터가 없습니다.</p>
       </div>
     );
   }
@@ -272,4 +270,117 @@ function LoginSection({ items }: { items: ChannelResult["loginRequired"] }) {
       )}
     </section>
   );
-}
+function RankingSection({ items }: { items: ChannelItem[] }) {
+  // 키워드별 그룹화
+  const keywordMap: Record<string, ChannelItem[]> = {};
+  for (const item of items) {
+    const keyword = item.preview?.split("]")[0].replace("[", "") ?? "기타";
+    if (!keywordMap[keyword]) keywordMap[keyword] = [];
+    keywordMap[keyword].push(item);
+  }
+
+  const keywords = Object.keys(keywordMap);
+  const [activeKeyword, setActiveKeyword] = useState(keywords[0] ?? "");
+  const activeItems = keywordMap[activeKeyword] ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* 키워드 탭 */}
+      {keywords.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {keywords.map((kw) => (
+            <button
+              key={kw}
+              onClick={() => setActiveKeyword(kw)}
+              className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
+                activeKeyword === kw
+                  ? "border-kkumbi-500 bg-kkumbi-500 text-white"
+                  : "border-stone-200 bg-white text-stone-600 hover:border-kkumbi-300"
+              }`}
+            >
+              {kw}
+              <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
+                activeKeyword === kw ? "bg-white/30 text-white" : "bg-stone-100 text-stone-500"
+              }`}>
+                {keywordMap[kw].length}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+        <header className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-bold text-stone-800">
+            검색 노출 순위 — {activeKeyword}
+          </h2>
+          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+            {activeItems.length}건
+          </span>
+        </header>
+
+        <ul className="space-y-2">
+          {activeItems.map((item, i) => {
+            const previewParts = (item.preview ?? "").split(" · ");
+            const rankText = previewParts[0] ?? "";
+            const priceText = previewParts[1] ?? "";
+            const isUp = rankText.includes("↑");
+            const isDown = rankText.includes("↓");
+            const isFirst = rankText.includes("첫 수집");
+            const rankNum = i + 1;
+
+            return (
+              <li
+                key={`${item.link}-${i}`}
+                className="flex gap-3 rounded-xl border border-stone-100 bg-stone-50 p-4 transition hover:border-kkumbi-300 hover:shadow-sm"
+              >
+                <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  rankNum <= 3 ? "bg-kkumbi-500 text-white" : "bg-stone-200 text-stone-600"
+                }`}>
+                  {rankNum}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="text-[11px] font-semibold text-kkumbi-600 bg-kkumbi-50 px-2 py-0.5 rounded-full">
+                      {item.source}
+                    </span>
+                    {item.tag && (
+                      <span className="rounded-full bg-kkumbi-100 px-2 py-0.5 text-[10px] font-bold text-kkumbi-700">
+                        {item.tag}
+                      </span>
+                    )}
+                  </div>
+                  <LinkedTitle
+                    title={item.title}
+                    link={item.link}
+                    className="block text-sm font-semibold text-stone-800 leading-snug"
+                    linkClassName="hover:text-kkumbi-600 hover:underline"
+                  />
+                  <div className="mt-1.5 flex flex-wrap gap-3">
+                    {rankText && (
+                      <span className={`text-xs font-semibold ${
+                        isUp ? "text-emerald-600" :
+                        isDown ? "text-rose-500" :
+                        isFirst ? "text-stone-400" : "text-stone-500"
+                      }`}>
+                        {rankText.split("] ")[1]}
+                      </span>
+                    )}
+                    {priceText && (
+                      <span className={`text-xs font-medium ${
+                        priceText.includes("↓") ? "text-blue-600" :
+                        priceText.includes("↑") ? "text-rose-500" : "text-stone-500"
+                      }`}>
+                        {priceText}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}}
