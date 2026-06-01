@@ -20,7 +20,8 @@ export type ChannelId =
   | "instagram"
   | "meta_ads"
   | "smartstore"
-  | "smartstore_reviews";
+  | "smartstore_reviews"
+  | "naver_ranking";
 
 /** @deprecated Use ChannelItem */
 export interface CafePost {
