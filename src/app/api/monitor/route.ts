@@ -24,6 +24,10 @@ import {
   searchSmartstore,
 } from "@/lib/naver-shopping";
 import {
+  isSmartstoreReviewsChannel,
+  searchSmartstoreReviews,
+} from "@/lib/smartstore-reviews";
+import {
   parseInsightsResponse,
   parseMonitorResponse,
 } from "@/lib/parse-response";
@@ -120,8 +124,11 @@ export async function POST(request: NextRequest) {
     const youtubeSelected = selectedChannels.some(isYoutubeApiChannel);
     const metaAdsSelected = selectedChannels.some(isMetaAdsApiChannel);
     const smartstoreSelected = selectedChannels.some(isSmartstoreChannel);
+    const smartstoreReviewsSelected = selectedChannels.some(isSmartstoreReviewsChannel);
     const claudeChannelIds = getClaudeWebSearchChannels(
-      selectedChannels.filter((id) => !isSmartstoreChannel(id))
+      selectedChannels.filter(
+        (id) => !isSmartstoreChannel(id) && !isSmartstoreReviewsChannel(id)
+      )
     );
 
     const naverResults =
@@ -141,11 +148,16 @@ export async function POST(request: NextRequest) {
       ? await searchSmartstore(keywords, sortOrder, period)
       : null;
 
+    const smartstoreReviewsResult = smartstoreReviewsSelected
+      ? await searchSmartstoreReviews(keywords)
+      : null;
+
     const apiResults = [
       ...naverResults,
       ...(youtubeResult ? [youtubeResult] : []),
       ...(metaAdsResult ? [metaAdsResult] : []),
       ...(smartstoreResult ? [smartstoreResult] : []),
+      ...(smartstoreReviewsResult ? [smartstoreReviewsResult] : []),
     ];
 
     let claudeParsed: MonitorResult | null = null;
@@ -190,7 +202,13 @@ export async function POST(request: NextRequest) {
         channelHighlights: [] as string[],
       };
 
-    if (naverChannelIds.length > 0 || youtubeSelected || metaAdsSelected || smartstoreSelected) {
+    if (
+      naverChannelIds.length > 0 ||
+      youtubeSelected ||
+      metaAdsSelected ||
+      smartstoreSelected ||
+      smartstoreReviewsSelected
+    ) {
       const client = getAnthropicClient();
       const insightsPrompt = buildInsightsPrompt(keywords, channels, period);
       const insightsMessage = await createTextMessage(
