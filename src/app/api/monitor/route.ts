@@ -20,6 +20,10 @@ import {
   searchYoutubeChannel,
 } from "@/lib/youtube-search";
 import {
+  isSmartstoreChannel,
+  searchSmartstore,
+} from "@/lib/naver-shopping";
+import {
   parseInsightsResponse,
   parseMonitorResponse,
 } from "@/lib/parse-response";
@@ -115,16 +119,14 @@ export async function POST(request: NextRequest) {
     const naverChannelIds = selectedChannels.filter(isNaverApiChannel);
     const youtubeSelected = selectedChannels.some(isYoutubeApiChannel);
     const metaAdsSelected = selectedChannels.some(isMetaAdsApiChannel);
-    const claudeChannelIds = getClaudeWebSearchChannels(selectedChannels);
+    const smartstoreSelected = selectedChannels.some(isSmartstoreChannel);
+    const claudeChannelIds = getClaudeWebSearchChannels(
+      selectedChannels.filter((id) => !isSmartstoreChannel(id))
+    );
 
     const naverResults =
       naverChannelIds.length > 0
-        ? await searchNaverChannels(
-            naverChannelIds,
-            keywords,
-            sortOrder,
-            period
-          )
+        ? await searchNaverChannels(naverChannelIds, keywords, sortOrder, period)
         : [];
 
     const youtubeResult = youtubeSelected
@@ -135,10 +137,15 @@ export async function POST(request: NextRequest) {
       ? await searchMetaAdsChannel(keywords, sortOrder, period)
       : null;
 
+    const smartstoreResult = smartstoreSelected
+      ? await searchSmartstore(keywords, sortOrder, period)
+      : null;
+
     const apiResults = [
       ...naverResults,
       ...(youtubeResult ? [youtubeResult] : []),
       ...(metaAdsResult ? [metaAdsResult] : []),
+      ...(smartstoreResult ? [smartstoreResult] : []),
     ];
 
     let claudeParsed: MonitorResult | null = null;
@@ -183,7 +190,7 @@ export async function POST(request: NextRequest) {
         channelHighlights: [] as string[],
       };
 
-    if (naverChannelIds.length > 0 || youtubeSelected || metaAdsSelected) {
+    if (naverChannelIds.length > 0 || youtubeSelected || metaAdsSelected || smartstoreSelected) {
       const client = getAnthropicClient();
       const insightsPrompt = buildInsightsPrompt(keywords, channels, period);
       const insightsMessage = await createTextMessage(
