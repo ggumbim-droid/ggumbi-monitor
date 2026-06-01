@@ -59,7 +59,32 @@ function naverSortParam(sortOrder: SortOrder): "date" | "sim" {
   return sortOrder === "latest" ? "date" : "sim";
 }
 
-function parseBlogPostDate(postdate: string): string | undefined {
+function parseRelativeDate(text: string): string | undefined {
+  const now = new Date();
+  const t = text.trim();
+  const numMatch = t.match(/(\d+)/);
+  const num = numMatch ? parseInt(numMatch[1]) : 1;
+  if (t.includes("분 전") || t.includes("시간 전")) {
+    return toISODate(now);
+  }
+  if (t.includes("일 전")) {
+    const d = new Date(now); d.setDate(d.getDate() - num);
+    return toISODate(d);
+  }
+  if (t.includes("주 전")) {
+    const d = new Date(now); d.setDate(d.getDate() - num * 7);
+    return toISODate(d);
+  }
+  if (t.includes("개월 전") || t.includes("달 전")) {
+    const d = new Date(now); d.setMonth(d.getMonth() - num);
+    return toISODate(d);
+  }
+  if (t.includes("년 전")) {
+    const d = new Date(now); d.setFullYear(d.getFullYear() - num);
+    return toISODate(d);
+  }
+  return undefined;
+}
   const raw = postdate.trim();
   if (/^\d{8}$/.test(raw)) {
     return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
@@ -111,14 +136,14 @@ async function fetchNaverSearch(
 
 function mapCafeItem(raw: Record<string, string>): ChannelItem {
   const publishedAt = parseNewsPubDate(raw.pubDate ?? "")
-    ?? parseBlogPostDate(raw.postdate ?? "");
-  // 카페 링크가 로그인 필요한지 확인
-  const link = raw.link ?? "";
+    ?? parseBlogPostDate(raw.postdate ?? "")
+    ?? parseRelativeDate(raw.pubDate ?? "")
+    ?? parseRelativeDate(raw.postdate ?? "");
   return {
     source: stripHtml(raw.cafename ?? "네이버 카페"),
     title: stripHtml(raw.title ?? "제목 없음"),
     preview: stripHtml(raw.description ?? ""),
-    link,
+    link: raw.link ?? "",
     publishedAt,
   };
 }
