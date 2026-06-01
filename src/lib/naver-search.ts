@@ -10,7 +10,7 @@ import type {
 const NAVER_API_CALL_DELAY_MS = 300;
 const NAVER_SEARCH_DISPLAY = 20;
 
-const NAVER_ENDPOINTS: Record<
+const NAVER_ENDPOINTS: Record
   "naver_cafe" | "naver_blog" | "naver_news",
   string
 > = {
@@ -68,23 +68,29 @@ function parseRelativeDate(text: string): string | undefined {
     return toISODate(now);
   }
   if (t.includes("일 전")) {
-    const d = new Date(now); d.setDate(d.getDate() - num);
+    const d = new Date(now);
+    d.setDate(d.getDate() - num);
     return toISODate(d);
   }
   if (t.includes("주 전")) {
-    const d = new Date(now); d.setDate(d.getDate() - num * 7);
+    const d = new Date(now);
+    d.setDate(d.getDate() - num * 7);
     return toISODate(d);
   }
   if (t.includes("개월 전") || t.includes("달 전")) {
-    const d = new Date(now); d.setMonth(d.getMonth() - num);
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - num);
     return toISODate(d);
   }
   if (t.includes("년 전")) {
-    const d = new Date(now); d.setFullYear(d.getFullYear() - num);
+    const d = new Date(now);
+    d.setFullYear(d.getFullYear() - num);
     return toISODate(d);
   }
   return undefined;
 }
+
+function parseBlogPostDate(postdate: string): string | undefined {
   const raw = postdate.trim();
   if (/^\d{8}$/.test(raw)) {
     return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
@@ -135,10 +141,11 @@ async function fetchNaverSearch(
 }
 
 function mapCafeItem(raw: Record<string, string>): ChannelItem {
-  const publishedAt = parseNewsPubDate(raw.pubDate ?? "")
-    ?? parseBlogPostDate(raw.postdate ?? "")
-    ?? parseRelativeDate(raw.pubDate ?? "")
-    ?? parseRelativeDate(raw.postdate ?? "");
+  const publishedAt =
+    parseNewsPubDate(raw.pubDate ?? "") ??
+    parseBlogPostDate(raw.postdate ?? "") ??
+    parseRelativeDate(raw.pubDate ?? "") ??
+    parseRelativeDate(raw.postdate ?? "");
   return {
     source: stripHtml(raw.cafename ?? "네이버 카페"),
     title: stripHtml(raw.title ?? "제목 없음"),
@@ -214,9 +221,8 @@ export async function searchNaverChannel(
     }
   }
 
-  // 날짜 필터 적용 (날짜 없는 카페글은 제외)
+  // 날짜 필터 적용
   const filtered = dedupeByLink(collected).filter((item) => {
-    if (channelId === "naver_cafe" && !item.publishedAt) return false;
     if (!item.publishedAt) return true;
     return item.publishedAt >= _period.startDate && item.publishedAt <= _period.endDate;
   });
