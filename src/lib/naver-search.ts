@@ -10,10 +10,7 @@ import type {
 const NAVER_API_CALL_DELAY_MS = 300;
 const NAVER_SEARCH_DISPLAY = 20;
 
-const NAVER_ENDPOINTS: Record
-  "naver_cafe" | "naver_blog" | "naver_news",
-  string
-> = {
+const NAVER_ENDPOINTS: Record<"naver_cafe" | "naver_blog" | "naver_news", string> = {
   naver_cafe: "https://openapi.naver.com/v1/search/cafearticle.json",
   naver_blog: "https://openapi.naver.com/v1/search/blog.json",
   naver_news: "https://openapi.naver.com/v1/search/news.json",
@@ -37,9 +34,7 @@ function getNaverCredentials(): { clientId: string; clientSecret: string } {
   const clientId = process.env.NAVER_CLIENT_ID?.trim();
   const clientSecret = process.env.NAVER_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
-    throw new Error(
-      "NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 환경변수가 설정되지 않았습니다."
-    );
+    throw new Error("NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 환경변수가 설정되지 않았습니다.");
   }
   return { clientId, clientSecret };
 }
@@ -131,9 +126,7 @@ async function fetchNaverSearch(
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(
-      `네이버 검색 API 오류 (${res.status}): ${body.slice(0, 200) || res.statusText}`
-    );
+    throw new Error(`네이버 검색 API 오류 (${res.status}): ${body.slice(0, 200) || res.statusText}`);
   }
 
   const data = (await res.json()) as NaverSearchResponse;
@@ -177,10 +170,7 @@ function mapNewsItem(raw: Record<string, string>): ChannelItem {
   };
 }
 
-function mapItem(
-  channelId: NaverApiChannelId,
-  raw: Record<string, string>
-): ChannelItem {
+function mapItem(channelId: NaverApiChannelId, raw: Record<string, string>): ChannelItem {
   switch (channelId) {
     case "naver_cafe":
       return mapCafeItem(raw);
@@ -221,7 +211,6 @@ export async function searchNaverChannel(
     }
   }
 
-  // 날짜 필터 적용
   const filtered = dedupeByLink(collected).filter((item) => {
     if (!item.publishedAt) return true;
     return item.publishedAt >= _period.startDate && item.publishedAt <= _period.endDate;
@@ -246,21 +235,13 @@ export async function searchNaverChannels(
 
   for (const channelId of channelIds) {
     results.push(
-      await searchNaverChannel(
-        channelId,
-        keywords,
-        sortOrder,
-        period,
-        callContext
-      )
+      await searchNaverChannel(channelId, keywords, sortOrder, period, callContext)
     );
   }
 
   return results;
 }
 
-export function isNaverApiChannel(
-  id: ChannelId
-): id is NaverApiChannelId {
+export function isNaverApiChannel(id: ChannelId): id is NaverApiChannelId {
   return id === "naver_cafe" || id === "naver_blog" || id === "naver_news";
 }
