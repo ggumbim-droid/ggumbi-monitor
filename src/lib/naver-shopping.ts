@@ -123,41 +123,6 @@ function formatReviewChange(current: number, previous: number): string {
   return ` (${diff.toLocaleString()}개)`;
 }
 
-function isNewProduct(item: NaverShoppingItem): boolean {
-  return item.productType === "2";
-}
-
-function mapShoppingItem(
-  raw: NaverShoppingItem,
-  history: Record<string, { records: { date: string; price: number; reviewCount: number }[] }>,
-  rank: number
-): ChannelItem {
-  const key = `${stripHtml(raw.mallName ?? "")}:${raw.productId}`;
-  const hist = history[key];
-  const prevRecord = hist && hist.records.length >= 2
-    ? hist.records[hist.records.length - 2]
-    : null;
-
-  const currentPrice = parseInt(raw.lprice) || 0;
-  const currentReviews = parseInt(raw.reviewCount ?? "0") || 0;
-  const priceChange = prevRecord ? formatPriceChange(currentPrice, prevRecord.price) : " (첫 수집)";
-  const reviewChange = prevRecord ? formatReviewChange(currentReviews, prevRecord.reviewCount) : "";
-  const isNew = isNewProduct(raw);
-
-  const priceText = currentPrice ? `${currentPrice.toLocaleString()}원${priceChange}` : "가격 정보 없음";
-  const reviewText = currentReviews ? `리뷰 ${currentReviews.toLocaleString()}개${reviewChange}` : "";
-  const newBadge = isNew ? "[신제품] " : "";
-
-  return {
-    source: stripHtml(raw.mallName ?? "네이버 쇼핑"),
-    title: `${newBadge}${stripHtml(raw.title ?? "상품명 없음")}`,
-    preview: [priceText, reviewText].filter(Boolean).join(" · "),
-    link: raw.link ?? "",
-    publishedAt: toISODate(new Date()),
-    tag: isNew ? "신제품" : rank <= 10 ? `리뷰 TOP ${rank}` : undefined,
-  };
-}
-
 function dedupeByProductId(items: NaverShoppingItem[]): NaverShoppingItem[] {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -183,7 +148,6 @@ export async function searchSmartstore(
 
   const deduped = dedupeByProductId(collected);
 
-  // 히스토리 저장 및 조회 병렬 처리
   const [history] = await Promise.all([
     getShoppingHistory(),
     saveShoppingHistory(deduped),
@@ -193,23 +157,42 @@ export async function searchSmartstore(
   const sortedByReview = [...deduped].sort((a, b) => {
     return (parseInt(b.reviewCount ?? "0") || 0) - (parseInt(a.reviewCount ?? "0") || 0);
   });
+  const top10Ids = new Set(sortedByReview.slice(0, 10).map((i) => i.productId));
 
-  // 신제품 먼저, 그 다음 리뷰 TOP 10, 나머지
-  const newProducts = deduped.filter(isNewProduct);
-  const top10 = sortedByReview.slice(0, 10);
-  const top10Ids = new Set(top10.map((i) => i.productId));
-  const newIds = new Set(newProducts.map((i) => i.productId));
-  const rest = deduped.filter((i) => !top10Ids.has(i.productId) && !newIds.has(i.productId));
+  const publicItems = deduped.slice(0, SHOPPING_DISPLAY).map((item) => {
+    const key = `${stripHtml(item.mallName ?? "")}:${item.productId}`;
+    const hist = history[key];
+    const prevRecord = hist && hist.records.length >= 2
+      ? hist.records[hist.records.length - 2]
+      : null;
 
-  const ordered = [
-    ...newProducts,
-    ...top10,
-    ...rest,
-  ];
+    const currentPrice = parseInt(item.lprice) || 0;
+    const currentReviews = parseInt(item.reviewCount ?? "0") || 0;
+    const priceChange = prevRecord
+      ? formatPriceChange(currentPrice, prevRecord.price)
+      : " (첫 수집)";
+    const reviewChange = prevRecord
+      ? formatReviewChange(currentReviews, prevRecord.reviewCount)
+      : "";
 
-  const publicItems = ordered.slice(0, SHOPPING_DISPLAY).map((item, idx) => {
+    const priceText = currentPrice
+      ? `${currentPrice.toLocaleString()}원${priceChange}`
+      : "가격 정보 없음";
+    const reviewText = currentReviews
+      ? `리뷰 ${currentReviews.toLocaleString()}개${reviewChange}`
+      : "";
+
     const reviewRank = sortedByReview.findIndex((i) => i.productId === item.productId) + 1;
-    return mapShoppingItem(item, history, reviewRank);
+    const tag = top10Ids.has(item.productId) ? `리뷰 TOP ${reviewRank}` : undefined;
+
+    return {
+      source: stripHtml(item.mallName ?? "네이버 쇼핑"),
+      title: stripHtml(item.title ?? "상품명 없음"),
+      preview: [priceText, reviewText].filter(Boolean).join(" · "),
+      link: item.link ?? "",
+      publishedAt: toISODate(new Date()),
+      tag,
+    } as ChannelItem;
   });
 
   return {
