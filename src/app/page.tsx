@@ -58,7 +58,7 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"monitor" | "trend">("monitor");
 
   const [keywords, setKeywords] = useState<string[]>([]);
-  const [selectedChannels, setSelectedChannels] = useState<ChannelId[]>(ALL_CHANNEL_IDS);
+  const [selectedChannels, setSelectedChannels] = useState<ChannelId[]>(["naver_cafe", "naver_blog", "naver_news", "youtube"]);
   const [dateRange, setDateRange] = useState<MonitorDateRange>(getDefaultDateRange);
   const [sortOrder, setSortOrder] = useState<SortOrder>("latest");
   const [loading, setLoading] = useState(false);
