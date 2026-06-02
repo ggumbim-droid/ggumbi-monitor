@@ -478,13 +478,13 @@ export default function HomePage() {
             {anyResult && (
               <>
                 <LoginRequiredSection items={allLoginItems} />
-                {Object.values(groupResults).find(Boolean)?.insights && (
-                  <InsightsPanel insights={Object.values(groupResults).find(Boolean)!.insights} />
-                )}
+                <IntegratedInsightsButton
+                  groupResults={groupResults}
+                  groupKeywords={groupKeywords}
+                  dateRange={dateRange}
+                />
               </>
             )}
-          </>
-        )}
 
         {activeTab === "trend" && (
           <div className="space-y-4">
@@ -630,7 +630,81 @@ export default function HomePage() {
     </div>
   );
 }
+function IntegratedInsightsButton({
+  groupResults,
+  groupKeywords,
+  dateRange,
+}: {
+  groupResults: Record<string, MonitorResult | null>;
+  groupKeywords: Record<string, string[]>;
+  dateRange: MonitorDateRange;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [integrated, setIntegrated] = useState<{
+    competitorSummary: string;
+    benchmarkPoints: string[];
+    kkumbiStrategy: string;
+    actionPlan: string[];
+    channelStrategy: string[];
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
+  const activeGroups = Object.entries(groupResults).filter(([, r]) => r !== null);
+  const allGroupsDone = activeGroups.length > 0;
+
+  async function handleIntegrated() {
+    setLoading(true);
+    setError(null);
+    setIntegrated(null);
+    try {
+      const res = await fetch("/api/integrated-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groups: activeGroups.map(([groupId, result]) => ({
+            groupId,
+            keywords: groupKeywords[groupId] ?? [],
+            channels: result!.channels,
+          })),
+          period: dateRange,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "오류 발생");
+      setIntegrated(data.integratedInsights);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!allGroupsDone) return null;
+
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={handleIntegrated}
+        disabled={loading}
+        className="w-full rounded-2xl bg-gradient-to-r from-kkumbi-500 to-kkumbi-600 py-4 text-base font-bold text-white shadow-lg transition hover:from-kkumbi-600 hover:to-kkumbi-700 disabled:opacity-60"
+      >
+        {loading ? (
+          <span className="flex items-center justify-center gap-2">
+            <Spinner />전 채널 통합 전략 분석 중…
+          </span>
+        ) : "✨ 전 채널 통합 인사이트 도출"}
+      </button>
+      {error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+      {integrated && (
+        <InsightsPanel
+          insights={{ consumerInterests: [], positiveKeywords: [], negativeKeywords: [], immediateAction: "", channelHighlights: [] }}
+          integrated={integrated}
+        />
+      )}
+    </div>
+  );
+}
 function Spinner() {
   return (
     <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
