@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { KeywordInput } from "@/components/KeywordInput";
 import { DateRangeSelect, getDefaultDateRange } from "@/components/DateRangeSelect";
 import { MonitorPeriodBanner } from "@/components/MonitorPeriodBanner";
@@ -26,7 +26,6 @@ const PRESET_PERIODS = [
 ];
 const BRAND_COLORS = ["#FF6B35","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD"];
 
-// 채널 그룹 정의
 const CHANNEL_GROUPS = [
   {
     id: "naver",
@@ -34,6 +33,7 @@ const CHANNEL_GROUPS = [
     icon: "📰",
     channels: ["naver_cafe", "naver_blog", "naver_news"] as ChannelId[],
     description: "카페 · 블로그 · 뉴스",
+    placeholder: "예: 나리몽 분유포트, 꿈비 범퍼침대",
   },
   {
     id: "social",
@@ -41,6 +41,7 @@ const CHANNEL_GROUPS = [
     icon: "📱",
     channels: ["youtube", "instagram", "meta_ads"] as ChannelId[],
     description: "유튜브 · 인스타 · Meta 광고",
+    placeholder: "예: 나리몽, 도노도노, 마베비",
   },
   {
     id: "shopping",
@@ -48,6 +49,7 @@ const CHANNEL_GROUPS = [
     icon: "🛒",
     channels: ["smartstore", "smartstore_reviews", "naver_ranking"] as ChannelId[],
     description: "스마트스토어 · 리뷰추이 · 순위추이",
+    placeholder: "예: 휴대용분유포트, 범퍼침대",
   },
 ];
 
@@ -93,14 +95,17 @@ function CustomTooltip({ active, payload, label, hoveredBrand }: { active?: bool
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"monitor" | "trend">("monitor");
-
-  const [keywords, setKeywords] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<MonitorDateRange>(getDefaultDateRange);
   const [sortOrder, setSortOrder] = useState<SortOrder>("latest");
   const [copied, setCopied] = useState(false);
   const [reSearching, setReSearching] = useState(false);
 
-  // 그룹별 상태
+  // 그룹별 키워드
+  const [groupKeywords, setGroupKeywords] = useState<Record<string, string[]>>({
+    naver: [], social: [], shopping: [],
+  });
+
+  // 그룹별 결과/로딩/에러
   const [groupResults, setGroupResults] = useState<Record<string, MonitorResult | null>>({
     naver: null, social: null, shopping: null,
   });
@@ -117,17 +122,7 @@ export default function HomePage() {
   });
 
   const abortRefs = useRef<Record<string, AbortController | null>>({});
-
-  // 섹션 refs (스크롤용)
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
-
-  const allLoginItems = useMemo(() => {
-    return Object.values(groupResults)
-      .filter(Boolean)
-      .flatMap((r) => r!.channels.flatMap((c) => c.loginRequired));
-  }, [groupResults]);
-
-  const anyResult = Object.values(groupResults).some(Boolean);
 
   // 트렌드 상태
   const [keywordGroups, setKeywordGroups] = useState<KeywordGroups>({});
@@ -150,6 +145,10 @@ export default function HomePage() {
 
   const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
+  const anyResult = Object.values(groupResults).some(Boolean);
+  const allLoginItems = Object.values(groupResults)
+    .filter(Boolean)
+    .flatMap((r) => r!.channels.flatMap((c) => c.loginRequired));
 
   useEffect(() => {
     if (activeTab !== "trend") return;
@@ -171,7 +170,7 @@ export default function HomePage() {
   }, [activeTab]);
 
   const handleGroupMonitor = useCallback(async (groupId: string) => {
-    const trimmed = keywords.map((k) => k.trim()).filter(Boolean);
+    const trimmed = (groupKeywords[groupId] ?? []).map((k) => k.trim()).filter(Boolean);
     if (!trimmed.length) {
       setGroupErrors((prev) => ({ ...prev, [groupId]: "최소 1개의 키워드를 입력해 주세요." }));
       return;
@@ -180,27 +179,26 @@ export default function HomePage() {
       setGroupErrors((prev) => ({ ...prev, [groupId]: "시작일은 종료일보다 이후일 수 없습니다." }));
       return;
     }
-
     abortRefs.current[groupId]?.abort();
     const controller = new AbortController();
     abortRefs.current[groupId] = controller;
-
     setGroupLoading((prev) => ({ ...prev, [groupId]: true }));
     setGroupErrors((prev) => ({ ...prev, [groupId]: null }));
-
     try {
-      const channels = groupChannels[groupId];
       const res = await fetch("/api/monitor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keywords: trimmed, sortOrder, channels, period: dateRange }),
+        body: JSON.stringify({
+          keywords: trimmed,
+          sortOrder,
+          channels: groupChannels[groupId],
+          period: dateRange,
+        }),
         signal: controller.signal,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "모니터링 요청에 실패했습니다.");
       setGroupResults((prev) => ({ ...prev, [groupId]: data as MonitorResult }));
-
-      // 결과로 스크롤
       setTimeout(() => {
         sectionRefs.current[`result_${groupId}`]?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 300);
@@ -210,7 +208,7 @@ export default function HomePage() {
     } finally {
       setGroupLoading((prev) => ({ ...prev, [groupId]: false }));
     }
-  }, [keywords, sortOrder, dateRange, groupChannels]);
+  }, [groupKeywords, sortOrder, dateRange, groupChannels]);
 
   const handleCopyReport = useCallback(async () => {
     const firstResult = Object.values(groupResults).find(Boolean);
@@ -291,6 +289,7 @@ export default function HomePage() {
             <div className="flex flex-wrap gap-1 mt-1 sm:mt-0">
               {CHANNEL_GROUPS.map((group) => (
                 <div key={group.id} className="flex items-center gap-1">
+                  <span className="text-xs font-semibold text-stone-400">{group.icon}</span>
                   {group.channels.map((chId) => (
                     <button
                       key={chId}
@@ -309,7 +308,7 @@ export default function HomePage() {
                       {CHANNEL_LABELS[chId]}
                     </button>
                   ))}
-                  <span className="text-stone-200 text-xs">·</span>
+                  <span className="text-stone-200 text-xs">|</span>
                 </div>
               ))}
             </div>
@@ -330,11 +329,10 @@ export default function HomePage() {
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
         {activeTab === "monitor" && (
           <>
-            {/* 공통 설정 */}
+            {/* 공통 설정: 기간 + 정렬만 */}
             <section className="rounded-2xl border border-kkumbi-100 bg-white p-6 shadow-lg shadow-kkumbi-100/40">
               <h2 className="text-base font-bold text-stone-700 mb-4">공통 설정</h2>
               <div className="space-y-4">
-                <KeywordInput keywords={keywords} onChange={setKeywords} disabled={false} />
                 <DateRangeSelect value={dateRange} onChange={setDateRange} disabled={false} />
                 <SortSelect value={sortOrder} onChange={setSortOrder} disabled={false} />
               </div>
@@ -387,8 +385,13 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* 모니터링 시작 버튼 */}
-                <div className="px-6 py-4 border-b border-stone-100">
+                {/* 그룹별 키워드 입력 + 모니터링 시작 */}
+                <div className="px-6 py-4 border-b border-stone-100 space-y-3">
+                  <KeywordInput
+                    keywords={groupKeywords[group.id] ?? []}
+                    onChange={(kws) => setGroupKeywords((prev) => ({ ...prev, [group.id]: kws }))}
+                    disabled={groupLoading[group.id]}
+                  />
                   <div className="flex gap-3">
                     <button
                       type="button"
@@ -416,7 +419,7 @@ export default function HomePage() {
                     )}
                   </div>
                   {groupErrors[group.id] && (
-                    <p className="mt-2 rounded-lg bg-rose-50 px-4 py-2 text-sm text-rose-700">{groupErrors[group.id]}</p>
+                    <p className="rounded-lg bg-rose-50 px-4 py-2 text-sm text-rose-700">{groupErrors[group.id]}</p>
                   )}
                 </div>
 
@@ -452,7 +455,7 @@ export default function HomePage() {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({
-                                keywords: keywords.map((k) => k.trim()).filter(Boolean),
+                                keywords: (groupKeywords[group.id] ?? []).map((k) => k.trim()).filter(Boolean),
                                 sortOrder: newSort,
                                 channels: groupChannels[group.id],
                                 period: dateRange,
@@ -472,7 +475,6 @@ export default function HomePage() {
               </section>
             ))}
 
-            {/* 전체 로그인 필요 + 인사이트 */}
             {anyResult && (
               <>
                 <LoginRequiredSection items={allLoginItems} />
