@@ -3,6 +3,8 @@ import type { ChannelId, ChannelItem, ChannelResult, MonitorDateRange, SortOrder
 const NAVER_SHOPPING_ENDPOINT = "https://openapi.naver.com/v1/search/shop.json";
 const RANKING_DISPLAY = 30;
 
+const KKUMBI_BRANDS = ["꿈비", "리코코", "미미루", "뉴어스", "파미야", "소브", "오가닉그라운드", "바바디토", "봄봄매트", "슈슈비", "ggumbi", "GGUMBI"];
+
 function getNaverCredentials(): { clientId: string; clientSecret: string } {
   const clientId = process.env.NAVER_CLIENT_ID?.trim();
   const clientSecret = process.env.NAVER_CLIENT_SECRET?.trim();
@@ -31,8 +33,6 @@ interface NaverShoppingItem {
   productId: string;
   brand: string;
   maker: string;
-  category1: string;
-  category2: string;
 }
 
 interface NaverShoppingResponse {
@@ -47,6 +47,14 @@ interface RankingRecord {
 
 interface RankingHistory {
   [key: string]: { records: RankingRecord[] };
+}
+
+function isKkumbiBrand(title: string, brand: string, mallName: string): string | null {
+  const text = `${title} ${brand} ${mallName}`.toLowerCase();
+  for (const b of KKUMBI_BRANDS) {
+    if (text.includes(b.toLowerCase())) return b;
+  }
+  return null;
 }
 
 async function fetchNaverShopping(query: string): Promise<NaverShoppingItem[]> {
@@ -140,11 +148,46 @@ export async function searchNaverRanking(
 
   for (const keyword of keywords) {
     const items = await fetchNaverShopping(keyword);
-
-    // 네이버 쇼핑 검색 순위 그대로 (API 반환 순서 = 검색 노출 순위)
     const ranked = items.map((item, idx) => ({ item, rank: idx + 1 }));
     await saveRankingHistory(keyword, ranked);
 
+    // 꿈비 브랜드 순위 찾기
+    const kkumbiRanked = ranked.filter(({ item }) =>
+      isKkumbiBrand(
+        stripHtml(item.title),
+        stripHtml(item.brand ?? ""),
+        stripHtml(item.mallName ?? "")
+      )
+    );
+
+    // 꿈비 브랜드 순위 요약 카드 (맨 앞에 추가)
+    if (kkumbiRanked.length > 0) {
+      const best = kkumbiRanked[0];
+      const brandName = isKkumbiBrand(
+        stripHtml(best.item.title),
+        stripHtml(best.item.brand ?? ""),
+        stripHtml(best.item.mallName ?? "")
+      );
+      publicItems.push({
+        source: "🟢 자사 브랜드 노출 현황",
+        title: `[${keyword}] ${brandName} 최상위 노출: ${best.rank}위`,
+        preview: `${RANKING_DISPLAY}위 내 자사 상품 ${kkumbiRanked.length}개 노출 · 최고 순위 ${best.rank}위 (${stripHtml(best.item.title).slice(0, 30)}...)`,
+        link: best.item.link ?? "",
+        publishedAt: new Date().toISOString().split("T")[0],
+        tag: "자사브랜드",
+      });
+    } else {
+      publicItems.push({
+        source: "🔴 자사 브랜드 노출 현황",
+        title: `[${keyword}] 자사 브랜드 ${RANKING_DISPLAY}위권 밖`,
+        preview: `검색 상위 ${RANKING_DISPLAY}위 내 자사 브랜드(꿈비·리코코 등) 상품이 노출되지 않고 있습니다. SEO 점검이 필요합니다.`,
+        link: "",
+        publishedAt: new Date().toISOString().split("T")[0],
+        tag: "자사브랜드",
+      });
+    }
+
+    // 전체 순위 목록
     ranked.forEach(({ item, rank }) => {
       const key = `${keyword}:${stripHtml(item.mallName ?? "")}:${item.productId}`;
       const hist = history[key];
@@ -156,10 +199,15 @@ export async function searchNaverRanking(
       const priceChange = prevRecord ? formatPriceChange(currentPrice, prevRecord.price) : "";
       const mallType = getMallType(item.link ?? "", stripHtml(item.mallName ?? ""));
       const brandName = stripHtml(item.brand || item.maker || "");
+      const isKkumbi = isKkumbiBrand(
+        stripHtml(item.title),
+        stripHtml(item.brand ?? ""),
+        stripHtml(item.mallName ?? "")
+      );
 
       publicItems.push({
         source: mallType,
-        title: stripHtml(item.title ?? "상품명 없음"),
+        title: `${isKkumbi ? "⭐ " : ""}${stripHtml(item.title ?? "상품명 없음")}`,
         preview: `[${keyword}] ${rank}위 · ${rankChange}${currentPrice ? ` · ${currentPrice.toLocaleString()}원${priceChange}` : ""}`,
         link: item.link ?? "",
         publishedAt: new Date().toISOString().split("T")[0],
