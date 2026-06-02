@@ -1,7 +1,7 @@
 import type { ChannelId, ChannelItem, ChannelResult, MonitorDateRange, SortOrder } from "@/types/monitor";
 
 const NAVER_SHOPPING_ENDPOINT = "https://openapi.naver.com/v1/search/shop.json";
-const RANKING_DISPLAY = 20;
+const RANKING_DISPLAY = 30;
 
 function getNaverCredentials(): { clientId: string; clientSecret: string } {
   const clientId = process.env.NAVER_CLIENT_ID?.trim();
@@ -29,6 +29,10 @@ interface NaverShoppingItem {
   lprice: string;
   mallName: string;
   productId: string;
+  brand: string;
+  maker: string;
+  category1: string;
+  category2: string;
 }
 
 interface NaverShoppingResponse {
@@ -76,18 +80,15 @@ async function getRankingHistory(): Promise<RankingHistory> {
   }
 }
 
-async function saveRankingHistory(
-  keyword: string,
-  items: NaverShoppingItem[]
-) {
+async function saveRankingHistory(keyword: string, items: { item: NaverShoppingItem; rank: number }[]) {
   try {
-    const rankings = items.map((item, idx) => ({
+    const rankings = items.map(({ item, rank }) => ({
       productId: item.productId,
       title: stripHtml(item.title),
       mallName: stripHtml(item.mallName ?? ""),
       link: item.link ?? "",
       keyword,
-      rank: idx + 1,
+      rank,
       price: parseInt(item.lprice) || 0,
     }));
 
@@ -104,17 +105,29 @@ async function saveRankingHistory(
 
 function formatRankChange(current: number, previous: number): string {
   const diff = previous - current;
-  if (diff > 0) return ` ↑ ${diff}`;
-  if (diff < 0) return ` ↓ ${Math.abs(diff)}`;
-  return " →";
+  if (diff > 0) return `↑${diff}`;
+  if (diff < 0) return `↓${Math.abs(diff)}`;
+  return "→ 유지";
 }
 
 function formatPriceChange(current: number, previous: number): string {
   if (!previous || previous === current) return "";
   const diff = current - previous;
   const pct = ((diff / previous) * 100).toFixed(1);
-  if (diff < 0) return ` ↓ (전주 ${previous.toLocaleString()}원, ${pct}%)`;
-  return ` ↑ (전주 ${previous.toLocaleString()}원, +${pct}%)`;
+  if (diff < 0) return ` (전주比 ${pct}%)`;
+  return ` (전주比 +${pct}%)`;
+}
+
+function getMallType(link: string, mallName: string): string {
+  const url = link.toLowerCase();
+  const name = mallName.toLowerCase();
+  if (url.includes("smartstore.naver.com") || url.includes("brand.naver.com")) return "스마트스토어";
+  if (url.includes("coupang.com") || name.includes("쿠팡")) return "쿠팡";
+  if (url.includes("11st.co.kr") || name.includes("11번가")) return "11번가";
+  if (url.includes("gmarket.co.kr") || name.includes("지마켓")) return "지마켓";
+  if (url.includes("auction.co.kr") || name.includes("옥션")) return "옥션";
+  if (url.includes("lotteon.com") || name.includes("롯데")) return "롯데ON";
+  return mallName;
 }
 
 export async function searchNaverRanking(
@@ -122,42 +135,38 @@ export async function searchNaverRanking(
   _sortOrder: SortOrder,
   _period: MonitorDateRange
 ): Promise<ChannelResult> {
-  const allItems: { keyword: string; item: NaverShoppingItem; rank: number }[] = [];
+  const history = await getRankingHistory();
+  const publicItems: ChannelItem[] = [];
 
   for (const keyword of keywords) {
     const items = await fetchNaverShopping(keyword);
-    await saveRankingHistory(keyword, items);
-    items.forEach((item, idx) => {
-      allItems.push({ keyword, item, rank: idx + 1 });
+
+    // 네이버 쇼핑 검색 순위 그대로 (API 반환 순서 = 검색 노출 순위)
+    const ranked = items.map((item, idx) => ({ item, rank: idx + 1 }));
+    await saveRankingHistory(keyword, ranked);
+
+    ranked.forEach(({ item, rank }) => {
+      const key = `${keyword}:${stripHtml(item.mallName ?? "")}:${item.productId}`;
+      const hist = history[key];
+      const records = hist?.records ?? [];
+      const prevRecord = records.length >= 2 ? records[records.length - 2] : null;
+
+      const currentPrice = parseInt(item.lprice) || 0;
+      const rankChange = prevRecord ? formatRankChange(rank, prevRecord.rank) : "첫 수집";
+      const priceChange = prevRecord ? formatPriceChange(currentPrice, prevRecord.price) : "";
+      const mallType = getMallType(item.link ?? "", stripHtml(item.mallName ?? ""));
+      const brandName = stripHtml(item.brand || item.maker || "");
+
+      publicItems.push({
+        source: mallType,
+        title: stripHtml(item.title ?? "상품명 없음"),
+        preview: `[${keyword}] ${rank}위 · ${rankChange}${currentPrice ? ` · ${currentPrice.toLocaleString()}원${priceChange}` : ""}`,
+        link: item.link ?? "",
+        publishedAt: new Date().toISOString().split("T")[0],
+        tag: brandName || undefined,
+      });
     });
   }
-
-  const history = await getRankingHistory();
-
-  const publicItems: ChannelItem[] = allItems.map(({ keyword, item, rank }) => {
-    const key = `${keyword}:${stripHtml(item.mallName ?? "")}:${item.productId}`;
-    const hist = history[key];
-    const records = hist?.records ?? [];
-    const prevRecord = records.length >= 2 ? records[records.length - 2] : null;
-
-    const currentPrice = parseInt(item.lprice) || 0;
-    const rankChange = prevRecord ? formatRankChange(rank, prevRecord.rank) : " (첫 수집)";
-    const priceChange = prevRecord ? formatPriceChange(currentPrice, prevRecord.price) : "";
-
-    const rankText = `[${keyword}] ${rank}위${rankChange}`;
-    const priceText = currentPrice
-      ? `${currentPrice.toLocaleString()}원${priceChange}`
-      : "";
-
-    return {
-      source: stripHtml(item.mallName ?? "네이버 쇼핑"),
-      title: stripHtml(item.title ?? "상품명 없음"),
-      preview: [rankText, priceText].filter(Boolean).join(" · "),
-      link: item.link ?? "",
-      publishedAt: new Date().toISOString().split("T")[0],
-      tag: rank <= 3 ? `TOP ${rank}` : undefined,
-    };
-  });
 
   return {
     channel: "naver_ranking" as ChannelId,
