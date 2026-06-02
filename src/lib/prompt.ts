@@ -227,7 +227,8 @@ export function buildInsightsPrompt(
     return `### ${meta.label}\n${items || "_수집 항목 없음_"}`;
   });
 
-  return `꿈비 그룹(유아용품) 경쟁사 모니터링 데이터를 바탕으로 통합 인사이트 JSON만 출력하세요.
+  return `당신은 꿈비 그룹(유아용품) 경쟁사 모니터링 분석가입니다.
+아래 수집 데이터를 바탕으로 경쟁사 활동 관찰 리포트 JSON을 출력하세요.
 
 ## 조건
 - 모니터링 기간: ${periodLabel} (${period.startDate} ~ ${period.endDate})
@@ -236,14 +237,72 @@ export function buildInsightsPrompt(
 ## 수집 데이터
 ${channelSummary.join("\n\n")}
 
+## 작성 기준
+- 경쟁사들이 현재 집중하고 있는 활동/전략을 객관적으로 관찰하여 기술
+- "경쟁사 A는 B에 집중하고 있으며, C를 통해 D를 강조하는 것으로 보인다" 형식
+- 소비자 반응 키워드 파악
+- 즉시 대응 액션은 경쟁사 관찰 기반 단순 제안 1문장 (전략 수립은 통합 인사이트에서)
+
 ## 출력 (순수 JSON만, 코드블록 없음)
 {
   "insights": {
-    "consumerInterests": ["관심사1", "관심사2"],
-    "positiveKeywords": ["긍정1", "긍정2", "긍정3"],
-    "negativeKeywords": ["부정1", "부정2", "부정3"],
-    "immediateAction": "즉시 대응 액션 1문장",
-    "channelHighlights": ["채널별 한 줄 요약"]
+    "consumerInterests": ["소비자 관심사1", "관심사2", "관심사3"],
+    "positiveKeywords": ["긍정 반응 키워드1", "키워드2", "키워드3"],
+    "negativeKeywords": ["개선 요구 키워드1", "키워드2", "키워드3"],
+    "immediateAction": "경쟁사 관찰 기반 단순 제안 1문장",
+    "channelHighlights": ["채널별 경쟁사 핵심 활동 한 줄 요약"]
+  }
+}`;
+}
+
+export function buildIntegratedInsightsPrompt(
+  allResults: { groupId: string; keywords: string[]; channels: ChannelResult[] }[],
+  period: MonitorDateRange
+): string {
+  const periodLabel = formatPeriodForPrompt(period.startDate, period.endDate);
+
+  const allSummary = allResults.map(({ groupId, keywords, channels }) => {
+    const groupLabel = groupId === "naver" ? "네이버" : groupId === "social" ? "소셜" : "쇼핑";
+    const keywordList = keywords.map((k) => `"${k}"`).join(", ");
+    const channelSummary = channels.map((ch) => {
+      const meta = getChannelMeta(ch.channel);
+      const items = ch.publicItems
+        .slice(0, 5)
+        .map((item) => `  - [${item.source}] ${item.title}: ${item.preview.slice(0, 100)}`)
+        .join("\n");
+      return `#### ${meta.label}\n${items || "  _수집 항목 없음_"}`;
+    }).join("\n");
+    return `### ${groupLabel} 채널 (키워드: ${keywordList})\n${channelSummary}`;
+  }).join("\n\n");
+
+  return `당신은 꿈비 그룹(유아용품)의 마케팅 전략가입니다.
+아래 전 채널 경쟁사 모니터링 데이터를 종합 분석하여 꿈비의 전략 액션 플랜을 도출하세요.
+
+## 모니터링 기간
+${periodLabel} (${period.startDate} ~ ${period.endDate})
+
+## 전 채널 수집 데이터
+${allSummary}
+
+## 작성 기준
+- 경쟁사들의 활동을 종합적으로 분석하여 꿈비가 취해야 할 전략 도출
+- "경쟁사들은 A에 집중하고 있으므로, 꿈비는 B를 통해 C를 달성해야 한다" 형식
+- 벤치마킹 포인트 + 꿈비만의 차별화 방향 포함
+- 즉시 실행 가능한 구체적 액션 3가지 이상 제시
+- 채널별 전략 방향도 포함
+
+## 출력 (순수 JSON만, 코드블록 없음)
+{
+  "integratedInsights": {
+    "competitorSummary": "전 채널 경쟁사 핵심 활동 종합 요약 (3~4문장)",
+    "benchmarkPoints": ["벤치마킹 포인트1", "포인트2", "포인트3"],
+    "kkumbiStrategy": "꿈비의 핵심 대응 전략 방향 (2~3문장)",
+    "actionPlan": [
+      "① [즉시실행] 구체적 액션1",
+      "② [단기전략] 구체적 액션2",
+      "③ [차별화] 구체적 액션3"
+    ],
+    "channelStrategy": ["채널별 꿈비 전략 방향 한 줄씩"]
   }
 }`;
 }
