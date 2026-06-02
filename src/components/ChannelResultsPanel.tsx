@@ -81,16 +81,27 @@ export function ChannelResultsPanel({ channelResult }: ChannelResultsPanelProps)
 }
 
 function RankingSection({ items }: { items: ChannelItem[] }) {
-  const keywordMap: Record<string, ChannelItem[]> = {};
+  const keywordMap: Record<string, { summary: ChannelItem | null; items: ChannelItem[] }> = {};
+
   for (const item of items) {
-    const keyword = item.preview?.split("]")[0].replace("[", "") ?? "기타";
-    if (!keywordMap[keyword]) keywordMap[keyword] = [];
-    keywordMap[keyword].push(item);
+    const previewMatch = item.preview?.match(/^\[(.+?)\]/);
+    const titleMatch = item.title?.match(/^\[(.+?)\]/);
+    const keyword = item.tag === "자사브랜드"
+      ? (titleMatch?.[1] ?? "기타")
+      : (previewMatch?.[1] ?? "기타");
+
+    if (!keywordMap[keyword]) keywordMap[keyword] = { summary: null, items: [] };
+
+    if (item.tag === "자사브랜드") {
+      keywordMap[keyword].summary = item;
+    } else {
+      keywordMap[keyword].items.push(item);
+    }
   }
 
   const keywords = Object.keys(keywordMap);
   const [activeKeyword, setActiveKeyword] = useState(keywords[0] ?? "");
-  const activeItems = keywordMap[activeKeyword] ?? [];
+  const active = keywordMap[activeKeyword];
 
   return (
     <div className="space-y-4">
@@ -107,80 +118,102 @@ function RankingSection({ items }: { items: ChannelItem[] }) {
               }`}
             >
               {kw}
-              <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
-                activeKeyword === kw ? "bg-white/30 text-white" : "bg-stone-100 text-stone-500"
-              }`}>
-                {keywordMap[kw].length}
-              </span>
             </button>
           ))}
         </div>
       )}
 
+      {/* 자사 브랜드 노출 현황 요약 */}
+      {active?.summary && (
+        <div className={`rounded-xl border p-4 ${
+          active.summary.source.includes("🟢")
+            ? "border-emerald-200 bg-emerald-50"
+            : "border-rose-200 bg-rose-50"
+        }`}>
+          <p className="text-sm font-bold text-stone-700">{active.summary.source}</p>
+          <p className="text-base font-bold mt-1 text-stone-900">{active.summary.title}</p>
+          <p className="text-xs text-stone-600 mt-1">{active.summary.preview}</p>
+        </div>
+      )}
+
+      {/* 전체 순위 목록 */}
       <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
         <header className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-bold text-stone-800">
-            검색 노출 순위 — {activeKeyword}
+            네이버 쇼핑 검색 순위 — {activeKeyword}
           </h2>
           <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-            {activeItems.length}건
+            {active?.items.length ?? 0}건
           </span>
         </header>
 
-        <ul className="space-y-2">
-          {activeItems.map((item, i) => {
+        <ul className="space-y-2 max-h-[900px] overflow-y-auto pr-1">
+          {(active?.items ?? []).map((item, i) => {
             const previewParts = (item.preview ?? "").split(" · ");
-            const rankText = previewParts[0] ?? "";
-            const priceText = previewParts[1] ?? "";
-            const isUp = rankText.includes("↑");
-            const isDown = rankText.includes("↓");
-            const isFirst = rankText.includes("첫 수집");
-            const rankNum = i + 1;
+            const rankPart = previewParts[1] ?? "";
+            const changePart = previewParts[2] ?? "";
+            const pricePart = previewParts[3] ?? "";
+            const rankNum = parseInt(rankPart.replace("위", "")) || i + 1;
+            const isKkumbi = item.title.startsWith("⭐");
+            const isUp = changePart.includes("↑");
+            const isDown = changePart.includes("↓");
 
             return (
               <li
                 key={`${item.link}-${i}`}
-                className="flex gap-3 rounded-xl border border-stone-100 bg-stone-50 p-4 transition hover:border-kkumbi-300 hover:shadow-sm"
+                className={`flex gap-3 rounded-xl border p-4 transition hover:shadow-sm ${
+                  isKkumbi
+                    ? "border-kkumbi-300 bg-kkumbi-50"
+                    : "border-stone-100 bg-stone-50 hover:border-kkumbi-200"
+                }`}
               >
-                <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                  rankNum <= 3 ? "bg-kkumbi-500 text-white" : "bg-stone-200 text-stone-600"
+                <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  rankNum <= 3 ? "bg-kkumbi-500 text-white" :
+                  rankNum <= 10 ? "bg-stone-300 text-stone-700" :
+                  "bg-stone-100 text-stone-500"
                 }`}>
                   {rankNum}
                 </span>
+
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="text-[11px] font-semibold text-kkumbi-600 bg-kkumbi-50 px-2 py-0.5 rounded-full">
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                      isKkumbi
+                        ? "text-kkumbi-700 bg-kkumbi-100"
+                        : "text-stone-600 bg-stone-200"
+                    }`}>
                       {item.source}
                     </span>
                     {item.tag && (
-                      <span className="rounded-full bg-kkumbi-100 px-2 py-0.5 text-[10px] font-bold text-kkumbi-700">
+                      <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-500">
                         {item.tag}
                       </span>
                     )}
+                    {isKkumbi && (
+                      <span className="rounded-full bg-kkumbi-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                        자사
+                      </span>
+                    )}
                   </div>
+
                   <LinkedTitle
-                    title={item.title}
+                    title={item.title.replace("⭐ ", "")}
                     link={item.link}
                     className="block text-sm font-semibold text-stone-800 leading-snug"
                     linkClassName="hover:text-kkumbi-600 hover:underline"
                   />
+
                   <div className="mt-1.5 flex flex-wrap gap-3">
-                    {rankText && (
+                    {changePart && (
                       <span className={`text-xs font-semibold ${
                         isUp ? "text-emerald-600" :
-                        isDown ? "text-rose-500" :
-                        isFirst ? "text-stone-400" : "text-stone-500"
+                        isDown ? "text-rose-500" : "text-stone-400"
                       }`}>
-                        {rankText.split("] ")[1]}
+                        {changePart}
                       </span>
                     )}
-                    {priceText && (
-                      <span className={`text-xs font-medium ${
-                        priceText.includes("↓") ? "text-blue-600" :
-                        priceText.includes("↑") ? "text-rose-500" : "text-stone-500"
-                      }`}>
-                        {priceText}
-                      </span>
+                    {pricePart && (
+                      <span className="text-xs text-stone-500">{pricePart}</span>
                     )}
                   </div>
                 </div>
