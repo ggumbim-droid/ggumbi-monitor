@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     const rankingSelected = selectedChannels.some((id) => id === "naver_ranking");
     const claudeChannelIds = getClaudeWebSearchChannels(
       selectedChannels.filter(
-        (id) => !isSmartstoreChannel(id) && id !== "smartstore_reviews"
+        (id) => !isSmartstoreChannel(id) && id !== "smartstore_reviews" && id !== "naver_ranking"
       )
     );
 
