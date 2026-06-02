@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { KeywordInput } from "@/components/KeywordInput";
-import { ChannelSelect } from "@/components/ChannelSelect";
 import { DateRangeSelect, getDefaultDateRange } from "@/components/DateRangeSelect";
 import { MonitorPeriodBanner } from "@/components/MonitorPeriodBanner";
 import { SortSelect } from "@/components/SortSelect";
@@ -11,7 +10,6 @@ import { ChannelTabs } from "@/components/ChannelTabs";
 import { LoginRequiredSection } from "@/components/LoginRequiredSection";
 import { InsightsPanel } from "@/components/InsightsPanel";
 import { buildNotionReport } from "@/lib/report";
-import { ALL_CHANNEL_IDS } from "@/lib/channels";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import type { ChannelId, MonitorDateRange, MonitorResult, SortOrder } from "@/types/monitor";
 
@@ -27,6 +25,45 @@ const PRESET_PERIODS = [
   { label: "직접입력", value: "custom" },
 ];
 const BRAND_COLORS = ["#FF6B35","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD"];
+
+// 채널 그룹 정의
+const CHANNEL_GROUPS = [
+  {
+    id: "naver",
+    label: "네이버",
+    icon: "📰",
+    channels: ["naver_cafe", "naver_blog", "naver_news"] as ChannelId[],
+    description: "카페 · 블로그 · 뉴스",
+  },
+  {
+    id: "social",
+    label: "소셜",
+    icon: "📱",
+    channels: ["youtube", "instagram", "meta_ads"] as ChannelId[],
+    description: "유튜브 · 인스타 · Meta 광고",
+  },
+  {
+    id: "shopping",
+    label: "쇼핑",
+    icon: "🛒",
+    channels: ["smartstore", "smartstore_reviews", "naver_ranking"] as ChannelId[],
+    description: "스마트스토어 · 리뷰추이 · 순위추이",
+  },
+];
+
+const CHANNEL_LABELS: Record<ChannelId, string> = {
+  naver_cafe: "카페",
+  naver_blog: "블로그",
+  naver_news: "뉴스",
+  youtube: "유튜브",
+  instagram: "인스타",
+  meta_ads: "Meta 광고",
+  smartstore: "스토어",
+  smartstore_reviews: "리뷰추이",
+  naver_ranking: "순위추이",
+};
+
+const COMING_SOON: ChannelId[] = ["meta_ads", "smartstore_reviews"];
 
 function getToday() { return new Date().toISOString().split("T")[0]; }
 function getDateBefore(months: number) {
@@ -58,17 +95,41 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"monitor" | "trend">("monitor");
 
   const [keywords, setKeywords] = useState<string[]>([]);
-  const [selectedChannels, setSelectedChannels] = useState<ChannelId[]>(["naver_cafe", "naver_blog", "naver_news", "youtube"]);
   const [dateRange, setDateRange] = useState<MonitorDateRange>(getDefaultDateRange);
   const [sortOrder, setSortOrder] = useState<SortOrder>("latest");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<MonitorResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [reSearching, setReSearching] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const allLoginItems = useMemo(() => result?.channels.flatMap((c) => c.loginRequired) ?? [], [result]);
 
+  // 그룹별 상태
+  const [groupResults, setGroupResults] = useState<Record<string, MonitorResult | null>>({
+    naver: null, social: null, shopping: null,
+  });
+  const [groupLoading, setGroupLoading] = useState<Record<string, boolean>>({
+    naver: false, social: false, shopping: false,
+  });
+  const [groupErrors, setGroupErrors] = useState<Record<string, string | null>>({
+    naver: null, social: null, shopping: null,
+  });
+  const [groupChannels, setGroupChannels] = useState<Record<string, ChannelId[]>>({
+    naver: ["naver_cafe", "naver_blog", "naver_news"],
+    social: ["youtube", "instagram"],
+    shopping: ["smartstore", "naver_ranking"],
+  });
+
+  const abortRefs = useRef<Record<string, AbortController | null>>({});
+
+  // 섹션 refs (스크롤용)
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  const allLoginItems = useMemo(() => {
+    return Object.values(groupResults)
+      .filter(Boolean)
+      .flatMap((r) => r!.channels.flatMap((c) => c.loginRequired));
+  }, [groupResults]);
+
+  const anyResult = Object.values(groupResults).some(Boolean);
+
+  // 트렌드 상태
   const [keywordGroups, setKeywordGroups] = useState<KeywordGroups>({});
   const [groupList, setGroupList] = useState<KeywordGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -109,45 +170,55 @@ export default function HomePage() {
       .finally(() => setKwLoading(false));
   }, [activeTab]);
 
-  const handleMonitor = useCallback(async () => {
+  const handleGroupMonitor = useCallback(async (groupId: string) => {
     const trimmed = keywords.map((k) => k.trim()).filter(Boolean);
-    if (!trimmed.length) { setError("최소 1개의 키워드를 입력해 주세요."); return; }
-    if (!selectedChannels.length) { setError("최소 1개의 채널을 선택해 주세요."); return; }
-    if (!isValidDateRange(dateRange.startDate, dateRange.endDate)) { setError("시작일은 종료일보다 이후일 수 없습니다."); return; }
-    abortRef.current?.abort();
+    if (!trimmed.length) {
+      setGroupErrors((prev) => ({ ...prev, [groupId]: "최소 1개의 키워드를 입력해 주세요." }));
+      return;
+    }
+    if (!isValidDateRange(dateRange.startDate, dateRange.endDate)) {
+      setGroupErrors((prev) => ({ ...prev, [groupId]: "시작일은 종료일보다 이후일 수 없습니다." }));
+      return;
+    }
+
+    abortRefs.current[groupId]?.abort();
     const controller = new AbortController();
-    abortRef.current = controller;
-    setLoading(true); setError(null); setCopied(false);
+    abortRefs.current[groupId] = controller;
+
+    setGroupLoading((prev) => ({ ...prev, [groupId]: true }));
+    setGroupErrors((prev) => ({ ...prev, [groupId]: null }));
+
     try {
+      const channels = groupChannels[groupId];
       const res = await fetch("/api/monitor", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keywords: trimmed, sortOrder, channels: selectedChannels, period: dateRange }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keywords: trimmed, sortOrder, channels, period: dateRange }),
         signal: controller.signal,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "모니터링 요청에 실패했습니다.");
-      setResult(data as MonitorResult);
+      setGroupResults((prev) => ({ ...prev, [groupId]: data as MonitorResult }));
+
+      // 결과로 스크롤
+      setTimeout(() => {
+        sectionRefs.current[`result_${groupId}`]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 300);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
-      setResult(null);
+      setGroupErrors((prev) => ({ ...prev, [groupId]: err instanceof Error ? err.message : "오류가 발생했습니다." }));
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setLoading(false);
+      setGroupLoading((prev) => ({ ...prev, [groupId]: false }));
     }
-  }, [keywords, sortOrder, selectedChannels, dateRange]);
-
-  const handleStopMonitor = useCallback(() => {
-    abortRef.current?.abort(); abortRef.current = null;
-    setLoading(false); setError(null); setResult(null); setCopied(false);
-  }, []);
+  }, [keywords, sortOrder, dateRange, groupChannels]);
 
   const handleCopyReport = useCallback(async () => {
-    if (!result) return;
-    const report = buildNotionReport(result);
+    const firstResult = Object.values(groupResults).find(Boolean);
+    if (!firstResult) return;
+    const report = buildNotionReport(firstResult);
     await navigator.clipboard.writeText(report);
     setCopied(true); setTimeout(() => setCopied(false), 2500);
-  }, [result]);
+  }, [groupResults]);
 
   async function fetchTrend() {
     setTrendLoading(true); setTrendError(""); setChartData([]); setHiddenBrands(new Set()); setFocusedBrand("");
@@ -196,18 +267,54 @@ export default function HomePage() {
     } catch {}
   }
 
+  const toggleGroupChannel = (groupId: string, channelId: ChannelId) => {
+    if (COMING_SOON.includes(channelId)) return;
+    setGroupChannels((prev) => {
+      const current = prev[groupId] ?? [];
+      const updated = current.includes(channelId)
+        ? current.filter((c) => c !== channelId)
+        : [...current, channelId];
+      return { ...prev, [groupId]: updated };
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-kkumbi-50 via-white to-kkumbi-50/30">
-      <header className="border-b border-kkumbi-100 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+      <header className="border-b border-kkumbi-100 bg-white/80 backdrop-blur sticky top-0 z-10">
+        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-kkumbi-500">꿈비 그룹</p>
-              <h1 className="text-2xl font-bold text-stone-900 sm:text-3xl">전 채널 통합 경쟁사 모니터링</h1>
+              <h1 className="text-xl font-bold text-stone-900 sm:text-2xl">전 채널 통합 경쟁사 모니터링</h1>
             </div>
-            <p className="text-sm text-stone-500">카페 · 블로그 · 뉴스 · 유튜브 · 인스타 · Meta 광고 · 스토어 · 리뷰</p>
+            {/* 채널 바로가기 */}
+            <div className="flex flex-wrap gap-1 mt-1 sm:mt-0">
+              {CHANNEL_GROUPS.map((group) => (
+                <div key={group.id} className="flex items-center gap-1">
+                  {group.channels.map((chId) => (
+                    <button
+                      key={chId}
+                      onClick={() => {
+                        setActiveTab("monitor");
+                        setTimeout(() => {
+                          sectionRefs.current[`group_${group.id}`]?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }, 100);
+                      }}
+                      className={`text-xs px-2 py-1 rounded-full transition ${
+                        COMING_SOON.includes(chId)
+                          ? "text-stone-300 cursor-default"
+                          : "text-stone-500 hover:text-kkumbi-600 hover:bg-kkumbi-50"
+                      }`}
+                    >
+                      {CHANNEL_LABELS[chId]}
+                    </button>
+                  ))}
+                  <span className="text-stone-200 text-xs">·</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-1 mt-4">
+          <div className="flex gap-1 mt-3">
             <button onClick={() => setActiveTab("monitor")}
               className={`px-5 py-2 rounded-t-lg text-sm font-semibold transition-colors ${activeTab === "monitor" ? "bg-kkumbi-500 text-white" : "bg-white text-stone-500 border border-stone-200 hover:bg-stone-50"}`}>
               경쟁사 모니터링
@@ -220,73 +327,158 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
         {activeTab === "monitor" && (
           <>
+            {/* 공통 설정 */}
             <section className="rounded-2xl border border-kkumbi-100 bg-white p-6 shadow-lg shadow-kkumbi-100/40">
-              <div className="space-y-6">
-                <KeywordInput keywords={keywords} onChange={setKeywords} disabled={loading} />
-                <DateRangeSelect value={dateRange} onChange={setDateRange} disabled={loading} />
-                <ChannelSelect selected={selectedChannels} onChange={setSelectedChannels} disabled={loading} />
-                <SortSelect value={sortOrder} onChange={setSortOrder} disabled={loading} />
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <button type="button" onClick={handleMonitor} disabled={loading}
-                    className="flex-1 rounded-xl bg-kkumbi-500 py-3.5 text-sm font-bold text-white shadow-lg shadow-kkumbi-300/50 transition hover:bg-kkumbi-600 disabled:cursor-not-allowed disabled:opacity-60">
-                    {loading ? (
-                      <span className="flex items-center justify-center gap-2"><Spinner />채널별 검색 중… ({selectedChannels.length}개)</span>
-                    ) : "통합 모니터링 시작"}
-                  </button>
-                  {loading && (
-                    <button type="button" onClick={handleStopMonitor}
-                      className="rounded-xl border border-stone-300 bg-white px-6 py-3.5 text-sm font-bold text-stone-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 sm:shrink-0">
-                      모니터링 중지
-                    </button>
-                  )}
-                </div>
-                {error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+              <h2 className="text-base font-bold text-stone-700 mb-4">공통 설정</h2>
+              <div className="space-y-4">
+                <KeywordInput keywords={keywords} onChange={setKeywords} disabled={false} />
+                <DateRangeSelect value={dateRange} onChange={setDateRange} disabled={false} />
+                <SortSelect value={sortOrder} onChange={setSortOrder} disabled={false} />
               </div>
             </section>
 
-            {result && (
-              <>
-                <MonitorPeriodBanner period={result.period} />
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-stone-500">
-                    수집 완료 · {new Date(result.searchedAt).toLocaleString("ko-KR")} · {result.selectedChannels.length}개 채널
-                  </p>
-                  <button type="button" onClick={handleCopyReport}
-                    className="rounded-xl border border-kkumbi-300 bg-white px-5 py-2.5 text-sm font-semibold text-kkumbi-700 shadow-sm transition hover:bg-kkumbi-50">
-                    {copied ? "복사 완료!" : "노션용 리포트 복사"}
-                  </button>
+            {/* 그룹별 모니터링 */}
+            {CHANNEL_GROUPS.map((group) => (
+              <section
+                key={group.id}
+                ref={(el) => { sectionRefs.current[`group_${group.id}`] = el; }}
+                className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden"
+              >
+                {/* 그룹 헤더 */}
+                <div className="bg-stone-50 border-b border-stone-100 px-6 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{group.icon}</span>
+                    <div>
+                      <h2 className="text-base font-bold text-stone-800">{group.label} 채널</h2>
+                      <p className="text-xs text-stone-500">{group.description}</p>
+                    </div>
+                  </div>
+                  {/* 채널 체크박스 */}
+                  <div className="flex flex-wrap gap-2">
+                    {group.channels.map((chId) => {
+                      const isComingSoon = COMING_SOON.includes(chId);
+                      const isChecked = groupChannels[group.id]?.includes(chId) ?? false;
+                      return (
+                        <label
+                          key={chId}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium cursor-pointer transition ${
+                            isComingSoon
+                              ? "border-stone-100 bg-stone-50 text-stone-300 cursor-not-allowed"
+                              : isChecked
+                              ? "border-kkumbi-400 bg-kkumbi-50 text-kkumbi-700"
+                              : "border-stone-200 bg-white text-stone-500 hover:border-kkumbi-200"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={isComingSoon}
+                            onChange={() => toggleGroupChannel(group.id, chId)}
+                            className="h-3 w-3"
+                          />
+                          {CHANNEL_LABELS[chId]}
+                          {isComingSoon && <span className="text-[10px] text-stone-300">(예정)</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-                <ChannelTabs
-                  channels={result.channels}
-                  selectedIds={result.selectedChannels}
-                  sortOrder={sortOrder}
-                  onSortChange={async (newSort) => {
-                    setSortOrder(newSort);
-                    setReSearching(true);
-                    try {
-                      const res = await fetch("/api/monitor", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          keywords: keywords.map((k) => k.trim()).filter(Boolean),
-                          sortOrder: newSort,
-                          channels: selectedChannels,
-                          period: dateRange,
-                        }),
-                      });
-                      const data = await res.json();
-                      if (res.ok) setResult(data);
-                    } finally {
-                      setReSearching(false);
-                    }
-                  }}
-                  reSearching={reSearching}
-                />
+
+                {/* 모니터링 시작 버튼 */}
+                <div className="px-6 py-4 border-b border-stone-100">
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleGroupMonitor(group.id)}
+                      disabled={groupLoading[group.id]}
+                      className="flex-1 rounded-xl bg-kkumbi-500 py-3 text-sm font-bold text-white shadow transition hover:bg-kkumbi-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {groupLoading[group.id] ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Spinner />검색 중…
+                        </span>
+                      ) : `${group.label} 채널 모니터링 시작`}
+                    </button>
+                    {groupLoading[group.id] && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          abortRefs.current[group.id]?.abort();
+                          setGroupLoading((prev) => ({ ...prev, [group.id]: false }));
+                        }}
+                        className="rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-700 hover:bg-rose-50 hover:text-rose-700"
+                      >
+                        중지
+                      </button>
+                    )}
+                  </div>
+                  {groupErrors[group.id] && (
+                    <p className="mt-2 rounded-lg bg-rose-50 px-4 py-2 text-sm text-rose-700">{groupErrors[group.id]}</p>
+                  )}
+                </div>
+
+                {/* 결과 */}
+                {groupResults[group.id] && (
+                  <div
+                    ref={(el) => { sectionRefs.current[`result_${group.id}`] = el; }}
+                    className="p-6"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-sm text-stone-500">
+                        수집 완료 · {new Date(groupResults[group.id]!.searchedAt).toLocaleString("ko-KR")}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleCopyReport}
+                        className="rounded-xl border border-kkumbi-300 bg-white px-4 py-2 text-sm font-semibold text-kkumbi-700 hover:bg-kkumbi-50"
+                      >
+                        {copied ? "복사 완료!" : "노션용 리포트 복사"}
+                      </button>
+                    </div>
+                    <MonitorPeriodBanner period={groupResults[group.id]!.period} />
+                    <div className="mt-4">
+                      <ChannelTabs
+                        channels={groupResults[group.id]!.channels}
+                        selectedIds={groupResults[group.id]!.selectedChannels}
+                        sortOrder={sortOrder}
+                        onSortChange={async (newSort) => {
+                          setSortOrder(newSort);
+                          setReSearching(true);
+                          try {
+                            const res = await fetch("/api/monitor", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                keywords: keywords.map((k) => k.trim()).filter(Boolean),
+                                sortOrder: newSort,
+                                channels: groupChannels[group.id],
+                                period: dateRange,
+                              }),
+                            });
+                            const data = await res.json();
+                            if (res.ok) setGroupResults((prev) => ({ ...prev, [group.id]: data }));
+                          } finally {
+                            setReSearching(false);
+                          }
+                        }}
+                        reSearching={reSearching}
+                      />
+                    </div>
+                  </div>
+                )}
+              </section>
+            ))}
+
+            {/* 전체 로그인 필요 + 인사이트 */}
+            {anyResult && (
+              <>
                 <LoginRequiredSection items={allLoginItems} />
-                <InsightsPanel insights={result.insights} />
+                {Object.values(groupResults).find(Boolean)?.insights && (
+                  <InsightsPanel insights={Object.values(groupResults).find(Boolean)!.insights} />
+                )}
               </>
             )}
           </>
