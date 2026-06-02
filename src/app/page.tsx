@@ -33,7 +33,6 @@ const CHANNEL_GROUPS = [
     icon: "📰",
     channels: ["naver_cafe", "naver_blog", "naver_news"] as ChannelId[],
     description: "카페 · 블로그 · 뉴스",
-    placeholder: "예: 나리몽 분유포트, 꿈비 범퍼침대",
   },
   {
     id: "social",
@@ -41,7 +40,6 @@ const CHANNEL_GROUPS = [
     icon: "📱",
     channels: ["youtube", "instagram", "meta_ads"] as ChannelId[],
     description: "유튜브 · 인스타 · Meta 광고",
-    placeholder: "예: 나리몽, 도노도노, 마베비",
   },
   {
     id: "shopping",
@@ -49,7 +47,6 @@ const CHANNEL_GROUPS = [
     icon: "🛒",
     channels: ["smartstore", "smartstore_reviews", "naver_ranking"] as ChannelId[],
     description: "스마트스토어 · 리뷰추이 · 순위추이",
-    placeholder: "예: 휴대용분유포트, 범퍼침대",
   },
 ];
 
@@ -93,6 +90,14 @@ function CustomTooltip({ active, payload, label, hoveredBrand }: { active?: bool
   );
 }
 
+interface IntegratedInsights {
+  competitorSummary: string;
+  benchmarkPoints: string[];
+  kkumbiStrategy: string;
+  actionPlan: string[];
+  channelStrategy: string[];
+}
+
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"monitor" | "trend">("monitor");
   const [dateRange, setDateRange] = useState<MonitorDateRange>(getDefaultDateRange);
@@ -100,12 +105,9 @@ export default function HomePage() {
   const [copied, setCopied] = useState(false);
   const [reSearching, setReSearching] = useState(false);
 
-  // 그룹별 키워드
   const [groupKeywords, setGroupKeywords] = useState<Record<string, string[]>>({
     naver: [], social: [], shopping: [],
   });
-
-  // 그룹별 결과/로딩/에러
   const [groupResults, setGroupResults] = useState<Record<string, MonitorResult | null>>({
     naver: null, social: null, shopping: null,
   });
@@ -124,7 +126,6 @@ export default function HomePage() {
   const abortRefs = useRef<Record<string, AbortController | null>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
-  // 트렌드 상태
   const [keywordGroups, setKeywordGroups] = useState<KeywordGroups>({});
   const [groupList, setGroupList] = useState<KeywordGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -285,7 +286,6 @@ export default function HomePage() {
               <p className="text-xs font-semibold uppercase tracking-widest text-kkumbi-500">꿈비 그룹</p>
               <h1 className="text-xl font-bold text-stone-900 sm:text-2xl">전 채널 통합 경쟁사 모니터링</h1>
             </div>
-            {/* 채널 바로가기 */}
             <div className="flex flex-wrap gap-1 mt-1 sm:mt-0">
               {CHANNEL_GROUPS.map((group) => (
                 <div key={group.id} className="flex items-center gap-1">
@@ -329,7 +329,6 @@ export default function HomePage() {
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
         {activeTab === "monitor" && (
           <>
-            {/* 공통 설정: 기간 + 정렬만 */}
             <section className="rounded-2xl border border-kkumbi-100 bg-white p-6 shadow-lg shadow-kkumbi-100/40">
               <h2 className="text-base font-bold text-stone-700 mb-4">공통 설정</h2>
               <div className="space-y-4">
@@ -338,14 +337,12 @@ export default function HomePage() {
               </div>
             </section>
 
-            {/* 그룹별 모니터링 */}
             {CHANNEL_GROUPS.map((group) => (
               <section
                 key={group.id}
                 ref={(el) => { sectionRefs.current[`group_${group.id}`] = el; }}
                 className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden"
               >
-                {/* 그룹 헤더 */}
                 <div className="bg-stone-50 border-b border-stone-100 px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-xl">{group.icon}</span>
@@ -354,7 +351,6 @@ export default function HomePage() {
                       <p className="text-xs text-stone-500">{group.description}</p>
                     </div>
                   </div>
-                  {/* 채널 체크박스 */}
                   <div className="flex flex-wrap gap-2">
                     {group.channels.map((chId) => {
                       const isComingSoon = COMING_SOON.includes(chId);
@@ -385,7 +381,6 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* 그룹별 키워드 입력 + 모니터링 시작 */}
                 <div className="px-6 py-4 border-b border-stone-100 space-y-3">
                   <KeywordInput
                     keywords={groupKeywords[group.id] ?? []}
@@ -423,13 +418,12 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* 결과 */}
                 {groupResults[group.id] && (
                   <div
                     ref={(el) => { sectionRefs.current[`result_${group.id}`] = el; }}
-                    className="p-6"
+                    className="p-6 space-y-4"
                   >
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between">
                       <p className="text-sm text-stone-500">
                         수집 완료 · {new Date(groupResults[group.id]!.searchedAt).toLocaleString("ko-KR")}
                       </p>
@@ -442,34 +436,35 @@ export default function HomePage() {
                       </button>
                     </div>
                     <MonitorPeriodBanner period={groupResults[group.id]!.period} />
-                    <div className="mt-4">
-                      <ChannelTabs
-                        channels={groupResults[group.id]!.channels}
-                        selectedIds={groupResults[group.id]!.selectedChannels}
-                        sortOrder={sortOrder}
-                        onSortChange={async (newSort) => {
-                          setSortOrder(newSort);
-                          setReSearching(true);
-                          try {
-                            const res = await fetch("/api/monitor", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                keywords: (groupKeywords[group.id] ?? []).map((k) => k.trim()).filter(Boolean),
-                                sortOrder: newSort,
-                                channels: groupChannels[group.id],
-                                period: dateRange,
-                              }),
-                            });
-                            const data = await res.json();
-                            if (res.ok) setGroupResults((prev) => ({ ...prev, [group.id]: data }));
-                          } finally {
-                            setReSearching(false);
-                          }
-                        }}
-                        reSearching={reSearching}
-                      />
-                    </div>
+                    <ChannelTabs
+                      channels={groupResults[group.id]!.channels}
+                      selectedIds={groupResults[group.id]!.selectedChannels}
+                      sortOrder={sortOrder}
+                      onSortChange={async (newSort) => {
+                        setSortOrder(newSort);
+                        setReSearching(true);
+                        try {
+                          const res = await fetch("/api/monitor", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              keywords: (groupKeywords[group.id] ?? []).map((k) => k.trim()).filter(Boolean),
+                              sortOrder: newSort,
+                              channels: groupChannels[group.id],
+                              period: dateRange,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (res.ok) setGroupResults((prev) => ({ ...prev, [group.id]: data }));
+                        } finally {
+                          setReSearching(false);
+                        }
+                      }}
+                      reSearching={reSearching}
+                    />
+                    {groupResults[group.id]!.insights && (
+                      <InsightsPanel insights={groupResults[group.id]!.insights} />
+                    )}
                   </div>
                 )}
               </section>
@@ -485,6 +480,8 @@ export default function HomePage() {
                 />
               </>
             )}
+          </>
+        )}
 
         {activeTab === "trend" && (
           <div className="space-y-4">
@@ -630,6 +627,7 @@ export default function HomePage() {
     </div>
   );
 }
+
 function IntegratedInsightsButton({
   groupResults,
   groupKeywords,
@@ -640,17 +638,10 @@ function IntegratedInsightsButton({
   dateRange: MonitorDateRange;
 }) {
   const [loading, setLoading] = useState(false);
-  const [integrated, setIntegrated] = useState<{
-    competitorSummary: string;
-    benchmarkPoints: string[];
-    kkumbiStrategy: string;
-    actionPlan: string[];
-    channelStrategy: string[];
-  } | null>(null);
+  const [integrated, setIntegrated] = useState<IntegratedInsights | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const activeGroups = Object.entries(groupResults).filter(([, r]) => r !== null);
-  const allGroupsDone = activeGroups.length > 0;
 
   async function handleIntegrated() {
     setLoading(true);
@@ -679,7 +670,7 @@ function IntegratedInsightsButton({
     }
   }
 
-  if (!allGroupsDone) return null;
+  if (activeGroups.length === 0) return null;
 
   return (
     <div className="space-y-4">
@@ -705,6 +696,7 @@ function IntegratedInsightsButton({
     </div>
   );
 }
+
 function Spinner() {
   return (
     <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
