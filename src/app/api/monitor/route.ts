@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     const youtubeSelected = selectedChannels.some(isYoutubeApiChannel);
     const metaAdsSelected = selectedChannels.some(isMetaAdsApiChannel);
     const smartstoreSelected = selectedChannels.some(isSmartstoreChannel);
-    const rankingSelected = selectedChannels.some((id) => id === "smartstore_reviews");
+    const rankingSelected = selectedChannels.some((id) => id === "naver_ranking");
     const claudeChannelIds = getClaudeWebSearchChannels(
       selectedChannels.filter(
         (id) => !isSmartstoreChannel(id) && id !== "smartstore_reviews"
