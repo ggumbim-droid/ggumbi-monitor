@@ -147,7 +147,22 @@ export async function searchNaverRanking(
   const publicItems: ChannelItem[] = [];
 
   for (const keyword of keywords) {
-    const items = await fetchNaverShopping(keyword);
+    // 띄어쓰기 버전 둘 다 검색 후 합치기
+    const keyword2 = keyword.replace(/\s+/g, "");
+    const [items1, items2] = await Promise.all([
+      fetchNaverShopping(keyword),
+      keyword !== keyword2 ? fetchNaverShopping(keyword2) : Promise.resolve([]),
+    ]);
+
+    // 중복 제거 (productId 기준)
+    const seen = new Set<string>();
+    const merged = [...items1, ...items2].filter((item) => {
+      if (seen.has(item.productId)) return false;
+      seen.add(item.productId);
+      return true;
+    });
+
+    const items = merged;
     const ranked = items.map((item, idx) => ({ item, rank: idx + 1 }));
     await saveRankingHistory(keyword, ranked);
 
