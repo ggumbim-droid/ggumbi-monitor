@@ -163,8 +163,14 @@ async function kvSet(key: string, value: object) {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const reset = searchParams.get("reset");
+    if (reset === "true") {
+      await kvSet("keyword_groups", DEFAULT_GROUPS);
+      return NextResponse.json(DEFAULT_GROUPS);
+    }
     const stored = await kvGet("keyword_groups");
     if (stored) return NextResponse.json(stored);
     await kvSet("keyword_groups", DEFAULT_GROUPS);
