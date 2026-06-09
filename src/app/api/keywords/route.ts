@@ -85,8 +85,17 @@ const DEFAULT_GROUPS = {
       },
     ],
   },
-  pamia_coolmat: {
-    label: "파미야 쿨매트",
+  babadito: {
+    label: "바바디토",
+    brands: [
+      {
+        name: "바바디토",
+        keywords: [],
+      },
+    ],
+  },
+  dog_coolmat: {
+    label: "강아지쿨매트",
     brands: [
       {
         name: "파미야",
@@ -110,17 +119,8 @@ const DEFAULT_GROUPS = {
       },
     ],
   },
-  babadito: {
-    label: "바바디토",
-    brands: [
-      {
-        name: "바바디토",
-        keywords: [],
-      },
-    ],
-  },
   cat_tower: {
-    label: "캣타워",
+    label: "고양이캣타워",
     brands: [
       {
         name: "캣타워",
