@@ -144,6 +144,7 @@ export default function HomePage() {
   const [addingBrand, setAddingBrand] = useState<{ groupId: string; brandName: string } | null>(null);
   const [newKeyword, setNewKeyword] = useState("");
   const [kwError, setKwError] = useState("");
+  const [exportLoading, setExportLoading] = useState(false);
 
   const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
@@ -233,6 +234,38 @@ export default function HomePage() {
     } catch (e: unknown) {
       setTrendError(e instanceof Error ? e.message : "오류 발생");
     } finally { setTrendLoading(false); }
+  }
+  async function handleExportToSheets() {
+    if (!chartData.length || !currentGroup) return;
+    setExportLoading(true);
+    try {
+      const rows = chartData.flatMap((point) =>
+        currentGroup.brands.map((brand) => ({
+          category: currentGroup.label,
+          brand: brand.name,
+          avgIndex: typeof point[brand.name] === "number" ? (point[brand.name] as number).toFixed(1) : "0",
+          growthRate: "",
+          peakDate: point.period,
+          trendStatus: "",
+        }))
+      );
+
+      const res = await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_keyword_trend", rows }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("✅ 구글 시트에 저장 완료!");
+      } else {
+        alert("❌ 저장 실패: " + (data.error ?? "오류 발생"));
+      }
+    } catch {
+      alert("❌ 오류가 발생했습니다.");
+    } finally {
+      setExportLoading(false);
+    }
   }
 
   async function handleAddKeyword(groupId: string, brandName: string) {
@@ -591,10 +624,18 @@ export default function HomePage() {
                 </div>
               </div>
             )}
-            <button onClick={fetchTrend} disabled={trendLoading}
-              className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50">
-              {trendLoading ? "데이터 조회 중..." : "트렌드 조회"}
-            </button>
+            <div className="flex gap-3">
+              <button onClick={fetchTrend} disabled={trendLoading}
+                className="flex-1 py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50">
+                {trendLoading ? "데이터 조회 중..." : "트렌드 조회"}
+              </button>
+              {chartData.length > 0 && (
+                <button onClick={handleExportToSheets} disabled={exportLoading}
+                  className="flex-1 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 disabled:opacity-50">
+                  {exportLoading ? "내보내는 중..." : "📊 구글 시트 저장"}
+                </button>
+              )}
+            </div>
             {trendError && <div className="text-red-500 text-sm">{trendError}</div>}
             {chartData.length > 0 && currentGroup && (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
