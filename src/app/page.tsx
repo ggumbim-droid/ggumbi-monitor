@@ -10,6 +10,7 @@ import { ChannelTabs } from "@/components/ChannelTabs";
 import { LoginRequiredSection } from "@/components/LoginRequiredSection";
 import { InsightsPanel } from "@/components/InsightsPanel";
 import { buildNotionReport } from "@/lib/report";
+import { LoginGate } from "@/components/LoginGate";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import type { ChannelId, MonitorDateRange, MonitorResult, SortOrder } from "@/types/monitor";
 
@@ -278,6 +279,7 @@ export default function HomePage() {
   };
 
   return (
+    <LoginGate>
     <div className="min-h-screen bg-gradient-to-b from-kkumbi-50 via-white to-kkumbi-50/30">
       <header className="border-b border-kkumbi-100 bg-white/80 backdrop-blur sticky top-0 z-10">
         <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
@@ -625,6 +627,7 @@ export default function HomePage() {
         꿈비 그룹 · 전 채널 경쟁사 신제품·프로모션·소비자 반응 모니터링
       </footer>
     </div>
+    </LoginGate>
   );
 }
 
