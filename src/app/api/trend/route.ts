@@ -105,13 +105,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 각 기간별 합계로 나눠서 비율 정규화 (합이 100이 되도록)
     const results = Object.entries(periodMap)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([period, values]) => ({ period, ...values }));
+      .map(([period, values]) => {
+        const total = Object.values(values).reduce((sum, v) => sum + v, 0);
+        const normalized: Record<string, number> = {};
+        for (const [brand, value] of Object.entries(values)) {
+          normalized[brand] = total > 0 ? Math.round((value / total) * 100 * 10) / 10 : 0;
+        }
+        return { period, ...normalized };
+      });
 
     return NextResponse.json({ results });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "알 수 없는 오류";
-    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
