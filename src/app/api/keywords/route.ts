@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const KV_REST_API_URL = process.env.KV_REST_API_URL;
 const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
 
-const DEFAULT_GROUPS = {
+const DEFAULT_GROUPS: Record<string, { label: string; brands: { name: string; keywords: string[] }[] }> = {
   folder_mat: {
     label: "폴더매트",
     brands: [
@@ -67,148 +67,64 @@ const DEFAULT_GROUPS = {
   organic_ground: {
     label: "오가닉그라운드",
     brands: [
-      {
-        name: "오가닉그라운드",
-        keywords: ["오가닉그라운드","오가닉그라운드선크림","오가닉그라운드선쿠션","오가닉그라운드고보습크림","오가닉그라운드크림","오가닉그라운드워시","오가닉그라운드탑투토워시","스쿠스쿠오일","오가닉그라운드오일","오가닉그라운드스쿠스쿠오일","캐터스수딩크림","오가닉그라운드수딩크림","오가닉그라운드수딩젤","스쿠스쿠로션","오가닉그라운드스쿠스쿠로션","오가닉그라운드로션","오가닉그라운드스틱밤","오가닉그라운드힙클렌저","오가닉그라운드엉덩이클렌저","오가닉그라운드트래블키트"],
-      },
-      {
-        name: "오가본",
-        keywords: ["오가본","오가본수분로션","오가본크림","오가본보습크림","오가본아기보습크림","오가본엉덩이클렌저","오가본샴푸앤바쓰","오가본샴푸앤바스","오가본워시","오가본멀티밤","오가본오일","오가본영양오일","오가본아기오일","오가본립밤","오가본샴푸","오가본선크림","오가본선쿠션","오가본수딩젤","오가본핸드크림"],
-      },
-      {
-        name: "쁘리마쥬",
-        keywords: ["쁘리마쥬","쁘리마쥬로션","쁘리마쥬크림","쁘리마쥬태열키트","쁘리마쥬태열세럼","쁘리마쥬보습크림","쁘리마쥬오일","쁘리마쥬태열","쁘리마쥬비누","쁘리마쥬세럼"],
-      },
-      {
-        name: "몽디에스",
-        keywords: ["몽디에스","몽디에스로션","몽디에스크림","몽디에스아토크림","몽디에스오일","몽디에스수딩젤","몽디에스스틱밤","몽디에스아토로션","몽디에스밤","몽디에스베이비로션"],
-      },
+      { name: "오가닉그라운드", keywords: ["오가닉그라운드","오가닉그라운드선크림","오가닉그라운드선쿠션","오가닉그라운드고보습크림","오가닉그라운드크림","오가닉그라운드워시","오가닉그라운드탑투토워시","스쿠스쿠오일","오가닉그라운드오일","오가닉그라운드스쿠스쿠오일","캐터스수딩크림","오가닉그라운드수딩크림","오가닉그라운드수딩젤","스쿠스쿠로션","오가닉그라운드스쿠스쿠로션","오가닉그라운드로션","오가닉그라운드스틱밤","오가닉그라운드힙클렌저","오가닉그라운드엉덩이클렌저","오가닉그라운드트래블키트"] },
+      { name: "오가본", keywords: ["오가본","오가본수분로션","오가본크림","오가본보습크림","오가본아기보습크림","오가본엉덩이클렌저","오가본샴푸앤바쓰","오가본샴푸앤바스","오가본워시","오가본멀티밤","오가본오일","오가본영양오일","오가본아기오일","오가본립밤","오가본샴푸","오가본선크림","오가본선쿠션","오가본수딩젤","오가본핸드크림"] },
+      { name: "쁘리마쥬", keywords: ["쁘리마쥬","쁘리마쥬로션","쁘리마쥬크림","쁘리마쥬태열키트","쁘리마쥬태열세럼","쁘리마쥬보습크림","쁘리마쥬오일","쁘리마쥬태열","쁘리마쥬비누","쁘리마쥬세럼"] },
+      { name: "몽디에스", keywords: ["몽디에스","몽디에스로션","몽디에스크림","몽디에스아토크림","몽디에스오일","몽디에스수딩젤","몽디에스스틱밤","몽디에스아토로션","몽디에스밤","몽디에스베이비로션"] },
     ],
   },
   babadito: {
     label: "바바디토",
     brands: [
-      {
-        name: "바바디토",
-        keywords: ["바바디토","바바디토아기세제","바바디토젖병세제","바바디토젖병세정제","바바디토주방세제","바바디토식기세척기세제","바바디토식세기세제","바바디토건조기시트"],
-      },
-      {
-        name: "프랭클린",
-        keywords: ["프랭클린","프랭클린아기세제","프랭클린세탁세제","프랭클린섬유유연제","프랭클린젖병세제","프랭클린젖병세정제","프랭클린주방세제"],
-      },
-      {
-        name: "레드루트",
-        keywords: ["레드루트","레드루트아기세제","레드루트젖병세정제","레드루트주방세제","레드루트세탁세제","레드루트섬유유연제","레드루트비누","레드루트세탁비누","레드루트건조기시트","레드루트캡슐세제"],
-      },
-      {
-        name: "아토팜",
-        keywords: ["아토팜","아토팜아기세제","아토팜세탁세제","아토팜섬유유연제","아토팜주방세제","아토팜젖병세제","아토팜세탁세제리필","아토팜섬유유연제리필"],
-      },
-      {
-        name: "블랑101",
-        keywords: ["블랑101","블랑아기세제","블랑101아기세제","블랑젖병세제","블랑101젖병세제","블랑주방세제","블랑101주방세제","블랑101세탁세제","블랑101섬유유연제","블랑101식기세척기세제","블랑101캡슐세제","블랑섬유유연제","블랑세탁세제","블랑101건조기시트"],
-      },
+      { name: "바바디토", keywords: ["바바디토","바바디토아기세제","바바디토젖병세제","바바디토젖병세정제","바바디토주방세제","바바디토식기세척기세제","바바디토식세기세제","바바디토건조기시트"] },
+      { name: "프랭클린", keywords: ["프랭클린","프랭클린아기세제","프랭클린세탁세제","프랭클린섬유유연제","프랭클린젖병세제","프랭클린젖병세정제","프랭클린주방세제"] },
+      { name: "레드루트", keywords: ["레드루트","레드루트아기세제","레드루트젖병세정제","레드루트주방세제","레드루트세탁세제","레드루트섬유유연제","레드루트비누","레드루트세탁비누","레드루트건조기시트","레드루트캡슐세제"] },
+      { name: "아토팜", keywords: ["아토팜","아토팜아기세제","아토팜세탁세제","아토팜섬유유연제","아토팜주방세제","아토팜젖병세제","아토팜세탁세제리필","아토팜섬유유연제리필"] },
+      { name: "블랑101", keywords: ["블랑101","블랑아기세제","블랑101아기세제","블랑젖병세제","블랑101젖병세제","블랑주방세제","블랑101주방세제","블랑101세탁세제","블랑101섬유유연제","블랑101식기세척기세제","블랑101캡슐세제","블랑섬유유연제","블랑세탁세제","블랑101건조기시트"] },
     ],
   },
   dog_coolmat: {
     label: "강아지쿨매트",
     brands: [
-      {
-        name: "파미야",
-        keywords: ["파미야","파미야쿨매트","파미야강아지쿨매트","파미야아이스쿨매트","파미야고양이쿨매트"],
-      },
-      {
-        name: "대리석아빠",
-        keywords: ["대리석아빠","대리석아빠쿨매트","대리석아빠강아지쿨매트","대리석아빠고양이쿨매트"],
-      },
-      {
-        name: "아르르",
-        keywords: ["아르르쿨매트","아르르강아지쿨매트","아르르고양이쿨매트"],
-      },
-      {
-        name: "페스룸",
-        keywords: ["페스룸","페스룸쿨매트","페스룸강아지쿨매트","페스룸고양이쿨매트"],
-      },
-      {
-        name: "디팡",
-        keywords: ["디팡","디팡쿨매트","디팡강아지쿨매트","디팡고양이쿨매트"],
-      },
+      { name: "파미야", keywords: ["파미야","파미야쿨매트","파미야강아지쿨매트","파미야아이스쿨매트","파미야고양이쿨매트"] },
+      { name: "대리석아빠", keywords: ["대리석아빠","대리석아빠쿨매트","대리석아빠강아지쿨매트","대리석아빠고양이쿨매트"] },
+      { name: "아르르", keywords: ["아르르쿨매트","아르르강아지쿨매트","아르르고양이쿨매트"] },
+      { name: "페스룸", keywords: ["페스룸","페스룸쿨매트","페스룸강아지쿨매트","페스룸고양이쿨매트"] },
+      { name: "디팡", keywords: ["디팡","디팡쿨매트","디팡강아지쿨매트","디팡고양이쿨매트"] },
     ],
   },
   cat_tower: {
     label: "고양이캣타워",
     brands: [
-      {
-        name: "캣타워",
-        keywords: [],
-      },
+      { name: "캣타워", keywords: [] },
     ],
   },
   g7_coffee: {
     label: "G7커피",
     brands: [
-      {
-        name: "G7커피",
-        keywords: ["베트남커피G7","G7믹스커피","G7블랙커피","커피G7","G7블랙커피","G7커피내수용","G73in1","G7퓨어블랙"],
-      },
-      {
-        name: "맥심커피",
-        keywords: ["맥심커피","맥심","맥심모카골드","맥심커피믹스","맥심모카골드마일드","맥심믹스커피"],
-      },
-      {
-        name: "루카스나인",
-        keywords: ["루카스나인","루카스나인라떼","루카스나인더블샷라떼","루카스나인아메리카노","루카스나인바닐라라떼"],
-      },
-      {
-        name: "프렌치카페",
-        keywords: ["프렌치카페","프렌치카페커피믹스","남양프렌치카페","남양프렌치카페커피믹스","프렌치까페","프렌치카페카페믹스"],
-      },
-      {
-        name: "네스카페",
-        keywords: ["네스카페","네스카페커피믹스","네스카페수프리모","돌체앤구스토"],
-      },
-      {
-        name: "카누",
-        keywords: ["카누","카누커피","카누아메리카노","카누다크로스트","카누다크로스트미니","카누미니마일드","카누라떼","카누마일드로스트"],
-      },
+      { name: "G7커피", keywords: ["베트남커피G7","G7믹스커피","G7블랙커피","커피G7","G7커피내수용","G73in1","G7퓨어블랙"] },
+      { name: "맥심커피", keywords: ["맥심커피","맥심","맥심모카골드","맥심커피믹스","맥심모카골드마일드","맥심믹스커피"] },
+      { name: "루카스나인", keywords: ["루카스나인","루카스나인라떼","루카스나인더블샷라떼","루카스나인아메리카노","루카스나인바닐라라떼"] },
+      { name: "프렌치카페", keywords: ["프렌치카페","프렌치카페커피믹스","남양프렌치카페","남양프렌치카페커피믹스","프렌치까페","프렌치카페카페믹스"] },
+      { name: "네스카페", keywords: ["네스카페","네스카페커피믹스","네스카페수프리모","돌체앤구스토"] },
+      { name: "카누", keywords: ["카누","카누커피","카누아메리카노","카누다크로스트","카누다크로스트미니","카누미니마일드","카누라떼","카누마일드로스트"] },
     ],
   },
   stroller_coolseat: {
     label: "유모차 쿨시트",
     brands: [
-      {
-        name: "꿈비",
-        keywords: ["꿈비쿨시트","꿈비유모차쿨시트","꿈비듀얼팬쿨시트","꿈비아이스허그쿨시트","꿈비아이스허그듀얼팬쿨시트","아이스허그듀얼팬쿨시트","꿈비통풍시트","꿈비유모차통풍시트","꿈비유아차쿨시트","꿈비카시트쿨시트","꿈비카시트통풍시트","듀얼팬쿨시트","꿈비유모차라이너","꿈비듀얼팬통풍시트","꿈비유아쿨시트"],
-      },
-      {
-        name: "폴레드",
-        keywords: ["폴레드쿨시트","폴레드유모차쿨시트","폴레드에어러브","폴레드통풍시트","폴레드유모차통풍시트","폴레드에어러브쿨시트","폴레드에어러브통풍시트","폴레드카시트쿨시트","폴레드카시트통풍시트","에어러브쿨시트","에어러브통풍시트","에어러브5","폴레드에어러브5"],
-      },
-      {
-        name: "다이치",
-        keywords: ["다이치쿨시트","다이치유모차쿨시트","다이치듀얼팬쿨시트","다이치에어포켓쿨시트","에어포켓쿨시트","다이치통풍시트","다이치유모차통풍시트","다이치유아차쿨시트","다이치카시트쿨시트","다이치카시트통풍시트","에어포켓4쿨시트"],
-      },
-      {
-        name: "크림하우스",
-        keywords: ["크림하우스쿨시트","크림하우스유모차쿨시트","크림하우스듀얼팬쿨시트","크림하우스에어포켓쿨시트","에어몬쿨시트","크림하우스통풍시트","크림하우스유모차통풍시트","크림하우스유아차쿨시트","크림하우스카시트쿨시트","크림하우스카시트통풍시트","에어몬2"],
-      },
-      {
-        name: "루나스토리",
-        keywords: ["루나스토리쿨시트","루나스토리유모차쿨시트","루나스토리듀얼팬쿨시트","루나스토리카시트쿨시트","루나스토리통풍시트","루나스토리유모차통풍시트","루나스토리유아차쿨시트","루나스토리카시트통풍시트"],
-      },
+      { name: "꿈비", keywords: ["꿈비쿨시트","꿈비유모차쿨시트","꿈비듀얼팬쿨시트","꿈비아이스허그쿨시트","꿈비아이스허그듀얼팬쿨시트","아이스허그듀얼팬쿨시트","꿈비통풍시트","꿈비유모차통풍시트","꿈비유아차쿨시트","꿈비카시트쿨시트","꿈비카시트통풍시트","듀얼팬쿨시트","꿈비유모차라이너","꿈비듀얼팬통풍시트","꿈비유아쿨시트"] },
+      { name: "폴레드", keywords: ["폴레드쿨시트","폴레드유모차쿨시트","폴레드에어러브","폴레드통풍시트","폴레드유모차통풍시트","폴레드에어러브쿨시트","폴레드에어러브통풍시트","폴레드카시트쿨시트","폴레드카시트통풍시트","에어러브쿨시트","에어러브통풍시트","에어러브5","폴레드에어러브5"] },
+      { name: "다이치", keywords: ["다이치쿨시트","다이치유모차쿨시트","다이치듀얼팬쿨시트","다이치에어포켓쿨시트","에어포켓쿨시트","다이치통풍시트","다이치유모차통풍시트","다이치유아차쿨시트","다이치카시트쿨시트","다이치카시트통풍시트","에어포켓4쿨시트"] },
+      { name: "크림하우스", keywords: ["크림하우스쿨시트","크림하우스유모차쿨시트","크림하우스듀얼팬쿨시트","크림하우스에어포켓쿨시트","에어몬쿨시트","크림하우스통풍시트","크림하우스유모차통풍시트","크림하우스유아차쿨시트","크림하우스카시트쿨시트","크림하우스카시트통풍시트","에어몬2"] },
+      { name: "루나스토리", keywords: ["루나스토리쿨시트","루나스토리유모차쿨시트","루나스토리듀얼팬쿨시트","루나스토리카시트쿨시트","루나스토리통풍시트","루나스토리유모차통풍시트","루나스토리유아차쿨시트","루나스토리카시트통풍시트"] },
     ],
   },
   baby_carrier_cover: {
     label: "아기띠 커버",
     brands: [
-      {
-        name: "꿈비",
-        keywords: ["꿈비아기띠블랭킷","꿈비아기띠바람막이","꿈비아기띠커버","꿈비아기띠가리개","꿈비아기띠워머","꿈비아기띠통풍시트","꿈비아기띠쿨링시트","꿈비아기띠쿨링커버","꿈비쿨링커버"],
-      },
-      {
-        name: "폴레드",
-        keywords: ["폴레드아기띠블랭킷","폴레드아기띠바람막이","폴레드아기띠커버","폴레드아기띠가리개","폴레드아기띠워머","에어러브허그","아기띠통풍이너패드","폴레드아기띠통풍패드","폴레드아기띠통풍시트"],
-      },
+      { name: "꿈비", keywords: ["꿈비아기띠블랭킷","꿈비아기띠바람막이","꿈비아기띠커버","꿈비아기띠가리개","꿈비아기띠워머","꿈비아기띠통풍시트","꿈비아기띠쿨링시트","꿈비아기띠쿨링커버","꿈비쿨링커버"] },
+      { name: "폴레드", keywords: ["폴레드아기띠블랭킷","폴레드아기띠바람막이","폴레드아기띠커버","폴레드아기띠가리개","폴레드아기띠워머","에어러브허그","아기띠통풍이너패드","폴레드아기띠통풍패드","폴레드아기띠통풍시트"] },
     ],
   },
 };
@@ -218,10 +134,8 @@ async function kvGet(key: string) {
     headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
   });
   const data = await res.json();
-  // Upstash REST API wraps value in { value: "..." }
   const raw = data.result ?? data.value ?? null;
   if (!raw) return null;
-  // 이중 JSON 문자열 처리
   if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
@@ -255,7 +169,14 @@ export async function GET(request: Request) {
       return NextResponse.json(DEFAULT_GROUPS);
     }
     const stored = await kvGet("keyword_groups");
-    if (stored) return NextResponse.json(stored);
+    if (stored) {
+      const merged: typeof DEFAULT_GROUPS = { ...DEFAULT_GROUPS };
+      for (const key of Object.keys(stored)) {
+        merged[key] = stored[key];
+      }
+      await kvSet("keyword_groups", merged);
+      return NextResponse.json(merged);
+    }
     await kvSet("keyword_groups", DEFAULT_GROUPS);
     return NextResponse.json(DEFAULT_GROUPS);
   } catch {
@@ -266,34 +187,76 @@ export async function GET(request: Request) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, groupId, brandName, keyword } = body;
+    const { action, groupId, brandName, keyword, label } = body;
 
     const stored = await kvGet("keyword_groups");
     const groups = stored ?? { ...DEFAULT_GROUPS };
 
-    if (!groups[groupId]) {
-      return NextResponse.json({ error: "그룹을 찾을 수 없습니다." }, { status: 400 });
+    // 카테고리 추가
+    if (action === "add_group") {
+      const newId = groupId?.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_가-힣]/g, "");
+      const newLabel = label?.trim();
+      if (!newId || !newLabel) return NextResponse.json({ error: "카테고리 ID와 이름을 입력해주세요." }, { status: 400 });
+      if (groups[newId]) return NextResponse.json({ error: "이미 존재하는 카테고리입니다." }, { status: 400 });
+      groups[newId] = { label: newLabel, brands: [] };
+      await kvSet("keyword_groups", groups);
+      return NextResponse.json(groups);
     }
 
-    const brand = groups[groupId].brands.find((b: { name: string }) => b.name === brandName);
-    if (!brand) {
-      return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 400 });
+    // 카테고리 삭제
+    if (action === "delete_group") {
+      if (!groupId || !groups[groupId]) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
+      delete groups[groupId];
+      await kvSet("keyword_groups", groups);
+      return NextResponse.json(groups);
     }
 
+    // 브랜드 추가
+    if (action === "add_brand") {
+      if (!groupId || !brandName) return NextResponse.json({ error: "카테고리와 브랜드명을 입력해주세요." }, { status: 400 });
+      if (!groups[groupId]) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
+      if (groups[groupId].brands.find((b: { name: string }) => b.name === brandName)) {
+        return NextResponse.json({ error: "이미 존재하는 브랜드입니다." }, { status: 400 });
+      }
+      groups[groupId].brands.push({ name: brandName, keywords: [] });
+      await kvSet("keyword_groups", groups);
+      return NextResponse.json(groups);
+    }
+
+    // 브랜드 삭제
+    if (action === "delete_brand") {
+      if (!groupId || !brandName) return NextResponse.json({ error: "카테고리와 브랜드명을 입력해주세요." }, { status: 400 });
+      if (!groups[groupId]) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
+      groups[groupId].brands = groups[groupId].brands.filter((b: { name: string }) => b.name !== brandName);
+      await kvSet("keyword_groups", groups);
+      return NextResponse.json(groups);
+    }
+
+    // 키워드 추가
     if (action === "add") {
+      if (!groups[groupId]) return NextResponse.json({ error: "그룹을 찾을 수 없습니다." }, { status: 400 });
+      const brand = groups[groupId].brands.find((b: { name: string }) => b.name === brandName);
+      if (!brand) return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 400 });
       const trimmed = keyword.trim();
       if (!trimmed) return NextResponse.json({ error: "키워드를 입력해 주세요." }, { status: 400 });
       if (brand.keywords.includes(trimmed)) return NextResponse.json({ error: "이미 존재하는 키워드입니다." }, { status: 400 });
       if (brand.keywords.length >= 20) return NextResponse.json({ error: "키워드는 최대 20개까지 등록 가능합니다." }, { status: 400 });
       brand.keywords.push(trimmed);
-    } else if (action === "delete") {
-      brand.keywords = brand.keywords.filter((k: string) => k !== keyword);
-    } else {
-      return NextResponse.json({ error: "올바르지 않은 action입니다." }, { status: 400 });
+      await kvSet("keyword_groups", groups);
+      return NextResponse.json(groups);
     }
 
-    await kvSet("keyword_groups", groups);
-    return NextResponse.json(groups);
+    // 키워드 삭제
+    if (action === "delete") {
+      if (!groups[groupId]) return NextResponse.json({ error: "그룹을 찾을 수 없습니다." }, { status: 400 });
+      const brand = groups[groupId].brands.find((b: { name: string }) => b.name === brandName);
+      if (!brand) return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 400 });
+      brand.keywords = brand.keywords.filter((k: string) => k !== keyword);
+      await kvSet("keyword_groups", groups);
+      return NextResponse.json(groups);
+    }
+
+    return NextResponse.json({ error: "올바르지 않은 action입니다." }, { status: 400 });
   } catch {
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
