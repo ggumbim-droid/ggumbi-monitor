@@ -10,7 +10,6 @@ import { ChannelTabs } from "@/components/ChannelTabs";
 import { LoginRequiredSection } from "@/components/LoginRequiredSection";
 import { InsightsPanel } from "@/components/InsightsPanel";
 import { buildNotionReport } from "@/lib/report";
-import { LoginGate } from "@/components/LoginGate";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import type { ChannelId, MonitorDateRange, MonitorResult, SortOrder } from "@/types/monitor";
 
@@ -146,6 +145,14 @@ export default function HomePage() {
   const [kwError, setKwError] = useState("");
   const [exportLoading, setExportLoading] = useState(false);
 
+  // 카테고리/브랜드 관리 상태
+  const [showGroupManager, setShowGroupManager] = useState(false);
+  const [newGroupLabel, setNewGroupLabel] = useState("");
+  const [newGroupId, setNewGroupId] = useState("");
+  const [newBrandName, setNewBrandName] = useState("");
+  const [addingBrandToGroup, setAddingBrandToGroup] = useState("");
+  const [groupMgrError, setGroupMgrError] = useState("");
+
   const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
   const anyResult = Object.values(groupResults).some(Boolean);
@@ -153,8 +160,7 @@ export default function HomePage() {
     .filter(Boolean)
     .flatMap((r) => r!.channels.flatMap((c) => c.loginRequired));
 
-  useEffect(() => {
-    if (activeTab !== "trend") return;
+  const loadKeywords = useCallback(() => {
     setKwLoading(true);
     fetch("/api/keywords")
       .then((r) => r.json())
@@ -166,10 +172,15 @@ export default function HomePage() {
           .filter(([, g]) => g && Array.isArray(g.brands))
           .map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
         setGroupList(list);
-        if (list.length > 0) setSelectedGroup(list[0].id);
+        if (list.length > 0 && !selectedGroup) setSelectedGroup(list[0].id);
       })
       .catch((e) => console.error("키워드 로드 실패:", e))
       .finally(() => setKwLoading(false));
+  }, [selectedGroup]);
+
+  useEffect(() => {
+    if (activeTab !== "trend") return;
+    loadKeywords();
   }, [activeTab]);
 
   const handleGroupMonitor = useCallback(async (groupId: string) => {
@@ -235,6 +246,7 @@ export default function HomePage() {
       setTrendError(e instanceof Error ? e.message : "오류 발생");
     } finally { setTrendLoading(false); }
   }
+
   async function handleExportToSheets() {
     if (!chartData.length || !currentGroup) return;
     setExportLoading(true);
@@ -249,7 +261,6 @@ export default function HomePage() {
           trendStatus: "",
         }))
       );
-
       const res = await fetch("/api/sheets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -300,6 +311,72 @@ export default function HomePage() {
     } catch {}
   }
 
+  async function handleAddGroup() {
+    if (!newGroupLabel.trim()) { setGroupMgrError("카테고리 이름을 입력해주세요."); return; }
+    setGroupMgrError("");
+    const groupId = newGroupId.trim() || newGroupLabel.trim().replace(/\s+/g, "_");
+    try {
+      const res = await fetch("/api/keywords", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add_group", groupId, label: newGroupLabel.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setGroupMgrError(data.error || "오류 발생"); return; }
+      setKeywordGroups(data);
+      const list = Object.entries(data as KeywordGroups).map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
+      setGroupList(list);
+      setNewGroupLabel(""); setNewGroupId("");
+    } catch { setGroupMgrError("서버 오류가 발생했습니다."); }
+  }
+
+  async function handleDeleteGroup(groupId: string, label: string) {
+    if (!confirm(`"${label}" 카테고리를 삭제할까요? 포함된 브랜드와 키워드도 모두 삭제됩니다.`)) return;
+    try {
+      const res = await fetch("/api/keywords", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_group", groupId }),
+      });
+      const data = await res.json();
+      if (!res.ok) return;
+      setKeywordGroups(data);
+      const list = Object.entries(data as KeywordGroups).map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
+      setGroupList(list);
+      if (selectedGroup === groupId && list.length > 0) setSelectedGroup(list[0].id);
+    } catch {}
+  }
+
+  async function handleAddBrand(groupId: string) {
+    if (!newBrandName.trim()) { setGroupMgrError("브랜드명을 입력해주세요."); return; }
+    setGroupMgrError("");
+    try {
+      const res = await fetch("/api/keywords", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add_brand", groupId, brandName: newBrandName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setGroupMgrError(data.error || "오류 발생"); return; }
+      setKeywordGroups(data);
+      const list = Object.entries(data as KeywordGroups).map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
+      setGroupList(list);
+      setNewBrandName(""); setAddingBrandToGroup("");
+    } catch { setGroupMgrError("서버 오류가 발생했습니다."); }
+  }
+
+  async function handleDeleteBrand(groupId: string, brandName: string) {
+    if (!confirm(`"${brandName}" 브랜드를 삭제할까요?`)) return;
+    try {
+      const res = await fetch("/api/keywords", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_brand", groupId, brandName }),
+      });
+      const data = await res.json();
+      if (!res.ok) return;
+      setKeywordGroups(data);
+      const list = Object.entries(data as KeywordGroups).map(([id, g]) => ({ id, label: g.label, brands: g.brands }));
+      setGroupList(list);
+    } catch {}
+  }
+
   const toggleGroupChannel = (groupId: string, channelId: ChannelId) => {
     if (COMING_SOON.includes(channelId)) return;
     setGroupChannels((prev) => {
@@ -312,7 +389,6 @@ export default function HomePage() {
   };
 
   return (
-    <LoginGate>
     <div className="min-h-screen bg-gradient-to-b from-kkumbi-50 via-white to-kkumbi-50/30">
       <header className="border-b border-kkumbi-100 bg-white/80 backdrop-blur sticky top-0 z-10">
         <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
@@ -521,14 +597,108 @@ export default function HomePage() {
         {activeTab === "trend" && (
           <div className="space-y-4">
             {kwLoading && <p className="text-sm text-gray-400">키워드 불러오는 중...</p>}
-            <div className="flex gap-2 flex-wrap">
-              {groupList.map((g) => (
-                <button key={g.id} onClick={() => { setSelectedGroup(g.id); setChartData([]); setHiddenBrands(new Set()); setFocusedBrand(""); setExpandedBrands(new Set()); }}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedGroup === g.id ? "bg-orange-500 text-white" : "bg-white text-gray-600 border border-gray-200 hover:border-orange-300"}`}>
-                  {g.label}
-                </button>
-              ))}
+
+            {/* 카테고리 탭 + 관리 버튼 */}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {groupList.map((g) => (
+                  <button key={g.id} onClick={() => { setSelectedGroup(g.id); setChartData([]); setHiddenBrands(new Set()); setFocusedBrand(""); setExpandedBrands(new Set()); }}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedGroup === g.id ? "bg-orange-500 text-white" : "bg-white text-gray-600 border border-gray-200 hover:border-orange-300"}`}>
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowGroupManager(!showGroupManager)}
+                className="px-4 py-2 rounded-full text-sm font-medium border border-stone-300 bg-white text-stone-600 hover:bg-stone-50"
+              >
+                ⚙️ 카테고리 관리
+              </button>
             </div>
+
+            {/* 카테고리 관리 패널 */}
+            {showGroupManager && (
+              <div className="bg-white rounded-xl border border-stone-200 p-5 space-y-4 shadow-sm">
+                <h3 className="font-bold text-stone-800 text-sm">카테고리 관리</h3>
+
+                {/* 새 카테고리 추가 */}
+                <div className="space-y-2 border-b border-stone-100 pb-4">
+                  <p className="text-xs font-semibold text-stone-500">새 카테고리 추가</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={newGroupLabel}
+                      onChange={(e) => setNewGroupLabel(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleAddGroup()}
+                      placeholder="카테고리 이름 (예: 아기물티슈)"
+                      className="flex-1 border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    />
+                    <button
+                      onClick={handleAddGroup}
+                      className="px-4 py-2 bg-kkumbi-500 text-white text-sm font-semibold rounded-lg hover:bg-kkumbi-600"
+                    >
+                      추가
+                    </button>
+                  </div>
+                  {groupMgrError && <p className="text-xs text-rose-500">{groupMgrError}</p>}
+                </div>
+
+                {/* 카테고리 목록 */}
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {groupList.map((g) => (
+                    <div key={g.id} className="border border-stone-100 rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-sm text-stone-700">{g.label}</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { setAddingBrandToGroup(g.id); setNewBrandName(""); setGroupMgrError(""); }}
+                            className="text-xs text-blue-500 hover:underline"
+                          >
+                            + 브랜드
+                          </button>
+                          <button
+                            onClick={() => handleDeleteGroup(g.id, g.label)}
+                            className="text-xs text-rose-400 hover:text-rose-600"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 브랜드 목록 */}
+                      <div className="flex flex-wrap gap-1">
+                        {g.brands.map((brand) => (
+                          <span key={brand.name} className="group flex items-center gap-1 text-xs bg-stone-100 text-stone-600 px-2 py-1 rounded-full">
+                            {brand.name}
+                            <button
+                              onClick={() => handleDeleteBrand(g.id, brand.name)}
+                              className="hidden group-hover:inline text-rose-400 hover:text-rose-600"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* 브랜드 추가 입력 */}
+                      {addingBrandToGroup === g.id && (
+                        <div className="flex gap-2 mt-1">
+                          <input
+                            value={newBrandName}
+                            onChange={(e) => setNewBrandName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleAddBrand(g.id)}
+                            placeholder="브랜드명 입력"
+                            className="flex-1 border border-stone-200 rounded px-2 py-1 text-sm"
+                          />
+                          <button onClick={() => handleAddBrand(g.id)} className="px-3 py-1 bg-kkumbi-500 text-white text-xs rounded hover:bg-kkumbi-600">추가</button>
+                          <button onClick={() => setAddingBrandToGroup("")} className="px-3 py-1 bg-stone-100 text-stone-600 text-xs rounded hover:bg-stone-200">취소</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex gap-2 flex-wrap mb-3">
                 {PRESET_PERIODS.map((p) => (
@@ -668,7 +838,6 @@ export default function HomePage() {
         꿈비 그룹 · 전 채널 경쟁사 신제품·프로모션·소비자 반응 모니터링
       </footer>
     </div>
-    </LoginGate>
   );
 }
 
