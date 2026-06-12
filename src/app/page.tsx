@@ -79,32 +79,28 @@ const SIDEBAR_MENUS = [
     children: [
       { id: "keyword_trend", label: "경쟁사 트렌드" },
       { id: "keyword_ranking", label: "검색 노출 순위" },
+      { id: "monitor_naver", label: "네이버 모니터링" },
+      { id: "monitor_social", label: "소셜 모니터링" },
+      { id: "monitor_shopping", label: "쇼핑 모니터링" },
     ],
   },
   {
     id: "kpi_performance",
     label: "02. 퍼포먼스 매출",
     icon: "💰",
-    children: [
-      { id: "monitor_naver", label: "네이버 모니터링" },
-      { id: "monitor_social", label: "소셜 모니터링" },
-    ],
+    children: [],
   },
   {
     id: "kpi_ads",
     label: "03. 주력제품 광고매출",
     icon: "📦",
-    children: [
-      { id: "monitor_shopping", label: "쇼핑 모니터링" },
-    ],
+    children: [],
   },
   {
     id: "kpi_exposure",
     label: "04. 키워드 1페이지 노출",
     icon: "🏆",
-    children: [
-      { id: "keyword_ranking", label: "순위 추이" },
-    ],
+    children: [],
   },
   {
     id: "kpi_newuser",
