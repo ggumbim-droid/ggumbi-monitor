@@ -547,7 +547,7 @@ export default function HomePage() {
                SIDEBAR_MENUS.flatMap(m => m.children).find(c => c.id === activeMenu)?.label ??
                "대시보드"}
             </h1>
-            <p className="text-xs text-stone-500">꿈비 그룹 · 전 채널 통합 경쟁사 모니터링</p>
+            <p className="text-xs text-stone-500">꿈비 그룹 · 마케팅 인텔리전스</p>
           </div>
           <div className="flex items-center gap-3">
             <DateRangeSelect value={dateRange} onChange={setDateRange} disabled={false} />
