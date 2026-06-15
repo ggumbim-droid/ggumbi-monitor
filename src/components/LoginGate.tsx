@@ -79,7 +79,7 @@ export function LoginGate({ children }: LoginGateProps) {
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <p className="text-xs font-semibold uppercase tracking-widest text-kkumbi-500 mb-2">꿈비 그룹</p>
-            <h1 className="text-2xl font-bold text-stone-900">전 채널 통합 경쟁사 모니터링</h1>
+            <h1 className="text-2xl font-bold text-stone-900">꿈비 마케팅 인텔리전스</h1>
             <p className="text-sm text-stone-500 mt-2">로그인 후 이용하실 수 있습니다.</p>
           </div>
 
