@@ -10,6 +10,7 @@ import { ChannelTabs } from "@/components/ChannelTabs";
 import { LoginRequiredSection } from "@/components/LoginRequiredSection";
 import { InsightsPanel } from "@/components/InsightsPanel";
 import { buildNotionReport } from "@/lib/report";
+import { LoginGate } from "@/components/LoginGate";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import type { ChannelId, MonitorDateRange, MonitorResult, SortOrder } from "@/types/monitor";
 
@@ -457,6 +458,7 @@ export default function HomePage() {
     : null;
 
   return (
+    <LoginGate>
     <div className="min-h-screen bg-gray-50 flex">
       {/* 사이드바 */}
       <aside className={`${sidebarOpen ? "w-64" : "w-16"} bg-[#1a1a2e] text-white flex flex-col transition-all duration-300 shrink-0 sticky top-0 h-screen overflow-y-auto`}>
@@ -928,6 +930,7 @@ export default function HomePage() {
         </main>
       </div>
     </div>
+    </LoginGate>
   );
 }
 
