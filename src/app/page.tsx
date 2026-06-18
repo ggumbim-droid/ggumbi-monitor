@@ -20,6 +20,8 @@ interface BrandRow {
   blogDelta: number; cafeDelta: number;
 }
 interface BrandGroup { name: string; brand: string; rows: BrandRow[]; }
+interface TrendBrand { n: string; a: number; d: string; pk: number; s: string; base: boolean; }
+interface TrendCat { name: string; base: string; period: string; brands: TrendBrand[]; }
 interface Brand { name: string; keywords: string[] }
 interface KeywordGroup { id: string; label: string; brands: Brand[] }
 interface KeywordGroups { [key: string]: { label: string; brands: Brand[] } }
