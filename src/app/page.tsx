@@ -78,7 +78,8 @@ const SIDEBAR_MENUS = [
     label: "01. 키워드 검색량",
     icon: "🔍",
     children: [
-      { id: "keyword_trend", label: "경쟁사 트렌드" },
+      { id: "brand_trend", label: "경쟁사 트렌드" },
+      { id: "keyword_trend", label: "네이버 트렌드 조회" },
       { id: "keyword_ranking", label: "검색 노출 순위" },
       { id: "brand_exposure", label: "상위노출 현황" },
       { id: "monitor_naver", label: "네이버 모니터링" },
@@ -177,7 +178,10 @@ export default function HomePage() {
   const [groupMgrError, setGroupMgrError] = useState("");
 
   // 상위노출 현황
-  const [brandData, setBrandData] = useState<null | { ranking: { ok: boolean; groups: BrandGroup[]; updated: string } }>(null);
+  const [brandData, setBrandData] = useState<null | {
+    ranking?: { ok: boolean; groups: BrandGroup[]; updated: string };
+    trend?: { ok: boolean; cats: TrendCat[]; updated: string };
+  }>(null);
   const [brandLoading, setBrandLoading] = useState(false);
   const [brandError, setBrandError] = useState("");
 
@@ -252,7 +256,7 @@ export default function HomePage() {
   async function fetchBrandData() {
     setBrandLoading(true); setBrandError("");
     try {
-      const res = await fetch("/api/brand-monitor?type=ranking");
+      const res = await fetch("/api/brand-monitor?type=all");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
       setBrandData(data);
