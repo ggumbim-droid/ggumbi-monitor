@@ -20,8 +20,6 @@ interface BrandRow {
   blogDelta: number; cafeDelta: number;
 }
 interface BrandGroup { name: string; brand: string; rows: BrandRow[]; }
-interface TrendBrand { n: string; a: number; d: string; pk: number; s: string; base: boolean; }
-interface TrendCat { name: string; base: string; period: string; brands: TrendBrand[]; }
 interface Brand { name: string; keywords: string[] }
 interface KeywordGroup { id: string; label: string; brands: Brand[] }
 interface KeywordGroups { [key: string]: { label: string; brands: Brand[] } }
@@ -80,10 +78,9 @@ const SIDEBAR_MENUS = [
     label: "01. 키워드 검색량",
     icon: "🔍",
     children: [
-      { id: "brand_trend", label: "경쟁사 트렌드" },
-      { id: "keyword_trend", label: "네이버 트렌드 조회" },
-     
-      
+      { id: "keyword_trend", label: "경쟁사 트렌드" },
+      { id: "keyword_ranking", label: "검색 노출 순위" },
+      { id: "brand_exposure", label: "상위노출 현황" },
       { id: "monitor_naver", label: "네이버 모니터링" },
       { id: "monitor_social", label: "소셜 모니터링" },
       { id: "monitor_shopping", label: "쇼핑 모니터링" },
@@ -180,10 +177,7 @@ export default function HomePage() {
   const [groupMgrError, setGroupMgrError] = useState("");
 
   // 상위노출 현황
-  const [brandData, setBrandData] = useState<null | {
-    ranking?: { ok: boolean; groups: BrandGroup[]; updated: string };
-    trend?: { ok: boolean; cats: TrendCat[]; updated: string };
-  }>(null);
+  const [brandData, setBrandData] = useState<null | { ranking: { ok: boolean; groups: BrandGroup[]; updated: string } }>(null);
   const [brandLoading, setBrandLoading] = useState(false);
   const [brandError, setBrandError] = useState("");
 
@@ -258,7 +252,7 @@ export default function HomePage() {
   async function fetchBrandData() {
     setBrandLoading(true); setBrandError("");
     try {
-      const res = await fetch("/api/brand-monitor?type=all");
+      const res = await fetch("/api/brand-monitor?type=ranking");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
       setBrandData(data);
@@ -463,70 +457,8 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* 경쟁사 트렌드 대시보드 */}
-          {activeMenu === "brand_trend" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-stone-800">경쟁사 트렌드 대시보드</h2>
-                {brandData?.trend?.updated && <span className="text-xs text-stone-500">최종 조회: {brandData.trend.updated}</span>}
-              </div>
-              <button onClick={fetchBrandData} disabled={brandLoading}
-                className="w-full py-3 bg-kkumbi-500 text-white font-semibold rounded-xl hover:bg-kkumbi-600 disabled:opacity-50">
-                {brandLoading ? "데이터 불러오는 중..." : "🔄 최신 데이터 불러오기"}
-              </button>
-              {brandError && <p className="text-red-500 text-sm">{brandError}</p>}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {brandData?.trend?.cats?.map((cat) => {
-                  const sorted = [...cat.brands].sort((a, b) => b.a - a.a);
-                  const maxA = sorted[0]?.a || 1;
-                  const baseRank = sorted.findIndex(b => b.base) + 1;
-                  const baseBrand = sorted.find(b => b.base);
-                  return (
-                    <div key={cat.name} className="bg-white rounded-xl border border-stone-200 p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-bold text-stone-800">{cat.name}</span>
-                        <span className="text-xs text-stone-400 bg-stone-100 px-2 py-1 rounded-full">{cat.period}</span>
-                      </div>
-                      <div className="text-xs mb-3 flex items-center gap-2">
-                        <span className="text-stone-500">자사({cat.base})</span>
-                        <span className={`font-bold ${baseRank === 1 ? "text-green-700" : "text-stone-700"}`}>{baseRank}위 / {sorted.length}개</span>
-                        {baseBrand && (
-                          <span className={`font-bold ${parseFloat(baseBrand.d) > 0 ? "text-green-600" : parseFloat(baseBrand.d) < 0 ? "text-red-500" : "text-stone-400"}`}>
-                            {baseBrand.d} {baseBrand.s.split(" ")[0]}
-                          </span>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        {sorted.map((brand, i) => {
-                          const w = Math.round((brand.a / maxA) * 100);
-                          const dNum = parseFloat(brand.d);
-                          return (
-                            <div key={brand.n} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${brand.base ? "bg-green-50 border border-green-200" : ""}`}>
-                              <span className="text-xs text-stone-400 font-bold w-4 shrink-0">{i + 1}</span>
-                              <span className={`text-xs font-bold w-24 truncate shrink-0 ${brand.base ? "text-green-700" : "text-stone-700"}`}>{brand.n}</span>
-                              <div className="flex-1 h-2 bg-stone-100 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${brand.base ? "bg-green-500" : "bg-stone-400"}`} style={{ width: `${w}%` }} />
-                              </div>
-                              <span className="text-xs font-bold text-stone-700 w-8 text-right shrink-0">{brand.a}</span>
-                              <span className={`text-xs font-bold w-10 text-right shrink-0 ${dNum > 0 ? "text-green-600" : dNum < 0 ? "text-red-500" : "text-stone-400"}`}>{brand.d}</span>
-                              <span className="text-xs w-5 shrink-0">{brand.s.split(" ")[0]}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {!brandData?.trend && !brandLoading && (
-                <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
-                  <p className="text-stone-500 text-sm">🔄 최신 데이터 불러오기 버튼을 클릭해주세요</p>
-                </div>
-              )}
-            </div>
-          )}
           {/* 상위노출 현황 */}
-          {(activeMenu === "brand_exposure" || activeMenu === "kpi_exposure") && (
+          {activeMenu === "brand_exposure" && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-stone-800">상위노출 현황</h2>
