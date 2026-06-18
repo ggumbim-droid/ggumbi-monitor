@@ -83,7 +83,7 @@ const SIDEBAR_MENUS = [
       { id: "brand_trend", label: "경쟁사 트렌드" },
       { id: "keyword_trend", label: "네이버 트렌드 조회" },
      
-      { id: "brand_exposure", label: "상위노출 현황" },
+      
       { id: "monitor_naver", label: "네이버 모니터링" },
       { id: "monitor_social", label: "소셜 모니터링" },
       { id: "monitor_shopping", label: "쇼핑 모니터링" },
@@ -91,12 +91,7 @@ const SIDEBAR_MENUS = [
   },
   { id: "kpi_performance", label: "02. 퍼포먼스 매출", icon: "💰", children: [] },
   { id: "kpi_ads", label: "03. 주력제품 광고매출", icon: "📦", children: [] },
-  {
-    id: "kpi_exposure", label: "04. 키워드 1페이지 노출", icon: "🏆",
-    children: [
-      { id: "keyword_ranking", label: "검색 노출 순위" },
-    ],
-  },
+  { id: "kpi_exposure", label: "04. 키워드 1페이지 노출", icon: "🏆", children: [] },
   { id: "kpi_newuser", label: "05. 신규유입", icon: "👥", children: [] },
   { id: "kpi_synergy", label: "06. 계열사 시너지", icon: "🤝", children: [] },
   { id: "kpi_budget", label: "07. 예산 효율", icon: "💡", children: [] },
@@ -531,7 +526,7 @@ export default function HomePage() {
             </div>
           )}
           {/* 상위노출 현황 */}
-          {activeMenu === "brand_exposure" && (
+          {(activeMenu === "brand_exposure" || activeMenu === "kpi_exposure") && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-stone-800">상위노출 현황</h2>
