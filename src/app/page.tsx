@@ -166,6 +166,7 @@ export default function HomePage() {
   const [selectedTrendCat, setSelectedTrendCat] = useState("");
   const [chartCatData, setChartCatData] = useState<ChartCat | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
+  const [trendChartPeriod, setTrendChartPeriod] = useState<"3months" | "1year" | "3years">("3months");
 
   const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
@@ -193,17 +194,17 @@ export default function HomePage() {
   useEffect(() => {
     if (trendViewMode !== "chart" || !selectedTrendCat) return;
     setChartLoading(true);
-    const url = process.env.NEXT_PUBLIC_BRAND_SCRIPT_URL || "/api/brand-monitor";
-    fetch(`/api/brand-chart?cat=${encodeURIComponent(selectedTrendCat)}`)
+    fetch(`/api/brand-chart?cat=${encodeURIComponent(selectedTrendCat)}&period=${trendChartPeriod}`)
       .then(r => r.json())
       .then((data: unknown) => {
         if (!data || typeof data !== "object") return;
         const d = data as { chart?: ChartCat[] };
         if (d.chart && d.chart.length > 0) setChartCatData(d.chart[0]);
+        else setChartCatData(null);
       })
       .catch(e => console.error("차트 데이터 로드 실패:", e))
       .finally(() => setChartLoading(false));
-  }, [trendViewMode, selectedTrendCat]);
+  }, [trendViewMode, selectedTrendCat, trendChartPeriod]);
 
   const handleGroupMonitor = useCallback(async (groupId: string) => {
     const trimmed = (groupKeywords[groupId] ?? []).map((k) => k.trim()).filter(Boolean);
@@ -266,10 +267,10 @@ finally { setTrendLoading(false); }
     finally { setBrandLoading(false); }
   }
 
-  async function fetchChartData(catName: string) {
+  async function fetchChartData(catName: string, period?: string) {
     setChartLoading(true);
     try {
-      const res = await fetch(`/api/brand-chart?cat=${encodeURIComponent(catName)}`);
+      const res = await fetch(`/api/brand-chart?cat=${encodeURIComponent(catName)}&period=${period || trendChartPeriod}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
       if (data.chart && data.chart.length > 0) setChartCatData(data.chart[0]);
@@ -570,10 +571,25 @@ finally { setTrendLoading(false); }
               {/* 차트 뷰 */}
               {trendViewMode === "chart" && (
                 <div className="bg-white rounded-xl border border-stone-200 p-6">
+                  <div className="flex gap-2 mb-4">
+                    {([
+                      { label: "3개월", value: "3months" },
+                      { label: "1년", value: "1year" },
+                      { label: "3년", value: "3years" },
+                    ] as const).map((p) => (
+                      <button key={p.value}
+                        onClick={() => setTrendChartPeriod(p.value)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${trendChartPeriod === p.value ? "bg-stone-800 text-white" : "bg-white text-stone-600 border border-stone-200 hover:border-stone-400"}`}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                   {chartLoading && <p className="text-sm text-stone-400 text-center py-8">차트 데이터 로딩 중...</p>}
                   {!chartLoading && chartCatData && (
                     <>
-                      <h3 className="font-bold text-stone-800 mb-1">[{chartCatData.name}] 단기 트렌드 (3개월)</h3>
+                      <h3 className="font-bold text-stone-800 mb-1">
+                        [{chartCatData.name}] {trendChartPeriod === "3months" ? "단기 트렌드 (3개월)" : trendChartPeriod === "1year" ? "장기 트렌드 (1년)" : "장기 트렌드 (3년)"}
+                      </h3>
                       <p className="text-xs text-stone-400 mb-4">브랜드 클릭으로 강조</p>
                       <ResponsiveContainer width="100%" height={400}>
                         <LineChart data={chartCatData.data.map(d => ({ ...d, period: fmtPeriod(String(d.period)) }))}
