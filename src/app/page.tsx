@@ -10,7 +10,7 @@ import { ChannelTabs } from "@/components/ChannelTabs";
 import { LoginRequiredSection } from "@/components/LoginRequiredSection";
 import { InsightsPanel } from "@/components/InsightsPanel";
 import { buildNotionReport } from "@/lib/report";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from "recharts";
 import type { ChannelId, MonitorDateRange, MonitorResult, SortOrder } from "@/types/monitor";
 
 interface BrandRow {
@@ -20,6 +20,9 @@ interface BrandRow {
   blogDelta: number; cafeDelta: number;
 }
 interface BrandGroup { name: string; brand: string; rows: BrandRow[]; }
+interface TrendBrand { n: string; a: number; d: string; pk: number; s: string; base: boolean; }
+interface TrendCat { name: string; base: string; period: string; brands: TrendBrand[]; }
+interface ChartCat { name: string; brands: string[]; data: Record<string, string | number>[]; }
 interface Brand { name: string; keywords: string[] }
 interface KeywordGroup { id: string; label: string; brands: Brand[] }
 interface KeywordGroups { [key: string]: { label: string; brands: Brand[] } }
@@ -31,42 +34,18 @@ const PRESET_PERIODS = [
   { label: "3년", value: "3years" },
   { label: "직접입력", value: "custom" },
 ];
-const BRAND_COLORS = ["#FF6B35","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD"];
+const BRAND_COLORS = ["#FF6B35","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD","#FF9FF3","#54A0FF"];
 
 const CHANNEL_GROUPS = [
-  {
-    id: "naver",
-    label: "네이버",
-    icon: "📰",
-    channels: ["naver_cafe", "naver_blog", "naver_news"] as ChannelId[],
-    description: "카페 · 블로그 · 뉴스",
-  },
-  {
-    id: "social",
-    label: "소셜",
-    icon: "📱",
-    channels: ["youtube", "instagram", "meta_ads"] as ChannelId[],
-    description: "유튜브 · 인스타 · Meta 광고",
-  },
-  {
-    id: "shopping",
-    label: "쇼핑",
-    icon: "🛒",
-    channels: ["smartstore", "smartstore_reviews", "naver_ranking"] as ChannelId[],
-    description: "스마트스토어 · 리뷰추이 · 순위추이",
-  },
+  { id: "naver", label: "네이버", icon: "📰", channels: ["naver_cafe", "naver_blog", "naver_news"] as ChannelId[], description: "카페 · 블로그 · 뉴스" },
+  { id: "social", label: "소셜", icon: "📱", channels: ["youtube", "instagram", "meta_ads"] as ChannelId[], description: "유튜브 · 인스타 · Meta 광고" },
+  { id: "shopping", label: "쇼핑", icon: "🛒", channels: ["smartstore", "smartstore_reviews", "naver_ranking"] as ChannelId[], description: "스마트스토어 · 리뷰추이 · 순위추이" },
 ];
 
 const CHANNEL_LABELS: Record<ChannelId, string> = {
-  naver_cafe: "카페",
-  naver_blog: "블로그",
-  naver_news: "뉴스",
-  youtube: "유튜브",
-  instagram: "인스타",
-  meta_ads: "Meta 광고",
-  smartstore: "스토어",
-  smartstore_reviews: "리뷰추이",
-  naver_ranking: "순위추이",
+  naver_cafe: "카페", naver_blog: "블로그", naver_news: "뉴스",
+  youtube: "유튜브", instagram: "인스타", meta_ads: "Meta 광고",
+  smartstore: "스토어", smartstore_reviews: "리뷰추이", naver_ranking: "순위추이",
 };
 
 const COMING_SOON: ChannelId[] = ["meta_ads", "smartstore_reviews"];
@@ -74,13 +53,10 @@ const COMING_SOON: ChannelId[] = ["meta_ads", "smartstore_reviews"];
 const SIDEBAR_MENUS = [
   { id: "dashboard", label: "전체 요약", icon: "📊", children: [] },
   {
-    id: "kpi_keyword",
-    label: "01. 키워드 검색량",
-    icon: "🔍",
+    id: "kpi_keyword", label: "01. 키워드 검색량", icon: "🔍",
     children: [
-      { id: "keyword_trend", label: "경쟁사 트렌드" },
-      { id: "keyword_ranking", label: "검색 노출 순위" },
-      { id: "brand_exposure", label: "상위노출 현황" },
+      { id: "brand_trend", label: "경쟁사 트렌드" },
+      { id: "keyword_trend", label: "네이버 트렌드 조회" },
       { id: "monitor_naver", label: "네이버 모니터링" },
       { id: "monitor_social", label: "소셜 모니터링" },
       { id: "monitor_shopping", label: "쇼핑 모니터링" },
@@ -100,6 +76,11 @@ function getDateBefore(months: number) {
   const d = new Date(); d.setMonth(d.getMonth() - months);
   return d.toISOString().split("T")[0];
 }
+function fmtPeriod(s: string) {
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 interface TooltipEntry { name: string; value: number; color: string; }
 function CustomTooltip({ active, payload, label, hoveredBrand }: { active?: boolean; payload?: TooltipEntry[]; label?: string; hoveredBrand?: string }) {
@@ -113,7 +94,7 @@ function CustomTooltip({ active, payload, label, hoveredBrand }: { active?: bool
           <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "3px 0", opacity: hoveredBrand && !hi ? 0.4 : 1 }}>
             <div style={{ width: hi ? "12px" : "8px", height: hi ? "12px" : "8px", borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0 }} />
             <span style={{ fontSize: hi ? "15px" : "12px", fontWeight: hi ? "700" : "400", color: hi ? "#111" : "#6b7280", flex: 1 }}>{entry.name}</span>
-            <span style={{ fontSize: hi ? "15px" : "12px", fontWeight: hi ? "700" : "400", color: entry.color }}>{entry.value.toFixed(1)}</span>
+            <span style={{ fontSize: hi ? "15px" : "12px", fontWeight: hi ? "700" : "400", color: entry.color }}>{typeof entry.value === "number" ? entry.value.toFixed(1) : entry.value}</span>
           </div>
         );
       })}
@@ -122,11 +103,8 @@ function CustomTooltip({ active, payload, label, hoveredBrand }: { active?: bool
 }
 
 interface IntegratedInsights {
-  competitorSummary: string;
-  benchmarkPoints: string[];
-  kkumbiStrategy: string;
-  actionPlan: string[];
-  channelStrategy: string[];
+  competitorSummary: string; benchmarkPoints: string[];
+  kkumbiStrategy: string; actionPlan: string[]; channelStrategy: string[];
 }
 
 export default function HomePage() {
@@ -176,10 +154,18 @@ export default function HomePage() {
   const [addingBrandToGroup, setAddingBrandToGroup] = useState("");
   const [groupMgrError, setGroupMgrError] = useState("");
 
-  // 상위노출 현황
-  const [brandData, setBrandData] = useState<null | { ranking: { ok: boolean; groups: BrandGroup[]; updated: string } }>(null);
+  const [brandData, setBrandData] = useState<null | {
+    ranking?: { ok: boolean; groups: BrandGroup[]; updated: string };
+    trend?: { ok: boolean; cats: TrendCat[]; updated: string };
+  }>(null);
   const [brandLoading, setBrandLoading] = useState(false);
   const [brandError, setBrandError] = useState("");
+
+  // 경쟁사 트렌드 뷰 모드 및 차트 데이터
+  const [trendViewMode, setTrendViewMode] = useState<"table" | "chart">("table");
+  const [selectedTrendCat, setSelectedTrendCat] = useState("");
+  const [chartCatData, setChartCatData] = useState<ChartCat | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
 
   const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
@@ -202,6 +188,22 @@ export default function HomePage() {
       .catch((e) => console.error("키워드 로드 실패:", e))
       .finally(() => setKwLoading(false));
   }, [activeMenu]);
+
+  // 차트 뷰로 전환 시 데이터 로드
+  useEffect(() => {
+    if (trendViewMode !== "chart" || !selectedTrendCat) return;
+    setChartLoading(true);
+    const url = process.env.NEXT_PUBLIC_BRAND_SCRIPT_URL || "/api/brand-monitor";
+    fetch(`/api/brand-chart?cat=${encodeURIComponent(selectedTrendCat)}`)
+      .then(r => r.json())
+      .then((data: unknown) => {
+        if (!data || typeof data !== "object") return;
+        const d = data as { chart?: ChartCat[] };
+        if (d.chart && d.chart.length > 0) setChartCatData(d.chart[0]);
+      })
+      .catch(e => console.error("차트 데이터 로드 실패:", e))
+      .finally(() => setChartLoading(false));
+  }, [trendViewMode, selectedTrendCat]);
 
   const handleGroupMonitor = useCallback(async (groupId: string) => {
     const trimmed = (groupKeywords[groupId] ?? []).map((k) => k.trim()).filter(Boolean);
@@ -246,18 +248,34 @@ export default function HomePage() {
       if (!res.ok) throw new Error(data.error || "오류 발생");
       setChartData(data.results);
     } catch (e: unknown) { setTrendError(e instanceof Error ? e.message : "오류 발생"); }
-    finally { setTrendLoading(false); }
+finally { setTrendLoading(false); }
   }
 
   async function fetchBrandData() {
     setBrandLoading(true); setBrandError("");
     try {
-      const res = await fetch("/api/brand-monitor?type=ranking");
+      const res = await fetch("/api/brand-monitor?type=all");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
       setBrandData(data);
+      // 첫 번째 카테고리 자동 선택
+      if (data.trend?.cats?.length > 0 && !selectedTrendCat) {
+        setSelectedTrendCat(data.trend.cats[0].name);
+      }
     } catch (e: unknown) { setBrandError(e instanceof Error ? e.message : "오류 발생"); }
     finally { setBrandLoading(false); }
+  }
+
+  async function fetchChartData(catName: string) {
+    setChartLoading(true);
+    try {
+      const res = await fetch(`/api/brand-chart?cat=${encodeURIComponent(catName)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      if (data.chart && data.chart.length > 0) setChartCatData(data.chart[0]);
+      else setChartCatData(null);
+    } catch (e: unknown) { console.error("차트 데이터 로드 실패:", e); }
+    finally { setChartLoading(false); }
   }
 
   async function handleExportToSheets() {
@@ -369,7 +387,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* 사이드바 */}
       <aside className={`${sidebarOpen ? "w-64" : "w-16"} bg-[#1a1a2e] text-white flex flex-col transition-all duration-300 shrink-0 sticky top-0 h-screen overflow-y-auto`}>
         <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between">
           {sidebarOpen && (
@@ -413,7 +430,6 @@ export default function HomePage() {
         {sidebarOpen && <div className="px-4 py-3 border-t border-white/10 text-xs text-white/40">꿈비 마케팅 인텔리전스</div>}
       </aside>
 
-      {/* 메인 */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-white border-b border-stone-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
           <div>
@@ -457,14 +473,151 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* 상위노출 현황 */}
-          {activeMenu === "brand_exposure" && (
+          {/* 경쟁사 트렌드 대시보드 */}
+          {activeMenu === "brand_trend" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h2 className="text-base font-bold text-stone-800">경쟁사 트렌드 대시보드</h2>
+                  {brandData?.trend?.updated && <span className="text-xs text-stone-500">최종 조회: {brandData.trend.updated}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* 테이블/차트 전환 버튼 */}
+                  <div className="flex rounded-lg border border-stone-200 overflow-hidden">
+                    <button onClick={() => setTrendViewMode("table")}
+                      className={`px-4 py-2 text-xs font-semibold transition ${trendViewMode === "table" ? "bg-kkumbi-500 text-white" : "bg-white text-stone-600 hover:bg-stone-50"}`}>
+                      📋 테이블
+                    </button>
+                    <button onClick={() => {
+                      setTrendViewMode("chart");
+                      if (selectedTrendCat) fetchChartData(selectedTrendCat);
+                    }}
+                      className={`px-4 py-2 text-xs font-semibold transition ${trendViewMode === "chart" ? "bg-kkumbi-500 text-white" : "bg-white text-stone-600 hover:bg-stone-50"}`}>
+                      📈 차트
+                    </button>
+                  </div>
+                  <button onClick={fetchBrandData} disabled={brandLoading}
+                    className="px-4 py-2 bg-kkumbi-500 text-white text-xs font-semibold rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
+{brandLoading ? "로딩 중..." : "🔄 새로고침"}
+                  </button>
+                </div>
+              </div>
+              {brandError && <p className="text-red-500 text-sm">{brandError}</p>}
+
+              {/* 카테고리 탭 */}
+              {brandData?.trend?.cats && brandData.trend.cats.length > 0 && (
+                <div className="flex gap-2 flex-wrap">
+                  {brandData.trend.cats.map((cat) => (
+                    <button key={cat.name}
+                      onClick={() => {
+                        setSelectedTrendCat(cat.name);
+                        if (trendViewMode === "chart") fetchChartData(cat.name);
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${selectedTrendCat === cat.name ? "bg-kkumbi-500 text-white" : "bg-white text-stone-600 border border-stone-200 hover:border-kkumbi-300"}`}>
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 테이블 뷰 */}
+              {trendViewMode === "table" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {brandData?.trend?.cats?.map((cat) => {
+                    const sorted = [...cat.brands].sort((a, b) => b.a - a.a);
+                    const maxA = sorted[0]?.a || 1;
+                    const baseRank = sorted.findIndex(b => b.base) + 1;
+                    const baseBrand = sorted.find(b => b.base);
+                    return (
+                      <div key={cat.name} className="bg-white rounded-xl border border-stone-200 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-stone-800">{cat.name}</span>
+                          <span className="text-xs text-stone-400 bg-stone-100 px-2 py-1 rounded-full">{cat.period}</span>
+                        </div>
+                        <div className="text-xs mb-3 flex items-center gap-2">
+                          <span className="text-stone-500">자사({cat.base})</span>
+                          <span className={`font-bold ${baseRank === 1 ? "text-green-700" : "text-stone-700"}`}>{baseRank}위 / {sorted.length}개</span>
+                          {baseBrand && (
+                            <span className={`font-bold ${parseFloat(baseBrand.d) > 0 ? "text-green-600" : parseFloat(baseBrand.d) < 0 ? "text-red-500" : "text-stone-400"}`}>
+                              {baseBrand.d} {baseBrand.s.split(" ")[0]}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {sorted.map((brand, i) => {
+                            const w = Math.round((brand.a / maxA) * 100);
+                            const dNum = parseFloat(brand.d);
+                            return (
+                              <div key={brand.n} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${brand.base ? "bg-green-50 border border-green-200" : ""}`}>
+                                <span className="text-xs text-stone-400 font-bold w-4 shrink-0">{i + 1}</span>
+                                <span className={`text-xs font-bold w-24 truncate shrink-0 ${brand.base ? "text-green-700" : "text-stone-700"}`}>{brand.n}</span>
+                                <div className="flex-1 h-2 bg-stone-100 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full ${brand.base ? "bg-green-500" : "bg-stone-400"}`} style={{ width: `${w}%` }} />
+                                </div>
+                                <span className="text-xs font-bold text-stone-700 w-8 text-right shrink-0">{brand.a}</span>
+                                <span className={`text-xs font-bold w-10 text-right shrink-0 ${dNum > 0 ? "text-green-600" : dNum < 0 ? "text-red-500" : "text-stone-400"}`}>{brand.d}</span>
+                                <span className="text-xs w-5 shrink-0">{brand.s.split(" ")[0]}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 차트 뷰 */}
+              {trendViewMode === "chart" && (
+                <div className="bg-white rounded-xl border border-stone-200 p-6">
+                  {chartLoading && <p className="text-sm text-stone-400 text-center py-8">차트 데이터 로딩 중...</p>}
+                  {!chartLoading && chartCatData && (
+                    <>
+                      <h3 className="font-bold text-stone-800 mb-1">[{chartCatData.name}] 단기 트렌드 (3개월)</h3>
+                      <p className="text-xs text-stone-400 mb-4">브랜드 클릭으로 강조</p>
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={chartCatData.data.map(d => ({ ...d, period: fmtPeriod(String(d.period)) }))}
+                          onMouseLeave={() => setHoveredBrand("")}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                          <XAxis dataKey="period" tick={{ fontSize: 10 }} interval={6} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip content={<CustomTooltip hoveredBrand={hoveredBrand} />} />
+                          <Legend />
+                          {chartCatData.brands.map((brand, i) => (
+                            <Line key={brand} type="monotone" dataKey={brand}
+                              stroke={BRAND_COLORS[i % BRAND_COLORS.length]}
+                              strokeWidth={hoveredBrand === brand ? 3 : 1.5}
+                              opacity={hoveredBrand && hoveredBrand !== brand ? 0.3 : 1}
+                              dot={false}
+                              onMouseEnter={() => setHoveredBrand(brand)}
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </>
+                  )}
+                  {!chartLoading && !chartCatData && (
+                    <div className="text-center py-8">
+                      <p className="text-stone-500 text-sm">카테고리를 선택하거나 새로고침 버튼을 클릭해주세요</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!brandData?.trend && !brandLoading && (
+                <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
+                  <p className="text-stone-500 text-sm">🔄 새로고침 버튼을 클릭해주세요</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 04. 키워드 1페이지 노출 */}
+          {(activeMenu === "brand_exposure" || activeMenu === "kpi_exposure") && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-stone-800">상위노출 현황</h2>
-                {brandData?.ranking?.updated && (
-                  <span className="text-xs text-stone-500">최종 조회: {brandData.ranking.updated}</span>
-                )}
+                <h2 className="text-base font-bold text-stone-800">키워드 1페이지 노출 현황</h2>
+                {brandData?.ranking?.updated && <span className="text-xs text-stone-500">최종 조회: {brandData.ranking.updated}</span>}
               </div>
               <button onClick={fetchBrandData} disabled={brandLoading}
                 className="w-full py-3 bg-kkumbi-500 text-white font-semibold rounded-xl hover:bg-kkumbi-600 disabled:opacity-50">
@@ -503,30 +656,24 @@ export default function HomePage() {
                             <td className="px-3 py-2 font-medium text-stone-700">{row.keyword}</td>
                             <td className="px-3 py-2 text-center text-stone-600">{Number(row.volume).toLocaleString()}</td>
                             <td className="px-3 py-2 text-center">
-                              {row.priceRank !== "-"
-                                ? <span className="bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded">{row.priceRank}위</span>
-                                : <span className="text-stone-300">-</span>}
+                              {row.priceRank !== "-" ? <span className="bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded">{row.priceRank}위</span> : <span className="text-stone-300">-</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
                               {row.blogCount > 0
-                                ? <a href={row.blogUrl} target="_blank" rel="noopener noreferrer" className="bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded hover:underline">
-                                    {row.blogCount}건 ({row.blogRanks})
-                                  </a>
+                                ? <a href={row.blogUrl} target="_blank" rel="noopener noreferrer" className="bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded hover:underline">{row.blogCount}건 ({row.blogRanks})</a>
                                 : <span className="text-stone-300">-</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
                               {row.cafeCount > 0
-                                ? <a href={row.cafeUrl} target="_blank" rel="noopener noreferrer" className="bg-orange-50 text-orange-700 font-bold px-2 py-0.5 rounded hover:underline">
-                                    {row.cafeCount}건
-                                  </a>
+                                ? <a href={row.cafeUrl} target="_blank" rel="noopener noreferrer" className="bg-orange-50 text-orange-700 font-bold px-2 py-0.5 rounded hover:underline">{row.cafeCount}건</a>
                                 : <span className="text-stone-300">-</span>}
                             </td>
                             <td className="px-3 py-2 text-stone-500 text-xs">
                               {row.blogSov && <div><span className="text-stone-400">블로그</span> {row.blogSov}</div>}
                               {row.cafeSov && <div><span className="text-stone-400">카페</span> {row.cafeSov}</div>}
                             </td>
-                            <td className="px-3 py-2 text-stone-600 text-xs max-w-xs">
-                              <span className={row.action.includes("[우선]") ? "text-red-600 font-semibold" : ""}>{row.action}</span>
+                            <td className="px-3 py-2 text-xs max-w-xs">
+                              <span className={row.action.includes("[우선]") ? "text-red-600 font-semibold" : "text-stone-600"}>{row.action}</span>
                             </td>
                           </tr>
                         ))}
@@ -535,6 +682,11 @@ export default function HomePage() {
                   </div>
                 </div>
               ))}
+              {!brandData?.ranking && !brandLoading && (
+                <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
+                  <p className="text-stone-500 text-sm">🔄 최신 데이터 불러오기 버튼을 클릭해주세요</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -596,7 +748,7 @@ export default function HomePage() {
                         setSortOrder(newSort); setReSearching(true);
                         try {
                           const res = await fetch("/api/monitor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keywords: (groupKeywords[activeMonitorGroup] ?? []).map((k) => k.trim()).filter(Boolean), sortOrder: newSort, channels: groupChannels[activeMonitorGroup], period: dateRange }) });
-                          const data = await res.json();
+const data = await res.json();
                           if (res.ok) setGroupResults((prev) => ({ ...prev, [activeMonitorGroup]: data }));
                         } finally { setReSearching(false); }
                       }}
@@ -615,7 +767,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* 키워드 트렌드 */}
+          {/* 네이버 트렌드 조회 */}
           {activeMenu === "keyword_trend" && (
             <div className="space-y-4">
               {kwLoading && <p className="text-sm text-gray-400">키워드 불러오는 중...</p>}
@@ -798,22 +950,12 @@ export default function HomePage() {
           )}
 
           {/* 준비 중 */}
-          {["kpi_newuser","kpi_synergy","kpi_budget","kpi_ai","kpi_keyword","kpi_performance","kpi_ads","kpi_exposure"].includes(activeMenu) && (
+          {["kpi_newuser","kpi_synergy","kpi_budget","kpi_ai","kpi_keyword","kpi_performance","kpi_ads"].includes(activeMenu) && (
             <div className="rounded-2xl border border-stone-200 bg-white p-12 text-center">
               <p className="text-4xl mb-4">🔧</p>
               <h3 className="text-lg font-bold text-stone-700 mb-2">{SIDEBAR_MENUS.find(m => m.id === activeMenu)?.label}</h3>
               <p className="text-sm text-stone-500">해당 KPI 데이터 연동 준비 중입니다.</p>
               <p className="text-xs text-stone-400 mt-2">하위 메뉴를 선택해주세요</p>
-            </div>
-          )}
-
-          {/* 검색 노출 순위 */}
-          {activeMenu === "keyword_ranking" && (
-            <div className="rounded-2xl border border-stone-200 bg-white p-6">
-              <p className="text-sm text-stone-600">검색 노출 순위 추이는 <strong>쇼핑 채널 모니터링</strong>에서 확인하세요.</p>
-              <button onClick={() => setActiveMenu("monitor_shopping")} className="mt-3 px-4 py-2 bg-kkumbi-500 text-white text-sm font-semibold rounded-lg hover:bg-kkumbi-600">
-                쇼핑 모니터링으로 이동
-              </button>
             </div>
           )}
 
@@ -856,7 +998,7 @@ function IntegratedInsightsButton({ groupResults, groupKeywords, dateRange }: { 
 function Spinner() {
   return (
     <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
   );
