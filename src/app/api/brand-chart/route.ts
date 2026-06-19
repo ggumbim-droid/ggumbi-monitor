@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
     }
     const { searchParams } = new URL(request.url);
     const cat = searchParams.get("cat") || "";
-    const res = await fetch(`${BRAND_SCRIPT_URL}?type=chart&cat=${encodeURIComponent(cat)}`, {
+    const period = searchParams.get("period") || "3months";
+    const res = await fetch(`${BRAND_SCRIPT_URL}?type=chart&cat=${encodeURIComponent(cat)}&period=${encodeURIComponent(period)}`, {
       method: "GET",
     });
     if (!res.ok) return NextResponse.json({ error: "데이터를 가져오는데 실패했습니다." }, { status: 502 });
