@@ -10,9 +10,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const cat = searchParams.get("cat") || "";
     const period = searchParams.get("period") || "3months";
-    const res = await fetch(`${BRAND_SCRIPT_URL}?type=chart&cat=${encodeURIComponent(cat)}&period=${encodeURIComponent(period)}`, {
-      method: "GET",
-    });
+    const customStart = searchParams.get("customStart") || "";
+    const customEnd = searchParams.get("customEnd") || "";
+
+    const params = new URLSearchParams({ type: "chart", cat, period });
+    if (period === "custom") {
+      if (customStart) params.set("customStart", customStart);
+      if (customEnd) params.set("customEnd", customEnd);
+    }
+
+    const res = await fetch(`${BRAND_SCRIPT_URL}?${params.toString()}`, { method: "GET" });
     if (!res.ok) return NextResponse.json({ error: "데이터를 가져오는데 실패했습니다." }, { status: 502 });
     const data = await res.json();
     return NextResponse.json(data);
