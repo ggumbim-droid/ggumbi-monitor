@@ -166,7 +166,9 @@ export default function HomePage() {
   const [selectedTrendCat, setSelectedTrendCat] = useState("");
   const [chartCatData, setChartCatData] = useState<ChartCat | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
-  const [trendChartPeriod, setTrendChartPeriod] = useState<"3months" | "1year" | "3years">("3months");
+  const [trendChartPeriod, setTrendChartPeriod] = useState<"3months" | "1year" | "3years" | "custom">("3months");
+  const [trendChartCustomStart, setTrendChartCustomStart] = useState(getDateBefore(3));
+  const [trendChartCustomEnd, setTrendChartCustomEnd] = useState(getToday());
 
   const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
@@ -193,8 +195,14 @@ export default function HomePage() {
   // 차트 뷰로 전환 시 데이터 로드
   useEffect(() => {
     if (trendViewMode !== "chart" || !selectedTrendCat) return;
+    if (trendChartPeriod === "custom" && (!trendChartCustomStart || !trendChartCustomEnd)) return;
     setChartLoading(true);
-    fetch(`/api/brand-chart?cat=${encodeURIComponent(selectedTrendCat)}&period=${trendChartPeriod}`)
+    const params = new URLSearchParams({ cat: selectedTrendCat, period: trendChartPeriod });
+    if (trendChartPeriod === "custom") {
+      params.set("customStart", trendChartCustomStart);
+      params.set("customEnd", trendChartCustomEnd);
+    }
+    fetch(`/api/brand-chart?${params.toString()}`)
       .then(r => r.json())
       .then((data: unknown) => {
         if (!data || typeof data !== "object") return;
@@ -204,7 +212,7 @@ export default function HomePage() {
       })
       .catch(e => console.error("차트 데이터 로드 실패:", e))
       .finally(() => setChartLoading(false));
-  }, [trendViewMode, selectedTrendCat, trendChartPeriod]);
+  }, [trendViewMode, selectedTrendCat, trendChartPeriod, trendChartCustomStart, trendChartCustomEnd]);
 
   const handleGroupMonitor = useCallback(async (groupId: string) => {
     const trimmed = (groupKeywords[groupId] ?? []).map((k) => k.trim()).filter(Boolean);
@@ -270,7 +278,13 @@ finally { setTrendLoading(false); }
   async function fetchChartData(catName: string, period?: string) {
     setChartLoading(true);
     try {
-      const res = await fetch(`/api/brand-chart?cat=${encodeURIComponent(catName)}&period=${period || trendChartPeriod}`);
+      const p = period || trendChartPeriod;
+      const params = new URLSearchParams({ cat: catName, period: p });
+      if (p === "custom") {
+        params.set("customStart", trendChartCustomStart);
+        params.set("customEnd", trendChartCustomEnd);
+      }
+      const res = await fetch(`/api/brand-chart?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
       if (data.chart && data.chart.length > 0) setChartCatData(data.chart[0]);
@@ -571,11 +585,12 @@ finally { setTrendLoading(false); }
               {/* 차트 뷰 */}
               {trendViewMode === "chart" && (
                 <div className="bg-white rounded-xl border border-stone-200 p-6">
-                  <div className="flex gap-2 mb-4">
+                  <div className="flex gap-2 mb-4 flex-wrap items-center">
                     {([
                       { label: "3개월", value: "3months" },
                       { label: "1년", value: "1year" },
                       { label: "3년", value: "3years" },
+                      { label: "직접입력", value: "custom" },
                     ] as const).map((p) => (
                       <button key={p.value}
                         onClick={() => setTrendChartPeriod(p.value)}
@@ -583,12 +598,21 @@ finally { setTrendLoading(false); }
                         {p.label}
                       </button>
                     ))}
+                    {trendChartPeriod === "custom" && (
+                      <div className="flex items-center gap-2 ml-2">
+                        <input type="date" value={trendChartCustomStart} onChange={(e) => setTrendChartCustomStart(e.target.value)} max={trendChartCustomEnd}
+                          className="border border-stone-200 rounded-lg px-2 py-1 text-xs" />
+                        <span className="text-stone-400 text-xs">~</span>
+                        <input type="date" value={trendChartCustomEnd} onChange={(e) => setTrendChartCustomEnd(e.target.value)} min={trendChartCustomStart} max={getToday()}
+                          className="border border-stone-200 rounded-lg px-2 py-1 text-xs" />
+                      </div>
+                    )}
                   </div>
                   {chartLoading && <p className="text-sm text-stone-400 text-center py-8">차트 데이터 로딩 중...</p>}
                   {!chartLoading && chartCatData && (
                     <>
                       <h3 className="font-bold text-stone-800 mb-1">
-                        [{chartCatData.name}] {trendChartPeriod === "3months" ? "단기 트렌드 (3개월)" : trendChartPeriod === "1year" ? "장기 트렌드 (1년)" : "장기 트렌드 (3년)"}
+                        [{chartCatData.name}] {trendChartPeriod === "3months" ? "단기 트렌드 (3개월)" : trendChartPeriod === "1year" ? "장기 트렌드 (1년)" : trendChartPeriod === "3years" ? "장기 트렌드 (3년)" : `직접 설정 (${trendChartCustomStart} ~ ${trendChartCustomEnd})`}
                       </h3>
                       <p className="text-xs text-stone-400 mb-4">브랜드 클릭으로 강조</p>
                       <ResponsiveContainer width="100%" height={400}>
