@@ -33,8 +33,18 @@ interface ReportCategory {
 
 interface WeeklyReportData {
   week: string;
+  label: string;
+  startDate: string;
+  endDate: string;
   prevFeedback: string;
   categories: ReportCategory[];
+}
+
+interface WeekListEntry {
+  week: string;
+  label: string;
+  startDate: string;
+  endDate: string;
 }
 
 const CATEGORY_DEFS: { id: string; title: string }[] = [
@@ -57,7 +67,7 @@ function blankCategory(def: { id: string; title: string }): ReportCategory {
 }
 
 function blankReport(week: string): WeeklyReportData {
-  return { week, prevFeedback: "", categories: CATEGORY_DEFS.map(blankCategory) };
+  return { week, label: "", startDate: "", endDate: "", prevFeedback: "", categories: CATEGORY_DEFS.map(blankCategory) };
 }
 
 async function kvGet(key: string) {
@@ -95,18 +105,24 @@ function reportKey(week: string) {
   return `weekly_report:${week}`;
 }
 
-async function getWeekList(): Promise<string[]> {
-  const list = ((await kvGet("weekly_report_weeks")) as string[]) ?? [];
-  return list;
+async function getWeekList(): Promise<WeekListEntry[]> {
+  const raw = (await kvGet("weekly_report_weeks")) as unknown;
+  if (!Array.isArray(raw)) return [];
+  // 과거 버전(문자열 배열) 호환 처리
+  return raw.map((item) =>
+    typeof item === "string"
+      ? { week: item, label: "", startDate: "", endDate: "" }
+      : (item as WeekListEntry)
+  );
 }
 
-async function addWeekToList(week: string) {
+async function addWeekToList(entry: WeekListEntry) {
   const list = await getWeekList();
-  if (!list.includes(week)) {
-    list.push(week);
-    list.sort();
-    await kvSet("weekly_report_weeks", list);
-  }
+  const idx = list.findIndex((w) => w.week === entry.week);
+  if (idx >= 0) list[idx] = entry;
+  else list.push(entry);
+  list.sort((a, b) => a.week.localeCompare(b.week));
+  await kvSet("weekly_report_weeks", list);
 }
 
 function fillMissingCategories(report: WeeklyReportData): WeeklyReportData {
@@ -123,7 +139,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const weeks = await getWeekList();
     let week = searchParams.get("week") || "";
-    if (!week) week = weeks.length ? weeks[weeks.length - 1] : "";
+    if (!week) week = weeks.length ? weeks[weeks.length - 1].week : "";
 
     if (!week) {
       return NextResponse.json({ week: "", report: null, weeks: [] });
@@ -146,7 +162,7 @@ export async function POST(request: NextRequest) {
     if (!week) return NextResponse.json({ error: "week가 필요합니다." }, { status: 400 });
 
     if (action === "new_week") {
-      const { copyFrom } = body;
+      const { copyFrom, startDate, endDate, label } = body;
       let base: WeeklyReportData | null = null;
       if (copyFrom) base = (await kvGet(reportKey(copyFrom))) as WeeklyReportData | null;
       const categories: ReportCategory[] = CATEGORY_DEFS.map((def) => {
@@ -157,9 +173,12 @@ export async function POST(request: NextRequest) {
           status: "unk", note: "", items: [],
         };
       });
-      const report: WeeklyReportData = { week, prevFeedback: "", categories };
+      const report: WeeklyReportData = {
+        week, label: label ?? "", startDate: startDate ?? "", endDate: endDate ?? "",
+        prevFeedback: "", categories,
+      };
       await kvSet(reportKey(week), report);
-      await addWeekToList(week);
+      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
       const weeks = await getWeekList();
       return NextResponse.json({ success: true, report, weeks });
     }
@@ -171,7 +190,7 @@ export async function POST(request: NextRequest) {
     if (action === "update_feedback") {
       report.prevFeedback = body.prevFeedback ?? "";
       await kvSet(reportKey(week), report);
-      await addWeekToList(week);
+      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
       return NextResponse.json({ success: true, report });
     }
 
@@ -188,7 +207,7 @@ export async function POST(request: NextRequest) {
       cat.updatedBy = updatedBy ?? cat.updatedBy;
       cat.updatedAt = new Date().toISOString();
       await kvSet(reportKey(week), report);
-      await addWeekToList(week);
+      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
       return NextResponse.json({ success: true, report });
     }
 
@@ -200,13 +219,13 @@ export async function POST(request: NextRequest) {
       cat.updatedBy = updatedBy ?? cat.updatedBy;
       cat.updatedAt = new Date().toISOString();
       await kvSet(reportKey(week), report);
-      await addWeekToList(week);
+      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
       return NextResponse.json({ success: true, report });
     }
 
     if (action === "delete_week") {
       const list = await getWeekList();
-      await kvSet("weekly_report_weeks", list.filter((w) => w !== week));
+      await kvSet("weekly_report_weeks", list.filter((w) => w.week !== week));
       return NextResponse.json({ success: true });
     }
 
