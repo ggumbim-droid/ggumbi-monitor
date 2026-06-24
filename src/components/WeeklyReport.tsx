@@ -32,8 +32,18 @@ interface ReportCategory {
 
 interface WeeklyReportData {
   week: string;
+  label: string;
+  startDate: string;
+  endDate: string;
   prevFeedback: string;
   categories: ReportCategory[];
+}
+
+interface WeekListEntry {
+  week: string;
+  label: string;
+  startDate: string;
+  endDate: string;
 }
 
 const TEAM_NAMES = ["방승현TL", "혜림SM", "소원JM", "조혜림JM", "이수현AM", "희수AM", "수지SM", "봄봄시니어"];
@@ -64,6 +74,26 @@ function newId() {
 
 function emptyItem(): ReportItem {
   return { id: newId(), title: "", metric: "", badge: "", badgeStatus: "warn", cause: "", action: "", due: "", gap: "" };
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function suggestLabel(startStr: string): string {
+  const d = new Date(startStr);
+  if (isNaN(d.getTime())) return "";
+  const month = d.getMonth() + 1;
+  const weekNum = Math.ceil(d.getDate() / 7);
+  return `${month}월 ${weekNum}주차`;
+}
+
+function fmtMD(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
 interface CategoryEditFormProps {
@@ -155,10 +185,16 @@ export function WeeklyReport() {
   const [namePromptOpen, setNamePromptOpen] = useState(false);
   const [nameInput, setNameInput] = useState("");
 
-  const [weeks, setWeeks] = useState<string[]>([]);
+  const [weeks, setWeeks] = useState<WeekListEntry[]>([]);
   const [week, setWeek] = useState("");
   const [report, setReport] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [newWeekOpen, setNewWeekOpen] = useState(false);
+  const [newStart, setNewStart] = useState("");
+  const [newEnd, setNewEnd] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [newWeekSaving, setNewWeekSaving] = useState(false);
 
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState("");
@@ -200,21 +236,34 @@ export function WeeklyReport() {
     setNamePromptOpen(false);
   }
 
-  async function handleNewWeek() {
-    let suggestion = "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(week)) {
-      const d = new Date(week);
-      d.setDate(d.getDate() + 7);
-      suggestion = d.toISOString().split("T")[0];
+  function openNewWeekModal() {
+    let start = "";
+    if (report?.endDate) start = addDays(report.endDate, 1);
+    setNewStart(start);
+    setNewEnd(start ? addDays(start, 6) : "");
+    setNewLabel(start ? suggestLabel(start) : "");
+    setNewWeekOpen(true);
+  }
+
+  function handleNewStartChange(v: string) {
+    setNewStart(v);
+    if (v) {
+      setNewEnd((prev) => prev || addDays(v, 6));
+      setNewLabel((prev) => prev || suggestLabel(v));
     }
-    const input = window.prompt("새 주차 키를 입력해주세요 (예: 2026-06-29 = 그 주 마감일 기준 날짜)", suggestion);
-    if (!input) return;
-    setLoading(true);
+  }
+
+  async function confirmNewWeek() {
+    if (!newStart || !newEnd) return;
+    setNewWeekSaving(true);
     try {
       const res = await fetch("/api/weekly-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "new_week", week: input, copyFrom: week || undefined }),
+        body: JSON.stringify({
+          action: "new_week", week: newEnd, startDate: newStart, endDate: newEnd,
+          label: newLabel || suggestLabel(newStart), copyFrom: week || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
@@ -222,10 +271,11 @@ export function WeeklyReport() {
       setWeek(data.report.week);
       setReport(data.report);
       setFeedbackDraft("");
+      setNewWeekOpen(false);
     } catch (e) {
       alert(e instanceof Error ? e.message : "오류 발생");
     } finally {
-      setLoading(false);
+      setNewWeekSaving(false);
     }
   }
 
@@ -316,16 +366,46 @@ export function WeeklyReport() {
     });
   });
 
+  const newWeekModal = newWeekOpen ? (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setNewWeekOpen(false)}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-bold text-stone-800">새 주차 만들기</h3>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">시작일</label>
+          <input type="date" value={newStart} onChange={(e) => handleNewStartChange(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">종료일</label>
+          <input type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} min={newStart || undefined} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">제목</label>
+          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 6월 4주차" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        {newStart && newEnd && <p className="text-xs text-stone-400">{fmtMD(newStart)} ~ {fmtMD(newEnd)}</p>}
+        <div className="flex gap-2">
+          <button onClick={confirmNewWeek} disabled={!newStart || !newEnd || newWeekSaving} className="flex-1 bg-kkumbi-500 text-white text-sm font-bold rounded-lg py-2 disabled:opacity-50">
+            {newWeekSaving ? "만드는 중..." : "만들기"}
+          </button>
+          <button onClick={() => setNewWeekOpen(false)} className="px-4 border border-stone-200 rounded-lg text-sm text-stone-600">취소</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (loading && !report) {
     return <p className="text-sm text-stone-400 text-center py-12">불러오는 중...</p>;
   }
 
   if (!loading && !week) {
     return (
-      <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-3">
-        <p className="text-sm text-stone-500">아직 등록된 주차가 없습니다.</p>
-        <button onClick={handleNewWeek} className="px-4 py-2 bg-kkumbi-500 text-white text-sm font-bold rounded-lg hover:bg-kkumbi-600">+ 첫 주차 시작하기</button>
-      </div>
+      <>
+        <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-3">
+          <p className="text-sm text-stone-500">아직 등록된 주차가 없습니다.</p>
+          <button onClick={openNewWeekModal} className="px-4 py-2 bg-kkumbi-500 text-white text-sm font-bold rounded-lg hover:bg-kkumbi-600">+ 첫 주차 시작하기</button>
+        </div>
+        {newWeekModal}
+      </>
     );
   }
 
@@ -334,13 +414,19 @@ export function WeeklyReport() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-base font-bold text-stone-800">주간보고 대시보드</h2>
-          <p className="text-xs text-stone-500">팬슈머마케팅팀 · {reporterName ? `로그인: ${reporterName}` : "이름을 설정해주세요"}</p>
+          <p className="text-xs text-stone-500">
+            팬슈머마케팅팀 · {report?.label || week}{report?.startDate && report?.endDate ? ` (${fmtMD(report.startDate)}~${fmtMD(report.endDate)})` : ""} · {reporterName ? `로그인: ${reporterName}` : "이름을 설정해주세요"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <select value={week} onChange={(e) => loadWeek(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm">
-            {weeks.slice().reverse().map((w) => <option key={w} value={w}>{w}</option>)}
+            {weeks.slice().reverse().map((w) => (
+              <option key={w.week} value={w.week}>
+                {w.label || w.week}{w.startDate && w.endDate ? ` (${fmtMD(w.startDate)}~${fmtMD(w.endDate)})` : ""}
+              </option>
+            ))}
           </select>
-          <button onClick={handleNewWeek} className="px-3 py-2 bg-kkumbi-500 text-white text-xs font-semibold rounded-lg hover:bg-kkumbi-600">+ 새 주차</button>
+          <button onClick={openNewWeekModal} className="px-3 py-2 bg-kkumbi-500 text-white text-xs font-semibold rounded-lg hover:bg-kkumbi-600">+ 새 주차</button>
           <button onClick={() => { setNameInput(reporterName); setNamePromptOpen(true); }} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">
             {reporterName || "이름 설정"}
           </button>
@@ -485,6 +571,8 @@ export function WeeklyReport() {
           </ul>
         )}
       </div>
+
+      {newWeekModal}
 
       {namePromptOpen && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setNamePromptOpen(false)}>
