@@ -455,7 +455,6 @@ finally { setTrendLoading(false); }
             </h1>
             <p className="text-xs text-stone-500">꿈비 그룹 · 마케팅 인텔리전스</p>
           </div>
-          <DateRangeSelect value={dateRange} onChange={setDateRange} disabled={false} />
         </header>
 
         <main className="flex-1 p-6 space-y-6">
@@ -738,6 +737,9 @@ finally { setTrendLoading(false); }
           {/* 경쟁사 모니터링 */}
           {activeMonitorGroup && (
             <div className="space-y-4">
+              <div className="bg-white rounded-2xl border border-stone-200 p-5">
+                <DateRangeSelect value={dateRange} onChange={setDateRange} disabled={groupLoading[activeMonitorGroup]} />
+              </div>
               <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
                 <div className="bg-stone-50 border-b border-stone-100 px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
