@@ -125,6 +125,14 @@ async function addWeekToList(entry: WeekListEntry) {
   await kvSet("weekly_report_weeks", list);
 }
 
+const DEFAULT_TEAM_NAMES = ["방승현 팀장", "김혜림SM", "신동은SM", "김소원JM", "조혜림JM", "이수현AM"];
+
+async function getTeamNames(): Promise<string[]> {
+  const raw = (await kvGet("weekly_report_team_names")) as unknown;
+  if (Array.isArray(raw) && raw.length) return raw as string[];
+  return DEFAULT_TEAM_NAMES;
+}
+
 function fillMissingCategories(report: WeeklyReportData): WeeklyReportData {
   const existingIds = new Set(report.categories.map((c) => c.id));
   CATEGORY_DEFS.forEach((def) => {
@@ -138,18 +146,19 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const weeks = await getWeekList();
+    const teamNames = await getTeamNames();
     let week = searchParams.get("week") || "";
     if (!week) week = weeks.length ? weeks[weeks.length - 1].week : "";
 
     if (!week) {
-      return NextResponse.json({ week: "", report: null, weeks: [] });
+      return NextResponse.json({ week: "", report: null, weeks: [], teamNames });
     }
 
     let report = (await kvGet(reportKey(week))) as WeeklyReportData | null;
     if (!report) report = blankReport(week);
     report = fillMissingCategories(report);
 
-    return NextResponse.json({ week, report, weeks });
+    return NextResponse.json({ week, report, weeks, teamNames });
   } catch {
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
@@ -158,7 +167,25 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, week } = body;
+    const { action } = body;
+
+    if (action === "add_team_name") {
+      const name = (body.name || "").trim();
+      if (!name) return NextResponse.json({ error: "이름을 입력해주세요." }, { status: 400 });
+      const names = await getTeamNames();
+      if (!names.includes(name)) names.push(name);
+      await kvSet("weekly_report_team_names", names);
+      return NextResponse.json({ success: true, teamNames: names });
+    }
+
+    if (action === "remove_team_name") {
+      const name = body.name;
+      const names = (await getTeamNames()).filter((n) => n !== name);
+      await kvSet("weekly_report_team_names", names);
+      return NextResponse.json({ success: true, teamNames: names });
+    }
+
+    const { week } = body;
     if (!week) return NextResponse.json({ error: "week가 필요합니다." }, { status: 400 });
 
     if (action === "new_week") {
