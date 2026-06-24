@@ -46,7 +46,7 @@ interface WeekListEntry {
   endDate: string;
 }
 
-const TEAM_NAMES = ["방승현TL", "혜림SM", "소원JM", "조혜림JM", "이수현AM", "희수AM", "수지SM", "봄봄시니어"];
+// TEAM_NAMES는 서버(Redis)에서 공유 목록으로 관리됩니다 (teamNames 상태 참고)
 
 const STATUS_LABEL: Record<Status, string> = { good: "달성", warn: "주의", bad: "미달", unk: "산출중" };
 const STATUS_CLASS: Record<Status, string> = {
@@ -184,6 +184,9 @@ export function WeeklyReport() {
   const [reporterName, setReporterName] = useState("");
   const [namePromptOpen, setNamePromptOpen] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [teamNames, setTeamNames] = useState<string[]>([]);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [teamNameError, setTeamNameError] = useState("");
 
   const [weeks, setWeeks] = useState<WeekListEntry[]>([]);
   const [week, setWeek] = useState("");
@@ -219,6 +222,7 @@ export function WeeklyReport() {
       setWeek(data.week ?? "");
       setReport(data.report ?? null);
       setFeedbackDraft(data.report?.prevFeedback ?? "");
+      setTeamNames(data.teamNames ?? []);
     } catch (e) {
       console.error("주간보고 로드 실패:", e);
     } finally {
@@ -234,6 +238,44 @@ export function WeeklyReport() {
     localStorage.setItem("ggumbi_reporter_name", finalName);
     setReporterName(finalName);
     setNamePromptOpen(false);
+  }
+
+  function selectTeamName(name: string) {
+    localStorage.setItem("ggumbi_reporter_name", name);
+    setReporterName(name);
+    setNamePromptOpen(false);
+  }
+
+  async function addTeamName() {
+    const name = newTeamName.trim();
+    if (!name) return;
+    setTeamNameError("");
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add_team_name", name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setTeamNames(data.teamNames ?? []);
+      setNewTeamName("");
+    } catch (e) {
+      setTeamNameError(e instanceof Error ? e.message : "오류 발생");
+    }
+  }
+
+  async function removeTeamName(name: string) {
+    if (!confirm(`"${name}"을 목록에서 삭제할까요?`)) return;
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove_team_name", name }),
+      });
+      const data = await res.json();
+      if (res.ok) setTeamNames(data.teamNames ?? []);
+    } catch {}
   }
 
   function openNewWeekModal() {
@@ -578,15 +620,45 @@ export function WeeklyReport() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setNamePromptOpen(false)}>
           <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-stone-800">이름을 선택해주세요</h3>
-            <p className="text-xs text-stone-500">입력·수정 시 &quot;마지막 수정자&quot;로 기록됩니다.</p>
-            <select value={TEAM_NAMES.includes(nameInput) ? nameInput : ""} onChange={(e) => setNameInput(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm">
-              <option value="">선택...</option>
-              {TEAM_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <input placeholder="목록에 없으면 직접 입력" value={nameInput} onChange={(e) => setNameInput(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+            <p className="text-xs text-stone-500">입력·수정 시 &quot;마지막 수정자&quot;로 기록됩니다. 클릭하면 바로 선택돼요.</p>
+
+            <div className="flex flex-wrap gap-1.5">
+              {teamNames.length === 0 && <p className="text-xs text-stone-400">등록된 팀원이 없습니다. 아래에서 추가해주세요.</p>}
+              {teamNames.map((n) => (
+                <span
+                  key={n}
+                  onClick={() => selectTeamName(n)}
+                  className={`group flex items-center gap-1 text-xs px-3 py-1.5 rounded-full cursor-pointer transition ${n === reporterName ? "bg-kkumbi-500 text-white" : "bg-stone-100 text-stone-700 hover:bg-stone-200"}`}
+                >
+                  {n}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeTeamName(n); }}
+                    className={`hidden group-hover:inline ml-0.5 ${n === reporterName ? "text-white/80 hover:text-white" : "text-rose-400 hover:text-rose-600"}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+
             <div className="flex gap-2">
-              <button onClick={confirmName} className="flex-1 bg-kkumbi-500 text-white text-sm font-bold rounded-lg py-2">확인</button>
-              <button onClick={() => setNamePromptOpen(false)} className="px-4 border border-stone-200 rounded-lg text-sm text-stone-600">취소</button>
+              <input
+                placeholder="새 팀원 이름 추가 (예: 김소원JM)"
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addTeamName()}
+                className="flex-1 border border-stone-200 rounded-lg px-3 py-2 text-sm"
+              />
+              <button onClick={addTeamName} className="px-3 py-2 bg-stone-100 text-stone-700 text-sm font-semibold rounded-lg hover:bg-stone-200">+ 추가</button>
+            </div>
+            {teamNameError && <p className="text-xs text-rose-500">{teamNameError}</p>}
+
+            <div className="border-t border-stone-100 pt-3 space-y-2">
+              <input placeholder="목록에 없으면 직접 입력" value={nameInput} onChange={(e) => setNameInput(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+              <div className="flex gap-2">
+                <button onClick={confirmName} className="flex-1 bg-kkumbi-500 text-white text-sm font-bold rounded-lg py-2">이 이름으로 확인</button>
+                <button onClick={() => setNamePromptOpen(false)} className="px-4 border border-stone-200 rounded-lg text-sm text-stone-600">취소</button>
+              </div>
             </div>
           </div>
         </div>
