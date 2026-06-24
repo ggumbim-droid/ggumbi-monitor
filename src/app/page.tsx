@@ -9,6 +9,7 @@ import { isValidDateRange } from "@/lib/date-range";
 import { ChannelTabs } from "@/components/ChannelTabs";
 import { LoginRequiredSection } from "@/components/LoginRequiredSection";
 import { InsightsPanel } from "@/components/InsightsPanel";
+import { WeeklyReport } from "@/components/WeeklyReport";
 import { buildNotionReport } from "@/lib/report";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from "recharts";
 import type { ChannelId, MonitorDateRange, MonitorResult, SortOrder } from "@/types/monitor";
@@ -52,6 +53,7 @@ const COMING_SOON: ChannelId[] = ["meta_ads", "smartstore_reviews"];
 
 const SIDEBAR_MENUS = [
   { id: "dashboard", label: "전체 요약", icon: "📊", children: [] },
+  { id: "weekly_report", label: "주간보고", icon: "🗒️", children: [] },
   {
     id: "kpi_keyword", label: "01. 키워드 검색량", icon: "🔍",
     children: [
@@ -487,6 +489,9 @@ finally { setTrendLoading(false); }
               </div>
             </div>
           )}
+
+          {/* 주간보고 */}
+          {activeMenu === "weekly_report" && <WeeklyReport />}
 
           {/* 경쟁사 트렌드 대시보드 */}
           {activeMenu === "brand_trend" && (
