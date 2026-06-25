@@ -16,6 +16,13 @@ interface ReportItem {
   gap: string;
 }
 
+interface BudgetRow {
+  brand: string;
+  budget: number;
+  revenue: number | null;
+  cost: number | null;
+}
+
 interface ReportCategory {
   id: string;
   title: string;
@@ -26,6 +33,9 @@ interface ReportCategory {
   status: Status;
   note: string;
   items: ReportItem[];
+  actualNum?: number | null;
+  budgetRows?: BudgetRow[];
+  autoCalculated?: boolean;
   updatedBy?: string;
   updatedAt?: string;
 }
@@ -96,20 +106,144 @@ function fmtMD(dateStr: string): string {
   return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function fmtNum(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  return n.toLocaleString();
+}
+
+function ratioColor(ratio: number | null): string {
+  if (ratio === null) return "text-stone-400";
+  if (ratio <= 6.5) return "text-emerald-600";
+  if (ratio <= 8) return "text-amber-600";
+  return "text-rose-600";
+}
+
+interface BudgetTableProps {
+  rows: BudgetRow[];
+  editable: boolean;
+  onChange?: (brand: string, patch: Partial<BudgetRow>) => void;
+}
+
+function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
+  const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
+  const totalRevenue = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
+  const totalCost = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
+  const totalRatio = totalRevenue > 0 ? Math.round((totalCost / totalRevenue) * 1000) / 10 : null;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">총 예산</p>
+          <p className="text-base font-bold text-stone-700">{fmtNum(totalBudget)}</p>
+        </div>
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">달성 매출</p>
+          <p className="text-base font-bold text-emerald-700">{fmtNum(totalRevenue)}</p>
+        </div>
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">총 비용</p>
+          <p className="text-base font-bold text-amber-700">{fmtNum(totalCost)}</p>
+        </div>
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">매출대비 비용률</p>
+          <p className={`text-base font-bold ${ratioColor(totalRatio)}`}>{totalRatio !== null ? `${totalRatio}%` : "—"}</p>
+          <p className="text-[10px] text-stone-400">목표 6.5%</p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-stone-200">
+              <th className="text-left py-1.5 font-semibold text-stone-500">브랜드</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">예산</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">달성 매출</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">비용</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">매출대비 비용률</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const ratio = r.revenue && r.revenue > 0 ? Math.round(((r.cost ?? 0) / r.revenue) * 1000) / 10 : null;
+              return (
+                <tr key={r.brand} className="border-b border-stone-100">
+                  <td className="py-1.5 font-medium text-stone-700">{r.brand}</td>
+                  <td className="py-1.5 text-right text-stone-500">{fmtNum(r.budget)}</td>
+                  <td className="py-1.5 text-right">
+                    {editable ? (
+                      <input type="number" value={r.revenue ?? ""} onChange={(e) => onChange?.(r.brand, { revenue: e.target.value === "" ? null : Number(e.target.value) })}
+                        className="w-28 border border-stone-200 rounded px-2 py-1 text-right text-xs" />
+                    ) : (
+                      <span className="font-semibold text-emerald-700">{fmtNum(r.revenue)}</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 text-right">
+                    {editable ? (
+                      <input type="number" value={r.cost ?? ""} onChange={(e) => onChange?.(r.brand, { cost: e.target.value === "" ? null : Number(e.target.value) })}
+                        className="w-24 border border-stone-200 rounded px-2 py-1 text-right text-xs" />
+                    ) : (
+                      <span className="text-stone-600">{fmtNum(r.cost)}</span>
+                    )}
+                  </td>
+                  <td className={`py-1.5 text-right font-semibold ${ratioColor(ratio)}`}>{ratio !== null ? `${ratio}%` : "—"}</td>
+                </tr>
+              );
+            })}
+            <tr className="font-bold text-stone-800">
+              <td className="py-1.5">합계</td>
+              <td className="py-1.5 text-right">{fmtNum(totalBudget)}</td>
+              <td className="py-1.5 text-right text-emerald-700">{fmtNum(totalRevenue)}</td>
+              <td className="py-1.5 text-right text-stone-700">{fmtNum(totalCost)}</td>
+              <td className={`py-1.5 text-right ${ratioColor(totalRatio)}`}>{totalRatio !== null ? `${totalRatio}%` : "—"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+
 interface CategoryEditFormProps {
   draft: ReportCategory;
   onField: <K extends keyof ReportCategory>(key: K, value: ReportCategory[K]) => void;
   onItemChange: (itemId: string, patch: Partial<ReportItem>) => void;
   onAddItem: () => void;
   onRemoveItem: (itemId: string) => void;
+  onBudgetChange: (brand: string, patch: Partial<BudgetRow>) => void;
   onSave: () => void;
   onCancel: () => void;
   saving: boolean;
 }
 
-function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveItem, onSave, onCancel, saving }: CategoryEditFormProps) {
+function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveItem, onBudgetChange, onSave, onCancel, saving }: CategoryEditFormProps) {
+  const isAutoBudget = draft.id === "07" && draft.autoCalculated;
+  const isAutoNumeric = draft.autoCalculated && !isAutoBudget;
+
   return (
     <div className="space-y-4 bg-stone-50 rounded-xl p-3">
+      {isAutoBudget ? (
+        <div className="space-y-2">
+          <p className="text-xs text-stone-500">예산은 월 목표 기준 자동 계산돼요. <b className="text-stone-700">달성 매출</b>과 <b className="text-stone-700">비용</b>만 입력해주세요.</p>
+          <BudgetTable rows={draft.budgetRows ?? []} editable onChange={onBudgetChange} />
+        </div>
+      ) : isAutoNumeric ? (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-stone-500 block mb-1">목표 (월 목표 기준 자동계산)</label>
+            <div className="w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm text-stone-500">{draft.target || "—"}</div>
+          </div>
+          <div>
+            <label className="text-xs text-stone-500 block mb-1">실적 (숫자만 입력)</label>
+            <input type="number" value={draft.actualNum ?? ""} onChange={(e) => onField("actualNum", e.target.value === "" ? null : Number(e.target.value))} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-stone-500 block mb-1">달성률 (자동계산)</label>
+            <div className={`w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm font-bold ${STATUS_TEXT[draft.status]}`}>{draft.rateLabel || "실적 입력 시 계산돼요"}</div>
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-stone-500 block mb-1">목표</label>
@@ -141,6 +275,7 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
           <input value={draft.note} onChange={(e) => onField("note", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
         </div>
       </div>
+      )}
 
       <div className="space-y-3">
         {draft.items.map((it) => (
@@ -354,18 +489,44 @@ export function WeeklyReport() {
     if (!draftCategory || !week) return;
     setSavingCat(true);
     try {
-      const res1 = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update_category", week, categoryId: draftCategory.id,
-          target: draftCategory.target, actual: draftCategory.actual,
-          rateLabel: draftCategory.rateLabel, rateNum: draftCategory.rateNum,
-          status: draftCategory.status, note: draftCategory.note, updatedBy: reporterName,
-        }),
-      });
-      const d1 = await res1.json();
-      if (!res1.ok) throw new Error(d1.error || "오류 발생");
+      const isAutoBudget = draftCategory.id === "07" && draftCategory.autoCalculated;
+      const isAutoNumeric = draftCategory.autoCalculated && !isAutoBudget;
+
+      if (isAutoBudget) {
+        const res0 = await fetch("/api/weekly-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "save_budget_rows", week, categoryId: draftCategory.id,
+            rows: (draftCategory.budgetRows ?? []).map((r) => ({ brand: r.brand, revenue: r.revenue, cost: r.cost })),
+            updatedBy: reporterName,
+          }),
+        });
+        const d0 = await res0.json();
+        if (!res0.ok) throw new Error(d0.error || "오류 발생");
+      } else if (isAutoNumeric) {
+        const res0 = await fetch("/api/weekly-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "update_category", week, categoryId: draftCategory.id, actualNum: draftCategory.actualNum, updatedBy: reporterName }),
+        });
+        const d0 = await res0.json();
+        if (!res0.ok) throw new Error(d0.error || "오류 발생");
+      } else {
+        const res0 = await fetch("/api/weekly-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_category", week, categoryId: draftCategory.id,
+            target: draftCategory.target, actual: draftCategory.actual,
+            rateLabel: draftCategory.rateLabel, rateNum: draftCategory.rateNum,
+            status: draftCategory.status, note: draftCategory.note, updatedBy: reporterName,
+          }),
+        });
+        const d0 = await res0.json();
+        if (!res0.ok) throw new Error(d0.error || "오류 발생");
+      }
+
       const res2 = await fetch("/api/weekly-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -394,6 +555,10 @@ export function WeeklyReport() {
   function removeDraftItem(itemId: string) {
     setDraftCategory((prev) => prev ? { ...prev, items: prev.items.filter((it) => it.id !== itemId) } : prev);
   }
+  function updateDraftBudgetRow(brand: string, patch: Partial<BudgetRow>) {
+    setDraftCategory((prev) => prev ? { ...prev, budgetRows: (prev.budgetRows ?? []).map((r) => r.brand === brand ? { ...r, ...patch } : r) } : prev);
+  }
+
 
   const categories = report?.categories ?? [];
   const tally: Record<Status, number> = { good: 0, warn: 0, bad: 0, unk: 0 };
@@ -553,13 +718,19 @@ export function WeeklyReport() {
                       onItemChange={updateDraftItem}
                       onAddItem={addDraftItem}
                       onRemoveItem={removeDraftItem}
+                      onBudgetChange={updateDraftBudgetRow}
                       onSave={saveCategory}
                       onCancel={cancelEdit}
                       saving={savingCat}
                     />
-                  ) : c.items.length === 0 ? (
-                    <p className="text-xs text-stone-400">등록된 항목이 없습니다. 수정 버튼을 눌러 추가해주세요.</p>
                   ) : (
+                    <>
+                      {c.id === "07" && c.autoCalculated && c.budgetRows && (
+                        <BudgetTable rows={c.budgetRows} editable={false} />
+                      )}
+                      {c.items.length === 0 ? (
+                        <p className="text-xs text-stone-400">등록된 항목이 없습니다. 수정 버튼을 눌러 추가해주세요.</p>
+                      ) : (
                     c.items.map((it) => (
                       <div key={it.id} className="border-b border-stone-100 pb-3 last:border-b-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
@@ -574,6 +745,8 @@ export function WeeklyReport() {
                         {it.gap && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1 mt-2">⚠ {it.gap}</p>}
                       </div>
                     ))
+                      )}
+                    </>
                   )}
                 </div>
               )}
