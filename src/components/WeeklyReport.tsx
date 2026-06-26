@@ -342,6 +342,9 @@ export function WeeklyReport() {
   const [feedbackDraft, setFeedbackDraft] = useState("");
   const [editingFeedback, setEditingFeedback] = useState(false);
 
+  const [sheetSyncing, setSheetSyncing] = useState(false);
+  const [sheetSyncMsg, setSheetSyncMsg] = useState("");
+
   useEffect(() => {
     const saved = localStorage.getItem("ggumbi_reporter_name");
     if (saved) setReporterName(saved);
@@ -449,6 +452,7 @@ export function WeeklyReport() {
       setReport(data.report);
       setFeedbackDraft("");
       setNewWeekOpen(false);
+      setSheetSyncMsg(data.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
     } catch (e) {
       alert(e instanceof Error ? e.message : "오류 발생");
     } finally {
@@ -465,8 +469,54 @@ export function WeeklyReport() {
         body: JSON.stringify({ action: "update_feedback", week, prevFeedback: feedbackDraft }),
       });
       const data = await res.json();
-      if (res.ok) { setReport(data.report); setEditingFeedback(false); }
+      if (res.ok) {
+        setReport(data.report);
+        setEditingFeedback(false);
+        setSheetSyncMsg(data.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
+      }
     } catch {}
+  }
+
+  async function pullFromSheet() {
+    if (!week) return;
+    setSheetSyncing(true);
+    setSheetSyncMsg("");
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sheet_pull", week }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setReport(data.report);
+      setFeedbackDraft(data.report?.prevFeedback ?? "");
+      setSheetSyncMsg(data.found === false ? "구글시트에 이번 주 데이터가 아직 없어요." : "구글시트에서 불러왔습니다.");
+    } catch (e) {
+      setSheetSyncMsg(e instanceof Error ? `가져오기 실패: ${e.message}` : "가져오기 실패");
+    } finally {
+      setSheetSyncing(false);
+    }
+  }
+
+  async function pushToSheet() {
+    if (!week) return;
+    setSheetSyncing(true);
+    setSheetSyncMsg("");
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sheet_push", week }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setSheetSyncMsg("구글시트로 내보냈습니다.");
+    } catch (e) {
+      setSheetSyncMsg(e instanceof Error ? `내보내기 실패: ${e.message}` : "내보내기 실패");
+    } finally {
+      setSheetSyncing(false);
+    }
   }
 
   function toggleOpen(id: string) {
@@ -536,6 +586,7 @@ export function WeeklyReport() {
       if (!res2.ok) throw new Error(d2.error || "오류 발생");
       setReport(d2.report);
       setEditingId(""); setDraftCategory(null);
+      setSheetSyncMsg(d2.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
     } catch (e) {
       alert(e instanceof Error ? e.message : "오류 발생");
     } finally {
@@ -634,12 +685,22 @@ export function WeeklyReport() {
             ))}
           </select>
           <button onClick={openNewWeekModal} className="px-3 py-2 bg-kkumbi-500 text-white text-xs font-semibold rounded-lg hover:bg-kkumbi-600">+ 새 주차</button>
+          <button onClick={pullFromSheet} disabled={sheetSyncing} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">
+            {sheetSyncing ? "동기화 중…" : "↓ 시트에서 가져오기"}
+          </button>
+          <button onClick={pushToSheet} disabled={sheetSyncing} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">
+            ↑ 시트로 내보내기
+          </button>
           <button onClick={() => { setNameInput(reporterName); setNamePromptOpen(true); }} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">
             {reporterName || "이름 설정"}
           </button>
           <button onClick={() => window.print()} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">인쇄</button>
         </div>
       </div>
+
+      {sheetSyncMsg && (
+        <p className="text-xs text-stone-500 -mt-2">🔄 {sheetSyncMsg}</p>
+      )}
 
       <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 text-xs text-stone-500 flex flex-wrap gap-4">
         <span><b className="text-stone-700">3종 세트 필수</b> 달성률 · 구조적 원인 · 차주 실행</span>
