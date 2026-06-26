@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const KV_REST_API_URL = process.env.KV_REST_API_URL;
 const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
+const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
+const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
 
 type Status = "good" | "warn" | "bad" | "unk";
 
@@ -55,6 +57,60 @@ interface WeekListEntry {
   label: string;
   startDate: string;
   endDate: string;
+}
+
+// ── 구글시트 연동용 타입 ──────────────────────────────────
+
+interface SheetWeekInfo {
+  label?: string;
+  startDate?: string;
+  endDate?: string;
+  prevFeedback?: string;
+}
+
+interface SheetPerformanceRow {
+  categoryId: string;
+  target?: string;
+  actual?: string;
+  actualNum?: number | string;
+  rateLabel?: string;
+  rateNum?: number | string;
+  status?: string;
+  note?: string;
+}
+
+interface SheetItemRow {
+  categoryId: string;
+  order?: number | string;
+  title?: string;
+  metric?: string;
+  badge?: string;
+  badgeStatus?: string;
+  cause?: string;
+  action?: string;
+  due?: string;
+  gap?: string;
+}
+
+interface SheetBudgetRow {
+  brand: string;
+  actualRevenue?: number | string;
+  cost?: number | string;
+}
+
+interface SheetWeekResponse {
+  weekInfo: SheetWeekInfo | null;
+  performance: SheetPerformanceRow[];
+  items: SheetItemRow[];
+  budgetRows: SheetBudgetRow[];
+}
+
+interface SheetPushPayload {
+  week: string;
+  weekInfo: { label: string; startDate: string; endDate: string; prevFeedback: string };
+  performance: { categoryId: string; target: string; actual: string; actualNum: number | string; rateLabel: string; rateNum: number | string; status: Status; note: string }[];
+  items: { categoryId: string; order: number; title: string; metric: string; badge: string; badgeStatus: Status; cause: string; action: string; due: string; gap: string }[];
+  budgetRows: { brand: string; actualRevenue: number | string; cost: number | string }[];
 }
 
 const CATEGORY_DEFS: { id: string; title: string }[] = [
@@ -326,6 +382,158 @@ function decorateReport(report: WeeklyReportData): WeeklyReportData {
   return report;
 }
 
+// ── 구글시트 연동 ──────────────────────────────────────
+// 시트 자체에 "주차정보" / "실적입력" / "세부항목" / "예산효율" 4개 탭을 두고,
+// Apps Script 웹앱(doGet/doPost)을 통해 읽고 씁니다. target/rate/status 같은
+// 계산값은 시트에 적어도 무시되고(자동계산이 항상 우선) 04(수동 카테고리)만
+// target/rateLabel/rateNum/status를 시트값 그대로 반영합니다.
+
+function toNumOrNull(v: unknown): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+
+async function sheetFetchWeek(week: string): Promise<SheetWeekResponse> {
+  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) {
+    throw new Error("구글시트 연동이 설정되지 않았습니다. (Vercel 환경변수 확인 필요)");
+  }
+  const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}&week=${encodeURIComponent(week)}`;
+  const res = await fetch(url, { cache: "no-store" });
+  const data = await res.json();
+  if (data.error) throw new Error(`구글시트 오류: ${data.error}`);
+  return {
+    weekInfo: data.weekInfo ?? null,
+    performance: Array.isArray(data.performance) ? data.performance : [],
+    items: Array.isArray(data.items) ? data.items : [],
+    budgetRows: Array.isArray(data.budgetRows) ? data.budgetRows : [],
+  };
+}
+
+function reportToSheetPayload(report: WeeklyReportData): SheetPushPayload {
+  const weekInfo = {
+    label: report.label, startDate: report.startDate, endDate: report.endDate, prevFeedback: report.prevFeedback,
+  };
+  const performance = report.categories
+    .filter((c) => c.id !== "07")
+    .map((c) => ({
+      categoryId: c.id,
+      target: c.target,
+      actual: c.actual,
+      actualNum: c.actualNum ?? "",
+      rateLabel: c.rateLabel,
+      rateNum: c.rateNum ?? "",
+      status: c.status,
+      note: c.note,
+    }));
+  const items = report.categories.flatMap((c) =>
+    c.items.map((it, idx) => ({
+      categoryId: c.id,
+      order: idx,
+      title: it.title, metric: it.metric, badge: it.badge, badgeStatus: it.badgeStatus,
+      cause: it.cause, action: it.action, due: it.due, gap: it.gap,
+    }))
+  );
+  const budgetCat = report.categories.find((c) => c.id === "07");
+  const budgetRows = (budgetCat?.budgetRows ?? []).map((r) => ({
+    brand: r.brand,
+    actualRevenue: r.revenue ?? "",
+    cost: r.cost ?? "",
+  }));
+  return { week: report.week, weekInfo, performance, items, budgetRows };
+}
+
+function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): WeeklyReportData {
+  if (sheet.weekInfo) {
+    const wi = sheet.weekInfo;
+    if (wi.label) report.label = wi.label;
+    if (wi.startDate) report.startDate = wi.startDate;
+    if (wi.endDate) report.endDate = wi.endDate;
+    if (wi.prevFeedback !== undefined) report.prevFeedback = wi.prevFeedback;
+  }
+
+  const perfMap = new Map(sheet.performance.map((r) => [String(r.categoryId), r]));
+  const itemsByCategory = new Map<string, SheetItemRow[]>();
+  sheet.items.forEach((it) => {
+    const key = String(it.categoryId);
+    const arr = itemsByCategory.get(key) ?? [];
+    arr.push(it);
+    itemsByCategory.set(key, arr);
+  });
+
+  report.categories = report.categories.map((cat) => {
+    const perf = perfMap.get(cat.id);
+    if (perf && cat.id !== "07") {
+      if (perf.target) cat.target = perf.target;
+      if (perf.actual !== undefined) cat.actual = perf.actual;
+      if (perf.actualNum !== undefined && perf.actualNum !== "") cat.actualNum = toNumOrNull(perf.actualNum);
+      if (perf.rateLabel) cat.rateLabel = perf.rateLabel;
+      if (perf.rateNum !== undefined && perf.rateNum !== "") cat.rateNum = toNumOrNull(perf.rateNum);
+      if (perf.status) cat.status = perf.status as Status;
+      if (perf.note !== undefined) cat.note = perf.note;
+    }
+
+    const rawItems = itemsByCategory.get(cat.id);
+    if (rawItems && rawItems.length > 0) {
+      cat.items = rawItems
+        .slice()
+        .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0))
+        .map((it, idx) => ({
+          id: `sheet-${cat.id}-${idx}`,
+          title: it.title ?? "",
+          metric: it.metric ?? "",
+          badge: it.badge ?? "",
+          badgeStatus: (it.badgeStatus as Status) || "warn",
+          cause: it.cause ?? "",
+          action: it.action ?? "",
+          due: it.due ?? "",
+          gap: it.gap ?? "",
+        }));
+    }
+
+    if (cat.id === "07" && sheet.budgetRows.length > 0) {
+      const existing = cat.budgetRows ?? [];
+      cat.budgetRows = BUDGET_BRANDS.map((brand) => {
+        const found = sheet.budgetRows.find((r) => r.brand === brand);
+        const prevRow = existing.find((r) => r.brand === brand);
+        return {
+          brand,
+          budget: prevRow?.budget ?? 0,
+          revenue: found ? toNumOrNull(found.actualRevenue) : (prevRow?.revenue ?? null),
+          cost: found ? toNumOrNull(found.cost) : (prevRow?.cost ?? null),
+        };
+      });
+    }
+
+    return cat;
+  });
+
+  return report;
+}
+
+async function sheetPushWeek(payload: SheetPushPayload): Promise<void> {
+  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return;
+  const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+}
+
+async function syncReportToSheet(report: WeeklyReportData): Promise<boolean> {
+  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return true; // 연동 미설정이면 동기화 대상 자체가 아니므로 실패로 안 침
+  try {
+    await sheetPushWeek(reportToSheetPayload(report));
+    return true;
+  } catch (e) {
+    console.error("구글시트 동기화 실패:", e);
+    return false;
+  }
+}
+
 // ── 시드(예시) 데이터 ──────────────────────────────────
 
 function seedItems(catId: string, raw: { title: string; metric: string; badge: string; badgeStatus: Status; cause: string; action: string; due?: string; gap?: string }[]): ReportItem[] {
@@ -532,25 +740,53 @@ export async function POST(request: NextRequest) {
           status: "unk", note: "", items: [], actualNum: null,
         };
       });
-      const report: WeeklyReportData = {
+      const newReport: WeeklyReportData = {
         week, label: label ?? "", startDate: startDate ?? "", endDate: endDate ?? "",
         prevFeedback: "", categories,
       };
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
+      await kvSet(reportKey(week), newReport);
+      await addWeekToList({ week, label: newReport.label, startDate: newReport.startDate, endDate: newReport.endDate });
       const weeks = await getWeekList();
-      return NextResponse.json({ success: true, report: decorateReport(report), weeks });
+      const decorated = decorateReport(newReport);
+      const sheetSynced = await syncReportToSheet(decorated);
+      return NextResponse.json({ success: true, report: decorated, weeks, sheetSynced });
     }
 
     let report = (await kvGet(reportKey(week))) as WeeklyReportData | null;
     if (!report) report = blankReport(week);
     report = fillMissingCategories(report);
 
+    if (action === "sheet_pull") {
+      try {
+        const sheetData = await sheetFetchWeek(week);
+        const found = !!sheetData.weekInfo || sheetData.performance.length > 0 || sheetData.items.length > 0 || sheetData.budgetRows.length > 0;
+        report = applySheetData(report, sheetData);
+        await kvSet(reportKey(week), report);
+        await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
+        const decorated = decorateReport(report);
+        return NextResponse.json({ success: true, report: decorated, found });
+      } catch (e) {
+        return NextResponse.json({ error: e instanceof Error ? e.message : "구글시트에서 가져오기 실패" }, { status: 500 });
+      }
+    }
+
+    if (action === "sheet_push") {
+      try {
+        const decorated = decorateReport(report);
+        await sheetPushWeek(reportToSheetPayload(decorated));
+        return NextResponse.json({ success: true });
+      } catch (e) {
+        return NextResponse.json({ error: e instanceof Error ? e.message : "구글시트로 내보내기 실패" }, { status: 500 });
+      }
+    }
+
     if (action === "update_feedback") {
       report.prevFeedback = body.prevFeedback ?? "";
       await kvSet(reportKey(week), report);
       await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      return NextResponse.json({ success: true, report: decorateReport(report) });
+      const decorated = decorateReport(report);
+      const sheetSynced = await syncReportToSheet(decorated);
+      return NextResponse.json({ success: true, report: decorated, sheetSynced });
     }
 
     if (action === "update_category") {
@@ -568,7 +804,9 @@ export async function POST(request: NextRequest) {
       cat.updatedAt = new Date().toISOString();
       await kvSet(reportKey(week), report);
       await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      return NextResponse.json({ success: true, report: decorateReport(report) });
+      const decorated = decorateReport(report);
+      const sheetSynced = await syncReportToSheet(decorated);
+      return NextResponse.json({ success: true, report: decorated, sheetSynced });
     }
 
     if (action === "save_budget_rows") {
@@ -582,7 +820,9 @@ export async function POST(request: NextRequest) {
       cat.updatedAt = new Date().toISOString();
       await kvSet(reportKey(week), report);
       await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      return NextResponse.json({ success: true, report: decorateReport(report) });
+      const decorated = decorateReport(report);
+      const sheetSynced = await syncReportToSheet(decorated);
+      return NextResponse.json({ success: true, report: decorated, sheetSynced });
     }
 
     if (action === "save_items") {
@@ -594,7 +834,9 @@ export async function POST(request: NextRequest) {
       cat.updatedAt = new Date().toISOString();
       await kvSet(reportKey(week), report);
       await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      return NextResponse.json({ success: true, report: decorateReport(report) });
+      const decorated = decorateReport(report);
+      const sheetSynced = await syncReportToSheet(decorated);
+      return NextResponse.json({ success: true, report: decorated, sheetSynced });
     }
 
     if (action === "delete_week") {
