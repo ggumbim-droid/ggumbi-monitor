@@ -234,10 +234,23 @@ function hasMonthlyConfig(monthly: Record<string, number>, dayCounts: Record<str
 }
 
 function prorateMonthly(monthly: Record<string, number>, dayCounts: Record<string, number>): number {
+  const entries = Object.entries(dayCounts);
+  const configuredEntries = entries.filter(([key]) => monthly[key] !== undefined);
+  if (configuredEntries.length === 0) return 0;
+
+  if (configuredEntries.length === 1) {
+    // 그 주가 걸친 두 달 중 설정된 달이 하나뿐인 경우(예: 6월 말~7월 초),
+    // 설정 안 된 달의 날짜도 가까운 설정된 달의 일일 단가로 환산해 7일 전체를 채운다.
+    const [key, ] = configuredEntries[0];
+    const totalDays = entries.reduce((sum, [, days]) => sum + days, 0);
+    const [y, m] = key.split("-").map(Number);
+    return Math.round(monthly[key] * (totalDays / daysInMonth(y, m)));
+  }
+
+  // 두 달 모두 설정되어 있으면 기존처럼 일수 비율대로 정확히 분배
   let total = 0;
-  for (const [key, days] of Object.entries(dayCounts)) {
+  for (const [key, days] of configuredEntries) {
     const val = monthly[key];
-    if (val === undefined) continue;
     const [y, m] = key.split("-").map(Number);
     total += val * (days / daysInMonth(y, m));
   }
