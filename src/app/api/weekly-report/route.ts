@@ -62,40 +62,38 @@ interface WeekListEntry {
 // ── 구글시트 연동용 타입 ──────────────────────────────────
 
 interface SheetWeekInfo {
-  label?: string;
-  startDate?: string;
-  endDate?: string;
-  prevFeedback?: string;
+  주차명?: string;
+  시작일?: string;
+  종료일?: string;
+  회장님피드백?: string;
 }
 
 interface SheetPerformanceRow {
-  categoryId: string;
-  target?: string;
-  actual?: string;
-  actualNum?: number | string;
-  rateLabel?: string;
-  rateNum?: number | string;
-  status?: string;
-  note?: string;
+  KPI항목: string;
+  주간목표?: string;
+  실적내용?: string;
+  실적숫자?: number | string;
+  달성상태?: string;
+  비고?: string;
 }
 
 interface SheetItemRow {
-  categoryId: string;
-  order?: number | string;
-  title?: string;
-  metric?: string;
-  badge?: string;
-  badgeStatus?: string;
-  cause?: string;
-  action?: string;
-  due?: string;
-  gap?: string;
+  KPI항목: string;
+  순서?: number | string;
+  이슈제목?: string;
+  수치지표?: string;
+  배지?: string;
+  배지상태?: string;
+  원인?: string;
+  액션?: string;
+  마감일?: string;
+  미흡사항?: string;
 }
 
 interface SheetBudgetRow {
-  brand: string;
-  actualRevenue?: number | string;
-  cost?: number | string;
+  브랜드: string;
+  달성매출?: number | string;
+  사용비용?: number | string;
 }
 
 interface SheetWeekResponse {
@@ -107,10 +105,10 @@ interface SheetWeekResponse {
 
 interface SheetPushPayload {
   week: string;
-  weekInfo: { label: string; startDate: string; endDate: string; prevFeedback: string };
-  performance: { categoryId: string; target: string; actual: string; actualNum: number | string; rateLabel: string; rateNum: number | string; status: Status; note: string }[];
-  items: { categoryId: string; order: number; title: string; metric: string; badge: string; badgeStatus: Status; cause: string; action: string; due: string; gap: string }[];
-  budgetRows: { brand: string; actualRevenue: number | string; cost: number | string }[];
+  weekInfo: { 주차명: string; 시작일: string; 종료일: string; 회장님피드백: string };
+  performance: { 주차ID: string; KPI항목: string; 주간목표: string; 실적숫자: number | string; 실적내용: string; 비고: string; 달성상태: string }[];
+  items: { 주차ID: string; KPI항목: string; 순서: number; 이슈제목: string; 수치지표: string; 배지: string; 배지상태: string; 원인: string; 액션: string; 마감일: string; 미흡사항: string }[];
+  budgetRows: { 주차ID: string; 브랜드: string; 주간예산: number; 달성매출: number | string; 사용비용: number | string }[];
 }
 
 const CATEGORY_DEFS: { id: string; title: string }[] = [
@@ -394,6 +392,31 @@ function toNumOrNull(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+// 팀원이 시트에 "01"만 적든, "01 키워드 검색량"이라고 적든, "키워드 검색량"이라고만 적든
+// 전부 같은 카테고리(01)로 인식하도록 유연하게 매칭합니다.
+function resolveCategoryId(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (CATEGORY_DEFS.some((d) => d.id === s)) return s;
+  const m = s.match(/^(\d{2})/);
+  if (m && CATEGORY_DEFS.some((d) => d.id === m[1])) return m[1];
+  const found = CATEGORY_DEFS.find((d) => s.includes(d.title));
+  return found ? found.id : null;
+}
+
+// 대시보드 화면(CategoryEditForm)에서 쓰는 한글 라벨과 동일한 표현을 시트에도 그대로 사용합니다.
+const STATUS_KO_LABEL: Record<Status, string> = { good: "달성", warn: "주의", bad: "미달", unk: "산출중" };
+const BADGE_KO_LABEL: Record<Status, string> = { good: "긍정", warn: "주의", bad: "부정", unk: "중립" };
+
+function parseStatusLenient(v: unknown, koMap: Record<Status, string>): Status | null {
+  if (v === undefined || v === null || v === "") return null;
+  const s = String(v).trim();
+  if (s === "good" || s === "warn" || s === "bad" || s === "unk") return s as Status;
+  const found = (Object.entries(koMap) as [Status, string][]).find(([, label]) => label === s);
+  return found ? found[0] : null;
+}
+
 async function sheetFetchWeek(week: string): Promise<SheetWeekResponse> {
   if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) {
     throw new Error("구글시트 연동이 설정되지 않았습니다. (Vercel 환경변수 확인 필요)");
@@ -412,95 +435,102 @@ async function sheetFetchWeek(week: string): Promise<SheetWeekResponse> {
 
 function reportToSheetPayload(report: WeeklyReportData): SheetPushPayload {
   const weekInfo = {
-    label: report.label, startDate: report.startDate, endDate: report.endDate, prevFeedback: report.prevFeedback,
+    주차명: report.label, 시작일: report.startDate, 종료일: report.endDate, 회장님피드백: report.prevFeedback,
   };
   const performance = report.categories
     .filter((c) => c.id !== "07")
     .map((c) => ({
-      categoryId: c.id,
-      target: c.target,
-      actual: c.actual,
-      actualNum: c.actualNum ?? "",
-      rateLabel: c.rateLabel,
-      rateNum: c.rateNum ?? "",
-      status: c.status,
-      note: c.note,
+      주차ID: report.week,
+      KPI항목: `${c.id} ${c.title}`,
+      주간목표: c.target,
+      실적숫자: c.actualNum ?? "",
+      실적내용: c.actual,
+      비고: c.note,
+      달성상태: STATUS_KO_LABEL[c.status],
     }));
   const items = report.categories.flatMap((c) =>
     c.items.map((it, idx) => ({
-      categoryId: c.id,
-      order: idx,
-      title: it.title, metric: it.metric, badge: it.badge, badgeStatus: it.badgeStatus,
-      cause: it.cause, action: it.action, due: it.due, gap: it.gap,
+      주차ID: report.week,
+      KPI항목: `${c.id} ${c.title}`,
+      순서: idx,
+      이슈제목: it.title, 수치지표: it.metric, 배지: it.badge, 배지상태: BADGE_KO_LABEL[it.badgeStatus],
+      원인: it.cause, 액션: it.action, 마감일: it.due, 미흡사항: it.gap,
     }))
   );
   const budgetCat = report.categories.find((c) => c.id === "07");
   const budgetRows = (budgetCat?.budgetRows ?? []).map((r) => ({
-    brand: r.brand,
-    actualRevenue: r.revenue ?? "",
-    cost: r.cost ?? "",
+    주차ID: report.week,
+    브랜드: r.brand,
+    주간예산: r.budget,
+    달성매출: r.revenue ?? "",
+    사용비용: r.cost ?? "",
   }));
   return { week: report.week, weekInfo, performance, items, budgetRows };
 }
 
 function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): WeeklyReportData {
   if (sheet.weekInfo) {
-    const wi = sheet.weekInfo;
-    if (wi.label) report.label = wi.label;
-    if (wi.startDate) report.startDate = wi.startDate;
-    if (wi.endDate) report.endDate = wi.endDate;
-    if (wi.prevFeedback !== undefined) report.prevFeedback = wi.prevFeedback;
+    const wi = sheet.weekInfo as SheetWeekInfo;
+    if (wi.주차명) report.label = wi.주차명;
+    if (wi.시작일) report.startDate = wi.시작일;
+    if (wi.종료일) report.endDate = wi.종료일;
+    if (wi.회장님피드백 !== undefined) report.prevFeedback = wi.회장님피드백;
   }
 
-  const perfMap = new Map(sheet.performance.map((r) => [String(r.categoryId), r]));
+  const perfMap = new Map<string, SheetPerformanceRow>();
+  (sheet.performance as SheetPerformanceRow[]).forEach((r) => {
+    const id = resolveCategoryId(r.KPI항목);
+    if (id) perfMap.set(id, r);
+  });
+
   const itemsByCategory = new Map<string, SheetItemRow[]>();
-  sheet.items.forEach((it) => {
-    const key = String(it.categoryId);
-    const arr = itemsByCategory.get(key) ?? [];
+  (sheet.items as SheetItemRow[]).forEach((it) => {
+    const id = resolveCategoryId(it.KPI항목);
+    if (!id) return;
+    const arr = itemsByCategory.get(id) ?? [];
     arr.push(it);
-    itemsByCategory.set(key, arr);
+    itemsByCategory.set(id, arr);
   });
 
   report.categories = report.categories.map((cat) => {
     const perf = perfMap.get(cat.id);
     if (perf && cat.id !== "07") {
-      if (perf.target) cat.target = perf.target;
-      if (perf.actual !== undefined) cat.actual = perf.actual;
-      if (perf.actualNum !== undefined && perf.actualNum !== "") cat.actualNum = toNumOrNull(perf.actualNum);
-      if (perf.rateLabel) cat.rateLabel = perf.rateLabel;
-      if (perf.rateNum !== undefined && perf.rateNum !== "") cat.rateNum = toNumOrNull(perf.rateNum);
-      if (perf.status) cat.status = perf.status as Status;
-      if (perf.note !== undefined) cat.note = perf.note;
+      if (perf.주간목표) cat.target = perf.주간목표;
+      if (perf.실적내용 !== undefined) cat.actual = perf.실적내용;
+      if (perf.실적숫자 !== undefined && perf.실적숫자 !== "") cat.actualNum = toNumOrNull(perf.실적숫자);
+      const parsedStatus = parseStatusLenient(perf.달성상태, STATUS_KO_LABEL);
+      if (parsedStatus) cat.status = parsedStatus;
+      if (perf.비고 !== undefined) cat.note = perf.비고;
     }
 
     const rawItems = itemsByCategory.get(cat.id);
     if (rawItems && rawItems.length > 0) {
       cat.items = rawItems
         .slice()
-        .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0))
+        .sort((a, b) => Number(a.순서 ?? 0) - Number(b.순서 ?? 0))
         .map((it, idx) => ({
           id: `sheet-${cat.id}-${idx}`,
-          title: it.title ?? "",
-          metric: it.metric ?? "",
-          badge: it.badge ?? "",
-          badgeStatus: (it.badgeStatus as Status) || "warn",
-          cause: it.cause ?? "",
-          action: it.action ?? "",
-          due: it.due ?? "",
-          gap: it.gap ?? "",
+          title: it.이슈제목 ?? "",
+          metric: it.수치지표 ?? "",
+          badge: it.배지 ?? "",
+          badgeStatus: parseStatusLenient(it.배지상태, BADGE_KO_LABEL) ?? "warn",
+          cause: it.원인 ?? "",
+          action: it.액션 ?? "",
+          due: it.마감일 ?? "",
+          gap: it.미흡사항 ?? "",
         }));
     }
 
     if (cat.id === "07" && sheet.budgetRows.length > 0) {
       const existing = cat.budgetRows ?? [];
       cat.budgetRows = BUDGET_BRANDS.map((brand) => {
-        const found = sheet.budgetRows.find((r) => r.brand === brand);
+        const found = (sheet.budgetRows as SheetBudgetRow[]).find((r) => r.브랜드 === brand);
         const prevRow = existing.find((r) => r.brand === brand);
         return {
           brand,
           budget: prevRow?.budget ?? 0,
-          revenue: found ? toNumOrNull(found.actualRevenue) : (prevRow?.revenue ?? null),
-          cost: found ? toNumOrNull(found.cost) : (prevRow?.cost ?? null),
+          revenue: found ? toNumOrNull(found.달성매출) : (prevRow?.revenue ?? null),
+          cost: found ? toNumOrNull(found.사용비용) : (prevRow?.cost ?? null),
         };
       });
     }
