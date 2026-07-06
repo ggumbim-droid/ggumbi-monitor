@@ -17,6 +17,10 @@ interface ReportItem {
   action: string;
   due: string;
   gap: string;
+  brand?: string;
+  midTarget?: number | string | null;
+  midActual?: number | string | null;
+  midRate?: string;
 }
 
 interface BudgetRow {
@@ -38,6 +42,7 @@ interface ReportCategory {
   items: ReportItem[];
   actualNum?: number | null;
   budgetRows?: BudgetRow[];
+  alternative?: string;
   autoCalculated?: boolean;
   updatedBy?: string;
   updatedAt?: string;
@@ -75,6 +80,7 @@ interface SheetPerformanceRow {
   실적숫자?: number | string;
   달성상태?: string;
   비고?: string;
+  대안?: string;
 }
 
 interface SheetItemRow {
@@ -88,6 +94,10 @@ interface SheetItemRow {
   액션?: string;
   마감일?: string;
   미흡사항?: string;
+  브랜드?: string;
+  중목표?: number | string;
+  중실적?: number | string;
+  달성률?: string;
 }
 
 interface SheetBudgetRow {
@@ -106,8 +116,8 @@ interface SheetWeekResponse {
 interface SheetPushPayload {
   week: string;
   weekInfo: { 주차명: string; 시작일: string; 종료일: string; 회장님피드백: string };
-  performance: { 주차ID: string; KPI항목: string; 주간목표: string; 실적숫자: number | string; 실적내용: string; 비고: string; 달성상태: string }[];
-  items: { 주차ID: string; KPI항목: string; 순서: number; 이슈제목: string; 수치지표: string; 배지: string; 배지상태: string; 원인: string; 액션: string; 마감일: string; 미흡사항: string }[];
+  performance: { 주차ID: string; KPI항목: string; 주간목표: string; 실적숫자: number | string; 실적내용: string; 비고: string; 달성상태: string; 대안: string }[];
+  items: { 주차ID: string; KPI항목: string; 순서: number; 이슈제목: string; 수치지표: string; 배지: string; 배지상태: string; 원인: string; 액션: string; 마감일: string; 미흡사항: string; 브랜드: string; 중목표: number | string; 중실적: number | string }[];
   budgetRows: { 주차ID: string; 브랜드: string; 주간예산: number; 달성매출: number | string; 사용비용: number | string }[];
 }
 
@@ -182,7 +192,7 @@ function blankCategory(def: { id: string; title: string }): ReportCategory {
   return {
     id: def.id, title: def.title,
     target: "", actual: "", rateLabel: "", rateNum: null,
-    status: "unk", note: "", items: [], actualNum: null,
+    status: "unk", note: "", items: [], actualNum: null, alternative: "",
   };
 }
 
@@ -447,6 +457,7 @@ function reportToSheetPayload(report: WeeklyReportData): SheetPushPayload {
       실적내용: c.actual,
       비고: c.note,
       달성상태: STATUS_KO_LABEL[c.status],
+      대안: c.alternative ?? "",
     }));
   const items = report.categories.flatMap((c) =>
     c.items.map((it, idx) => ({
@@ -455,6 +466,7 @@ function reportToSheetPayload(report: WeeklyReportData): SheetPushPayload {
       순서: idx,
       이슈제목: it.title, 수치지표: it.metric, 배지: it.badge, 배지상태: BADGE_KO_LABEL[it.badgeStatus],
       원인: it.cause, 액션: it.action, 마감일: it.due, 미흡사항: it.gap,
+      브랜드: it.brand ?? "", 중목표: it.midTarget ?? "", 중실적: it.midActual ?? "",
     }))
   );
   const budgetCat = report.categories.find((c) => c.id === "07");
@@ -501,6 +513,7 @@ function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): Wee
       const parsedStatus = parseStatusLenient(perf.달성상태, STATUS_KO_LABEL);
       if (parsedStatus) cat.status = parsedStatus;
       if (perf.비고 !== undefined) cat.note = perf.비고;
+      if (perf.대안 !== undefined) cat.alternative = perf.대안;
     }
 
     const rawItems = itemsByCategory.get(cat.id);
@@ -518,6 +531,10 @@ function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): Wee
           action: it.액션 ?? "",
           due: it.마감일 ?? "",
           gap: it.미흡사항 ?? "",
+          brand: it.브랜드 ?? "",
+          midTarget: it.중목표 ?? "",
+          midActual: it.중실적 ?? "",
+          midRate: it.달성률 ?? "",
         }));
     }
 
@@ -820,7 +837,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "update_category") {
-      const { categoryId, target, actual, rateLabel, rateNum, status, note, actualNum, updatedBy } = body;
+      const { categoryId, target, actual, rateLabel, rateNum, status, note, actualNum, alternative, updatedBy } = body;
       const cat = report.categories.find((c) => c.id === categoryId);
       if (!cat) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
       if (actualNum !== undefined) cat.actualNum = actualNum === null || actualNum === "" ? null : Number(actualNum);
@@ -830,6 +847,7 @@ export async function POST(request: NextRequest) {
       if (rateNum !== undefined) cat.rateNum = rateNum === null || rateNum === "" ? null : Number(rateNum);
       if (status !== undefined) cat.status = status;
       if (note !== undefined) cat.note = note;
+      if (alternative !== undefined) cat.alternative = alternative;
       cat.updatedBy = updatedBy ?? cat.updatedBy;
       cat.updatedAt = new Date().toISOString();
       await kvSet(reportKey(week), report);
