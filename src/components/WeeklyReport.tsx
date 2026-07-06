@@ -14,7 +14,13 @@ interface ReportItem {
   action: string;
   due: string;
   gap: string;
+  brand?: string;
+  midTarget?: number | string | null;
+  midActual?: number | string | null;
+  midRate?: string;
 }
+
+const BUDGET_BRAND_OPTIONS = ["꿈비", "파미야", "뉴어스", "소브", "오가닉그라운드", "바바디토", "G7커피", "신선미가"];
 
 interface BudgetRow {
   brand: string;
@@ -35,6 +41,7 @@ interface ReportCategory {
   items: ReportItem[];
   actualNum?: number | null;
   budgetRows?: BudgetRow[];
+  alternative?: string;
   autoCalculated?: boolean;
   updatedBy?: string;
   updatedAt?: string;
@@ -138,7 +145,7 @@ function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
           <p className="text-base font-bold text-stone-700">{fmtNum(totalBudget)}</p>
         </div>
         <div className="bg-stone-50 rounded-lg p-3">
-          <p className="text-[11px] text-stone-400 mb-1">달성 매출</p>
+          <p className="text-[11px] text-stone-400 mb-1">사업팀매출</p>
           <p className="text-base font-bold text-emerald-700">{fmtNum(totalRevenue)}</p>
         </div>
         <div className="bg-stone-50 rounded-lg p-3">
@@ -146,7 +153,7 @@ function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
           <p className="text-base font-bold text-amber-700">{fmtNum(totalCost)}</p>
         </div>
         <div className="bg-stone-50 rounded-lg p-3">
-          <p className="text-[11px] text-stone-400 mb-1">매출대비 비용률</p>
+          <p className="text-[11px] text-stone-400 mb-1">사용비중</p>
           <p className={`text-base font-bold ${ratioColor(totalRatio)}`}>{totalRatio !== null ? `${totalRatio}%` : "—"}</p>
           <p className="text-[10px] text-stone-400">목표 6.5%</p>
         </div>
@@ -158,9 +165,9 @@ function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
             <tr className="border-b border-stone-200">
               <th className="text-left py-1.5 font-semibold text-stone-500">브랜드</th>
               <th className="text-right py-1.5 font-semibold text-stone-500">예산</th>
-              <th className="text-right py-1.5 font-semibold text-stone-500">달성 매출</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">사업팀매출</th>
               <th className="text-right py-1.5 font-semibold text-stone-500">비용</th>
-              <th className="text-right py-1.5 font-semibold text-stone-500">매출대비 비용률</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">사용비중</th>
             </tr>
           </thead>
           <tbody>
@@ -225,7 +232,7 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
     <div className="space-y-4 bg-stone-50 rounded-xl p-3">
       {isAutoBudget ? (
         <div className="space-y-2">
-          <p className="text-xs text-stone-500">예산은 월 목표 기준 자동 계산돼요. <b className="text-stone-700">달성 매출</b>과 <b className="text-stone-700">비용</b>만 입력해주세요.</p>
+          <p className="text-xs text-stone-500">예산은 월 목표 기준 자동 계산돼요. <b className="text-stone-700">사업팀매출</b>과 <b className="text-stone-700">비용</b>만 입력해주세요.</p>
           <BudgetTable rows={draft.budgetRows ?? []} editable onChange={onBudgetChange} />
         </div>
       ) : isAutoNumeric ? (
@@ -241,6 +248,10 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
           <div className="col-span-2">
             <label className="text-xs text-stone-500 block mb-1">달성률 (자동계산)</label>
             <div className={`w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm font-bold ${STATUS_TEXT[draft.status]}`}>{draft.rateLabel || "실적 입력 시 계산돼요"}</div>
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-stone-500 block mb-1">대안 / 개선방안 {(draft.status === "warn" || draft.status === "bad") && <span className="text-amber-600">(주의·미달 시 작성 권장)</span>}</label>
+            <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="목표 미달 시 다음 주 개선 방안을 적어주세요" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
           </div>
         </div>
       ) : (
@@ -274,6 +285,10 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
           <label className="text-xs text-stone-500 block mb-1">비고 (선택)</label>
           <input value={draft.note} onChange={(e) => onField("note", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
         </div>
+        <div className="col-span-2">
+          <label className="text-xs text-stone-500 block mb-1">대안 / 개선방안</label>
+          <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="목표 미달 시 다음 주 개선 방안을 적어주세요" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+        </div>
       </div>
       )}
 
@@ -285,6 +300,15 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
               <button onClick={() => onRemoveItem(it.id)} className="text-xs text-rose-400 hover:text-rose-600 px-2 shrink-0">삭제</button>
             </div>
             <input placeholder="수치 / 지표" value={it.metric} onChange={(e) => onItemChange(it.id, { metric: e.target.value })} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            <div className="flex gap-2 items-center bg-stone-50 rounded-lg p-2">
+              <select value={it.brand ?? ""} onChange={(e) => onItemChange(it.id, { brand: e.target.value })} className="border border-stone-200 rounded-lg px-2 py-1 text-xs bg-white">
+                <option value="">브랜드 선택(선택)</option>
+                {BUDGET_BRAND_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <input type="number" placeholder="중목표" value={it.midTarget ?? ""} onChange={(e) => onItemChange(it.id, { midTarget: e.target.value === "" ? "" : Number(e.target.value) })} className="w-24 border border-stone-200 rounded-lg px-2 py-1 text-xs" />
+              <input type="number" placeholder="중실적" value={it.midActual ?? ""} onChange={(e) => onItemChange(it.id, { midActual: e.target.value === "" ? "" : Number(e.target.value) })} className="w-24 border border-stone-200 rounded-lg px-2 py-1 text-xs" />
+              {it.midRate && <span className="text-xs font-semibold text-stone-500 ml-auto">{it.midRate}</span>}
+            </div>
             <div className="flex gap-2">
               <input placeholder="배지 텍스트 (예: 하락)" value={it.badge} onChange={(e) => onItemChange(it.id, { badge: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
               <select value={it.badgeStatus} onChange={(e) => onItemChange(it.id, { badgeStatus: e.target.value as Status })} className="border border-stone-200 rounded-lg px-2 py-1.5 text-sm">
@@ -558,7 +582,7 @@ export function WeeklyReport() {
         const res0 = await fetch("/api/weekly-report", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "update_category", week, categoryId: draftCategory.id, actualNum: draftCategory.actualNum, updatedBy: reporterName }),
+          body: JSON.stringify({ action: "update_category", week, categoryId: draftCategory.id, actualNum: draftCategory.actualNum, alternative: draftCategory.alternative, updatedBy: reporterName }),
         });
         const d0 = await res0.json();
         if (!res0.ok) throw new Error(d0.error || "오류 발생");
@@ -570,7 +594,8 @@ export function WeeklyReport() {
             action: "update_category", week, categoryId: draftCategory.id,
             target: draftCategory.target, actual: draftCategory.actual,
             rateLabel: draftCategory.rateLabel, rateNum: draftCategory.rateNum,
-            status: draftCategory.status, note: draftCategory.note, updatedBy: reporterName,
+            status: draftCategory.status, note: draftCategory.note,
+            alternative: draftCategory.alternative, updatedBy: reporterName,
           }),
         });
         const d0 = await res0.json();
@@ -789,6 +814,12 @@ export function WeeklyReport() {
                       {c.id === "07" && c.autoCalculated && c.budgetRows && (
                         <BudgetTable rows={c.budgetRows} editable={false} />
                       )}
+                      {c.alternative && (
+                        <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2">
+                          <p className="text-[11px] font-bold text-kkumbi-600 uppercase mb-1">대안 / 개선방안</p>
+                          <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.alternative}</p>
+                        </div>
+                      )}
                       {c.items.length === 0 ? (
                         <p className="text-xs text-stone-400">등록된 항목이 없습니다. 수정 버튼을 눌러 추가해주세요.</p>
                       ) : (
@@ -799,6 +830,13 @@ export function WeeklyReport() {
                           {it.badge && <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${STATUS_CLASS[it.badgeStatus]}`}>{it.badge}</span>}
                         </div>
                         {it.metric && <p className="text-xs text-stone-500 mb-2">{it.metric}</p>}
+                        {it.brand && (
+                          <p className="text-xs text-stone-500 mb-2">
+                            <span className="font-semibold text-stone-600">{it.brand}</span>
+                            {" · 중목표 "}{it.midTarget || "—"}{" · 중실적 "}{it.midActual || "—"}
+                            {it.midRate ? ` · ${it.midRate}` : ""}
+                          </p>
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">구조적 원인</p><p className="text-xs text-stone-700 leading-relaxed">{it.cause || "—"}</p></div>
                           <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">차주 실행</p><p className="text-xs text-stone-700 leading-relaxed">{it.action || "—"}{it.due ? ` (마감 ${it.due})` : ""}</p></div>
