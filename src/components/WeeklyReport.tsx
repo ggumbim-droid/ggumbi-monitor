@@ -250,8 +250,12 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
             <div className={`w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm font-bold ${STATUS_TEXT[draft.status]}`}>{draft.rateLabel || "실적 입력 시 계산돼요"}</div>
           </div>
           <div className="col-span-2">
-            <label className="text-xs text-stone-500 block mb-1">대안 / 개선방안 {(draft.status === "warn" || draft.status === "bad") && <span className="text-amber-600">(주의·미달 시 작성 권장)</span>}</label>
-            <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="목표 미달 시 다음 주 개선 방안을 적어주세요" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            <label className="text-xs text-stone-500 block mb-1">인사이트 — 이 숫자가 의미하는 것 (So What)</label>
+            <input value={draft.note} onChange={(e) => onField("note", e.target.value)} placeholder="예: 검색량은 늘었으나 매출 기여는 제한적" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-stone-500 block mb-1">실행 계획 — 다음 주 무엇을 바꿀 것인가 (Now What) {(draft.status === "warn" || draft.status === "bad") && <span className="text-amber-600">(주의·미달 시 작성 권장)</span>}</label>
+            <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="다음 주 바꿀 것을 구체적으로 (예: 전환형 콘텐츠 확대, 검색광고 예산 재배분)" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
           </div>
         </div>
       ) : (
@@ -261,8 +265,8 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
           <input value={draft.target} onChange={(e) => onField("target", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
         </div>
         <div>
-          <label className="text-xs text-stone-500 block mb-1">실적</label>
-          <input value={draft.actual} onChange={(e) => onField("actual", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          <label className="text-xs text-stone-500 block mb-1">실적 — 결과 요약 (What)</label>
+          <input value={draft.actual} onChange={(e) => onField("actual", e.target.value)} placeholder="예: 목표 대비 539% 달성" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
         </div>
         <div>
           <label className="text-xs text-stone-500 block mb-1">달성률 표시 (예: 88.8%)</label>
@@ -282,12 +286,12 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
           </select>
         </div>
         <div>
-          <label className="text-xs text-stone-500 block mb-1">비고 (선택)</label>
-          <input value={draft.note} onChange={(e) => onField("note", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          <label className="text-xs text-stone-500 block mb-1">인사이트 — 이 숫자가 의미하는 것 (So What)</label>
+          <input value={draft.note} onChange={(e) => onField("note", e.target.value)} placeholder="예: 검색량은 늘었으나 매출 기여는 제한적" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
         </div>
         <div className="col-span-2">
-          <label className="text-xs text-stone-500 block mb-1">대안 / 개선방안</label>
-          <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="목표 미달 시 다음 주 개선 방안을 적어주세요" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          <label className="text-xs text-stone-500 block mb-1">실행 계획 — 다음 주 무엇을 바꿀 것인가 (Now What)</label>
+          <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="다음 주 바꿀 것을 구체적으로 (예: 전환형 콘텐츠 확대, 검색광고 예산 재배분)" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
         </div>
       </div>
       )}
@@ -318,8 +322,8 @@ function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveIte
                 <option value="unk">중립</option>
               </select>
             </div>
-            <textarea placeholder="구조적 원인 (채널 / 상품 / 광고 / 비용구조 중 하나 특정)" value={it.cause} onChange={(e) => onItemChange(it.id, { cause: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-            <textarea placeholder="차주 실행" value={it.action} onChange={(e) => onItemChange(it.id, { action: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            <textarea placeholder="원인 (Why) — 채널 / 상품 / 광고 / 비용구조 중 하나 특정" value={it.cause} onChange={(e) => onItemChange(it.id, { cause: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            <textarea placeholder="실행 계획 (Now What) — 다음 주 무엇을 바꿀지" value={it.action} onChange={(e) => onItemChange(it.id, { action: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
             <div className="flex gap-2">
               <input placeholder="마감일 (선택, 예: 6/30)" value={it.due} onChange={(e) => onItemChange(it.id, { due: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
               <input placeholder="보완 필요 메모 (선택)" value={it.gap} onChange={(e) => onItemChange(it.id, { gap: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
@@ -582,7 +586,7 @@ export function WeeklyReport() {
         const res0 = await fetch("/api/weekly-report", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "update_category", week, categoryId: draftCategory.id, actualNum: draftCategory.actualNum, alternative: draftCategory.alternative, updatedBy: reporterName }),
+          body: JSON.stringify({ action: "update_category", week, categoryId: draftCategory.id, actualNum: draftCategory.actualNum, note: draftCategory.note, alternative: draftCategory.alternative, updatedBy: reporterName }),
         });
         const d0 = await res0.json();
         if (!res0.ok) throw new Error(d0.error || "오류 발생");
@@ -728,7 +732,7 @@ export function WeeklyReport() {
       )}
 
       <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 text-xs text-stone-500 flex flex-wrap gap-4">
-        <span><b className="text-stone-700">3종 세트 필수</b> 달성률 · 구조적 원인 · 차주 실행</span>
+        <span><b className="text-stone-700">4단계 필수</b> 결과(달성률) · 원인 · 인사이트 · 실행 계획</span>
         <span><b className="text-stone-700">원인 특정</b> 채널 / 상품 / 광고 / 비용구조 중 1개</span>
         <span><b className="text-stone-700">업로드</b> 매주 화 18:00까지</span>
         <span><b className="text-stone-700">회의 중 신규 자료 공유 금지</b></span>
@@ -814,9 +818,15 @@ export function WeeklyReport() {
                       {c.id === "07" && c.autoCalculated && c.budgetRows && (
                         <BudgetTable rows={c.budgetRows} editable={false} />
                       )}
+                      {c.note && (
+                        <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+                          <p className="text-[11px] font-bold text-stone-500 uppercase mb-1">인사이트 (So What)</p>
+                          <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.note}</p>
+                        </div>
+                      )}
                       {c.alternative && (
                         <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2">
-                          <p className="text-[11px] font-bold text-kkumbi-600 uppercase mb-1">대안 / 개선방안</p>
+                          <p className="text-[11px] font-bold text-kkumbi-600 uppercase mb-1">실행 계획 (Now What)</p>
                           <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.alternative}</p>
                         </div>
                       )}
@@ -838,8 +848,8 @@ export function WeeklyReport() {
                           </p>
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">구조적 원인</p><p className="text-xs text-stone-700 leading-relaxed">{it.cause || "—"}</p></div>
-                          <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">차주 실행</p><p className="text-xs text-stone-700 leading-relaxed">{it.action || "—"}{it.due ? ` (마감 ${it.due})` : ""}</p></div>
+                          <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">원인 (Why)</p><p className="text-xs text-stone-700 leading-relaxed">{it.cause || "—"}</p></div>
+                          <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">실행 계획 (Now What)</p><p className="text-xs text-stone-700 leading-relaxed">{it.action || "—"}{it.due ? ` (마감 ${it.due})` : ""}</p></div>
                         </div>
                         {it.gap && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1 mt-2">⚠ {it.gap}</p>}
                       </div>
