@@ -564,7 +564,11 @@ export function WeeklyReport() {
     // 블록이 열리며 높이가 바뀌므로, 다음 렌더 후 스크롤
     setTimeout(() => {
       const el = blockRefs.current[id];
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (!el) return;
+      // 상단 고정 카드 영역에 가려지지 않도록 여백을 두고 스크롤
+      const STICKY_OFFSET = 240; // 고정된 KPI 카드 영역 대략 높이(px)
+      const y = el.getBoundingClientRect().top + window.scrollY - STICKY_OFFSET;
+      window.scrollTo({ top: y, behavior: "smooth" });
     }, 60);
     // 강조 효과 1.6초 후 해제
     setTimeout(() => setHighlightId((cur) => (cur === id ? "" : cur)), 1600);
@@ -779,17 +783,29 @@ export function WeeklyReport() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {categories.map((c) => (
-          <button key={c.id} onClick={() => scrollToBlock(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
-            <div className="text-xs font-mono text-stone-400 mb-1">KPI {c.id}</div>
-            <div className="text-xs font-bold text-stone-700 mb-2 leading-snug min-h-[2.2em]">{c.title}</div>
-            <div className={`text-lg font-extrabold ${STATUS_TEXT[c.status]}`}>{c.rateLabel || STATUS_LABEL[c.status]}</div>
-            <div className="h-1.5 bg-stone-100 rounded-full mt-2 overflow-hidden">
-              <div className={`h-full rounded-full ${STATUS_BAR[c.status]}`} style={{ width: `${Math.min(c.rateNum ?? 0, 100)}%` }} />
-            </div>
-          </button>
-        ))}
+      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {categories.map((c) => (
+            <button key={c.id} onClick={() => scrollToBlock(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
+              <div className="text-xs font-mono text-stone-400 mb-1">KPI {c.id}</div>
+              <div className="text-xs font-bold text-stone-700 mb-1.5 leading-snug min-h-[2.2em]">{c.title}</div>
+              <div className={`text-lg font-extrabold ${STATUS_TEXT[c.status]}`}>{c.rateLabel || STATUS_LABEL[c.status]}</div>
+              <div className="mt-1.5 space-y-0.5 text-[11px] leading-tight">
+                <div className="flex justify-between gap-1">
+                  <span className="text-stone-400 shrink-0">목표</span>
+                  <span className="text-stone-600 font-medium text-right truncate">{c.target || "—"}</span>
+                </div>
+                <div className="flex justify-between gap-1">
+                  <span className="text-stone-400 shrink-0">실적</span>
+                  <span className="text-emerald-700 font-semibold text-right truncate">{c.actual || "—"}</span>
+                </div>
+              </div>
+              <div className="h-1.5 bg-stone-100 rounded-full mt-2 overflow-hidden">
+                <div className={`h-full rounded-full ${STATUS_BAR[c.status]}`} style={{ width: `${Math.min(c.rateNum ?? 0, 100)}%` }} />
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="space-y-3">
