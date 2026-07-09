@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 type Status = "good" | "warn" | "bad" | "unk";
 
@@ -363,6 +363,8 @@ export function WeeklyReport() {
   const [newWeekSaving, setNewWeekSaving] = useState(false);
 
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [highlightId, setHighlightId] = useState("");
+  const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [editingId, setEditingId] = useState("");
   const [draftCategory, setDraftCategory] = useState<ReportCategory | null>(null);
   const [savingCat, setSavingCat] = useState(false);
@@ -553,6 +555,19 @@ export function WeeklyReport() {
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
+  }
+
+  // 상단 KPI 카드 클릭 → 해당 블록 열고 + 부드럽게 스크롤 + 잠깐 강조
+  function scrollToBlock(id: string) {
+    setOpenIds((prev) => new Set(prev).add(id)); // 항상 열기
+    setHighlightId(id);
+    // 블록이 열리며 높이가 바뀌므로, 다음 렌더 후 스크롤
+    setTimeout(() => {
+      const el = blockRefs.current[id];
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60);
+    // 강조 효과 1.6초 후 해제
+    setTimeout(() => setHighlightId((cur) => (cur === id ? "" : cur)), 1600);
   }
 
   function startEdit(cat: ReportCategory) {
@@ -766,7 +781,7 @@ export function WeeklyReport() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {categories.map((c) => (
-          <button key={c.id} onClick={() => toggleOpen(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
+          <button key={c.id} onClick={() => scrollToBlock(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
             <div className="text-xs font-mono text-stone-400 mb-1">KPI {c.id}</div>
             <div className="text-xs font-bold text-stone-700 mb-2 leading-snug min-h-[2.2em]">{c.title}</div>
             <div className={`text-lg font-extrabold ${STATUS_TEXT[c.status]}`}>{c.rateLabel || STATUS_LABEL[c.status]}</div>
@@ -781,8 +796,13 @@ export function WeeklyReport() {
         {categories.map((c) => {
           const isOpen = openIds.has(c.id);
           const isEditing = editingId === c.id;
+          const isHighlighted = highlightId === c.id;
           return (
-            <div key={c.id} className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+            <div
+              key={c.id}
+              ref={(el) => { blockRefs.current[c.id] = el; }}
+              className={`bg-white border rounded-xl overflow-hidden transition-all duration-500 ${isHighlighted ? "border-kkumbi-400 ring-2 ring-kkumbi-200 shadow-md" : "border-stone-200"}`}
+            >
               <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => toggleOpen(c.id)}>
                 <span className="text-xs font-mono text-stone-400 w-6 shrink-0">{c.id}</span>
                 <div className="flex-1 min-w-0">
