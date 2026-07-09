@@ -1,9 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+"use client";
 
-const KV_REST_API_URL = process.env.KV_REST_API_URL;
-const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
-const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
-const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
+import { useState, useEffect, useCallback, useRef } from "react";
+import { MonthlyReport } from "./MonthlyReport";
 
 type Status = "good" | "warn" | "bad" | "unk";
 
@@ -22,6 +20,8 @@ interface ReportItem {
   midActual?: number | string | null;
   midRate?: string;
 }
+
+const BUDGET_BRAND_OPTIONS = ["꿈비", "파미야", "뉴어스", "소브", "오가닉그라운드", "바바디토", "G7커피", "신선미가"];
 
 interface BudgetRow {
   brand: string;
@@ -64,837 +64,970 @@ interface WeekListEntry {
   endDate: string;
 }
 
-// ── 구글시트 연동용 타입 ──────────────────────────────────
-
-interface SheetWeekInfo {
-  주차명?: string;
-  시작일?: string;
-  종료일?: string;
-  회장님피드백?: string;
+interface MonthlyCategorySummary {
+  id: string;
+  title: string;
+  unit: string;
+  cumulativeTarget: number | null;
+  cumulativeActual: number | null;
+  cumulativeRate: number | null;
+  monthTarget: number | null;
+  projectedActual: number | null;
+  projectedRate: number | null;
+  weeksCounted: number;
+  weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[];
 }
 
-interface SheetPerformanceRow {
-  KPI항목: string;
-  주간목표?: string;
-  실적내용?: string;
-  실적숫자?: number | string;
-  달성상태?: string;
-  비고?: string;
-  대안?: string;
+interface MonthlySummary {
+  month: string;
+  daysElapsed: number;
+  daysInMonth: number;
+  categories: MonthlyCategorySummary[];
 }
 
-interface SheetItemRow {
-  KPI항목: string;
-  순서?: number | string;
-  이슈제목?: string;
-  수치지표?: string;
-  배지?: string;
-  배지상태?: string;
-  원인?: string;
-  액션?: string;
-  마감일?: string;
-  미흡사항?: string;
-  브랜드?: string;
-  중목표?: number | string;
-  중실적?: number | string;
-  달성률?: string;
-}
+// TEAM_NAMES는 서버(Redis)에서 공유 목록으로 관리됩니다 (teamNames 상태 참고)
 
-interface SheetBudgetRow {
-  브랜드: string;
-  달성매출?: number | string;
-  사용비용?: number | string;
-}
-
-interface SheetWeekResponse {
-  weekInfo: SheetWeekInfo | null;
-  performance: SheetPerformanceRow[];
-  items: SheetItemRow[];
-  budgetRows: SheetBudgetRow[];
-}
-
-interface SheetPushPayload {
-  week: string;
-  weekInfo: { 주차명: string; 시작일: string; 종료일: string; 회장님피드백: string };
-  performance: { 주차ID: string; KPI항목: string; 주간목표: string; 실적숫자: number | string; 실적내용: string; 비고: string; 달성상태: string; 대안: string }[];
-  items: { 주차ID: string; KPI항목: string; 순서: number; 이슈제목: string; 수치지표: string; 배지: string; 배지상태: string; 원인: string; 액션: string; 마감일: string; 미흡사항: string; 브랜드: string; 중목표: number | string; 중실적: number | string }[];
-  budgetRows: { 주차ID: string; 브랜드: string; 주간예산: number; 달성매출: number | string; 사용비용: number | string }[];
-}
-
-const CATEGORY_DEFS: { id: string; title: string }[] = [
-  { id: "01", title: "키워드 검색량" },
-  { id: "02", title: "퍼포먼스 마케팅" },
-  { id: "03", title: "주력제품 광고매출" },
-  { id: "04", title: "키워드 1페이지 노출" },
-  { id: "05", title: "신규유입" },
-  { id: "06", title: "계열사 시너지" },
-  { id: "07", title: "예산 효율" },
-  { id: "08", title: "AI 업무 절감" },
-];
-
-// ══════════════════════════════════════════════════════
-//  2026년 7월~12월 월간 목표 (2026년_목표_요약본.xlsx 기준)
-//  · 01/02/03/05는 "합계"행 그대로 (01은 G7커피 제외 합계, 03은 뉴어스·신선미가 포함 45억 유지)
-//  · 07은 브랜드별 월 예산
-// ══════════════════════════════════════════════════════
-const KEYWORD_VOLUME_MONTHLY: Record<string, number> = {
-  "2026-07": 137397, "2026-08": 134674, "2026-09": 137986,
-  "2026-10": 161734, "2026-11": 172826, "2026-12": 158355,
+const STATUS_LABEL: Record<Status, string> = { good: "달성", warn: "주의", bad: "미달", unk: "산출중" };
+const STATUS_CLASS: Record<Status, string> = {
+  good: "bg-emerald-50 text-emerald-700",
+  warn: "bg-amber-50 text-amber-700",
+  bad: "bg-rose-50 text-rose-700",
+  unk: "bg-stone-100 text-stone-500",
 };
-const PERFORMANCE_REVENUE_MONTHLY: Record<string, number> = {
-  "2026-07": 305395000, "2026-08": 305987000, "2026-09": 187042000,
-  "2026-10": 219140000, "2026-11": 227620000, "2026-12": 253520000,
+const STATUS_TEXT: Record<Status, string> = {
+  good: "text-emerald-700",
+  warn: "text-amber-700",
+  bad: "text-rose-700",
+  unk: "text-stone-500",
 };
-const MAIN_AD_REVENUE_MONTHLY: Record<string, number> = {
-  "2026-07": 378868127, "2026-08": 353459807, "2026-09": 384203346,
-  "2026-10": 402445393, "2026-11": 427383751, "2026-12": 410655648,
-};
-const NEW_USER_MONTHLY: Record<string, number> = {
-  "2026-07": 88944, "2026-08": 79677, "2026-09": 110723,
-  "2026-10": 115956, "2026-11": 120042, "2026-12": 118699,
+const STATUS_BAR: Record<Status, string> = {
+  good: "bg-emerald-500",
+  warn: "bg-amber-500",
+  bad: "bg-rose-500",
+  unk: "bg-stone-300",
 };
 
-// 계열사 시너지(연 5만 명)·AI 업무절감(연 300시간)은 월별 데이터가 따로 없어
-// 대목표를 12개월로 균등 분할한 값을 월 목표로 사용합니다.
-const SYNERGY_FLAT_MONTHLY = Math.round(50000 / 12); // 4,167명/월
-const SYNERGY_MONTHLY: Record<string, number> = {
-  "2026-07": SYNERGY_FLAT_MONTHLY, "2026-08": SYNERGY_FLAT_MONTHLY, "2026-09": SYNERGY_FLAT_MONTHLY,
-  "2026-10": SYNERGY_FLAT_MONTHLY, "2026-11": SYNERGY_FLAT_MONTHLY, "2026-12": SYNERGY_FLAT_MONTHLY,
-};
-const AI_SAVING_FLAT_MONTHLY = Math.round(300 / 12); // 25시간/월
-const AI_SAVING_MONTHLY: Record<string, number> = {
-  "2026-07": AI_SAVING_FLAT_MONTHLY, "2026-08": AI_SAVING_FLAT_MONTHLY, "2026-09": AI_SAVING_FLAT_MONTHLY,
-  "2026-10": AI_SAVING_FLAT_MONTHLY, "2026-11": AI_SAVING_FLAT_MONTHLY, "2026-12": AI_SAVING_FLAT_MONTHLY,
-};
-
-const BUDGET_BRANDS = ["꿈비", "파미야", "뉴어스", "소브", "오가닉그라운드", "바바디토", "G7커피", "신선미가"];
-const BUDGET_MONTHLY: Record<string, Record<string, number>> = {
-  "꿈비":        { "2026-07": 113915178, "2026-08": 103630158, "2026-09": 94435278,  "2026-10": 103241708, "2026-11": 115622369, "2026-12": 109280210 },
-  "파미야":      { "2026-07": 10721429,  "2026-08": 9753427,   "2026-09": 8888026,   "2026-10": 9716867,   "2026-11": 10882105,  "2026-12": 10285196 },
-  "뉴어스":      { "2026-07": 9381250,   "2026-08": 8534248,   "2026-09": 7777023,   "2026-10": 8502258,   "2026-11": 9521842,   "2026-12": 8999547 },
-  "소브":        { "2026-07": 0,         "2026-08": 0,         "2026-09": 0,         "2026-10": 0,         "2026-11": 0,         "2026-12": 0 },
-  "오가닉그라운드": { "2026-07": 15939000, "2026-08": 14868000, "2026-09": 27153000, "2026-10": 27342000, "2026-11": 23625000, "2026-12": 27090000 },
-  "바바디토":    { "2026-07": 6831000,    "2026-08": 6372000,   "2026-09": 11637000,  "2026-10": 11718000,  "2026-11": 10125000,  "2026-12": 11610000 },
-  "G7커피":      { "2026-07": 0,         "2026-08": 0,         "2026-09": 0,         "2026-10": 0,         "2026-11": 0,         "2026-12": 0 },
-  "신선미가":    { "2026-07": 0,         "2026-08": 0,         "2026-09": 0,         "2026-10": 0,         "2026-11": 0,         "2026-12": 0 },
-};
-
-const AUTO_CALC_CONFIG: Record<string, { monthly: Record<string, number>; unit: string }> = {
-  "01": { monthly: KEYWORD_VOLUME_MONTHLY, unit: "건" },
-  "02": { monthly: PERFORMANCE_REVENUE_MONTHLY, unit: "원" },
-  "03": { monthly: MAIN_AD_REVENUE_MONTHLY, unit: "원" },
-  "05": { monthly: NEW_USER_MONTHLY, unit: "명" },
-  "06": { monthly: SYNERGY_MONTHLY, unit: "명" },
-  "08": { monthly: AI_SAVING_MONTHLY, unit: "시간" },
-};
-
-function blankCategory(def: { id: string; title: string }): ReportCategory {
-  return {
-    id: def.id, title: def.title,
-    target: "", actual: "", rateLabel: "", rateNum: null,
-    status: "unk", note: "", items: [], actualNum: null, alternative: "",
-  };
+function newId() {
+  return Math.random().toString(36).slice(2, 10);
 }
 
-function blankReport(week: string): WeeklyReportData {
-  return { week, label: "", startDate: "", endDate: "", prevFeedback: "", categories: CATEGORY_DEFS.map(blankCategory) };
+function emptyItem(): ReportItem {
+  return { id: newId(), title: "", metric: "", badge: "", badgeStatus: "warn", cause: "", action: "", due: "", gap: "" };
 }
 
-async function kvGet(key: string) {
-  const res = await fetch(`${KV_REST_API_URL}/get/${key}`, {
-    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
-  });
-  const data = await res.json();
-  const raw = data.result ?? data.value ?? null;
-  if (!raw) return null;
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed === "object") return parsed;
-      if (typeof parsed === "string") return JSON.parse(parsed);
-    } catch {
-      return null;
-    }
-  }
-  return raw;
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
 }
 
-async function kvSet(key: string, value: object) {
-  const jsonStr = JSON.stringify(value);
-  await fetch(`${KV_REST_API_URL}/set/${key}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${KV_REST_API_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(jsonStr),
-  });
+function suggestLabel(startStr: string): string {
+  const d = new Date(startStr);
+  if (isNaN(d.getTime())) return "";
+  const month = d.getMonth() + 1;
+  const weekNum = Math.ceil(d.getDate() / 7);
+  return `${month}월 ${weekNum}주차`;
 }
 
-function reportKey(week: string) {
-  return `weekly_report:${week}`;
+function fmtMD(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
-async function getWeekList(): Promise<WeekListEntry[]> {
-  const raw = (await kvGet("weekly_report_weeks")) as unknown;
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) =>
-    typeof item === "string"
-      ? { week: item, label: "", startDate: "", endDate: "" }
-      : (item as WeekListEntry)
-  );
+function fmtNum(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  return n.toLocaleString();
 }
 
-async function addWeekToList(entry: WeekListEntry) {
-  const list = await getWeekList();
-  const idx = list.findIndex((w) => w.week === entry.week);
-  if (idx >= 0) list[idx] = entry;
-  else list.push(entry);
-  list.sort((a, b) => a.week.localeCompare(b.week));
-  await kvSet("weekly_report_weeks", list);
+function ratioColor(ratio: number | null): string {
+  if (ratio === null) return "text-stone-400";
+  if (ratio <= 6.5) return "text-emerald-600";
+  if (ratio <= 8) return "text-amber-600";
+  return "text-rose-600";
 }
 
-const DEFAULT_TEAM_NAMES = ["방승현 팀장", "김혜림SM", "신동은SM", "김소원JM", "조혜림JM", "이수현AM"];
-
-async function getTeamNames(): Promise<string[]> {
-  const raw = (await kvGet("weekly_report_team_names")) as unknown;
-  if (Array.isArray(raw) && raw.length) return raw as string[];
-  return DEFAULT_TEAM_NAMES;
+interface BudgetTableProps {
+  rows: BudgetRow[];
+  editable: boolean;
+  onChange?: (brand: string, patch: Partial<BudgetRow>) => void;
 }
 
-function fillMissingCategories(report: WeeklyReportData): WeeklyReportData {
-  const existingIds = new Set(report.categories.map((c) => c.id));
-  CATEGORY_DEFS.forEach((def) => {
-    if (!existingIds.has(def.id)) report.categories.push(blankCategory(def));
-  });
-  report.categories.sort((a, b) => a.id.localeCompare(b.id));
-  return report;
-}
-
-// ── 월목표 → 주간 환산 ──────────────────────────────────
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
-
-function getMonthDayCounts(startDate: string, endDate: string): Record<string, number> {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const counts: Record<string, number> = {};
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return counts;
-  const cur = new Date(start);
-  let guard = 0;
-  while (cur <= end && guard < 400) {
-    const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
-    counts[key] = (counts[key] || 0) + 1;
-    cur.setDate(cur.getDate() + 1);
-    guard++;
-  }
-  return counts;
-}
-
-function hasMonthlyConfig(monthly: Record<string, number>, dayCounts: Record<string, number>): boolean {
-  return Object.keys(dayCounts).some((k) => monthly[k] !== undefined);
-}
-
-function prorateMonthly(monthly: Record<string, number>, dayCounts: Record<string, number>): number {
-  const entries = Object.entries(dayCounts);
-  const configuredEntries = entries.filter(([key]) => monthly[key] !== undefined);
-  if (configuredEntries.length === 0) return 0;
-
-  if (configuredEntries.length === 1) {
-    // 그 주가 걸친 두 달 중 설정된 달이 하나뿐인 경우(예: 6월 말~7월 초),
-    // 설정 안 된 달의 날짜도 가까운 설정된 달의 일일 단가로 환산해 7일 전체를 채운다.
-    const [key, ] = configuredEntries[0];
-    const totalDays = entries.reduce((sum, [, days]) => sum + days, 0);
-    const [y, m] = key.split("-").map(Number);
-    return Math.round(monthly[key] * (totalDays / daysInMonth(y, m)));
-  }
-
-  // 두 달 모두 설정되어 있으면 기존처럼 일수 비율대로 정확히 분배
-  let total = 0;
-  for (const [key, days] of configuredEntries) {
-    const val = monthly[key];
-    const [y, m] = key.split("-").map(Number);
-    total += val * (days / daysInMonth(y, m));
-  }
-  return Math.round(total);
-}
-
-function rateStatus(rate: number): Status {
-  if (rate >= 95) return "good";
-  if (rate >= 70) return "warn";
-  return "bad";
-}
-
-function applyAutoCalc(cat: ReportCategory, dayCounts: Record<string, number>): ReportCategory {
-  const cfg = AUTO_CALC_CONFIG[cat.id];
-  if (!cfg || !hasMonthlyConfig(cfg.monthly, dayCounts)) return cat;
-  const targetNum = prorateMonthly(cfg.monthly, dayCounts);
-  cat.target = `${targetNum.toLocaleString()}${cfg.unit}`;
-  cat.autoCalculated = true;
-  if (cat.actualNum !== null && cat.actualNum !== undefined && targetNum > 0) {
-    cat.actual = `${cat.actualNum.toLocaleString()}${cfg.unit}`;
-    const rate = Math.round((cat.actualNum / targetNum) * 1000) / 10;
-    cat.rateNum = rate;
-    cat.rateLabel = `${rate}%`;
-    cat.status = rateStatus(rate);
-  } else {
-    cat.actual = "";
-    cat.rateNum = null;
-    cat.rateLabel = "";
-    cat.status = "unk";
-  }
-  return cat;
-}
-
-function applyBudgetCalc(cat: ReportCategory, dayCounts: Record<string, number>): ReportCategory {
-  if (cat.id !== "07" || !hasMonthlyConfig(BUDGET_MONTHLY["꿈비"], dayCounts)) return cat;
-  const existing = cat.budgetRows ?? [];
-  const rows: BudgetRow[] = BUDGET_BRANDS.map((brand) => {
-    const found = existing.find((r) => r.brand === brand);
-    const budget = prorateMonthly(BUDGET_MONTHLY[brand], dayCounts);
-    return { brand, budget, revenue: found?.revenue ?? null, cost: found?.cost ?? null };
-  });
-  cat.budgetRows = rows;
-  cat.autoCalculated = true;
+function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
   const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
   const totalRevenue = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
   const totalCost = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
-  cat.target = "6.5% 이내";
-  cat.note = `총예산 ${totalBudget.toLocaleString()}원`;
-  if (totalRevenue > 0) {
-    const ratio = Math.round((totalCost / totalRevenue) * 1000) / 10;
-    cat.rateNum = ratio;
-    cat.rateLabel = `${ratio}%`;
-    cat.actual = `매출 ${totalRevenue.toLocaleString()}원 · 비용 ${totalCost.toLocaleString()}원`;
-    cat.status = ratio <= 6.5 ? "good" : ratio <= 8 ? "warn" : "bad";
-  } else {
-    cat.rateNum = null;
-    cat.rateLabel = "";
-    cat.actual = "";
-    cat.status = "unk";
-  }
-  return cat;
-}
+  const totalRatio = totalRevenue > 0 ? Math.round((totalCost / totalRevenue) * 1000) / 10 : null;
 
-function decorateReport(report: WeeklyReportData): WeeklyReportData {
-  if (!report.startDate || !report.endDate) return report;
-  const dayCounts = getMonthDayCounts(report.startDate, report.endDate);
-  report.categories = report.categories.map((cat) => {
-    cat.autoCalculated = false;
-    if (AUTO_CALC_CONFIG[cat.id]) return applyAutoCalc(cat, dayCounts);
-    if (cat.id === "07") return applyBudgetCalc(cat, dayCounts);
-    return cat;
-  });
-  return report;
-}
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">총 예산</p>
+          <p className="text-base font-bold text-stone-700">{fmtNum(totalBudget)}</p>
+        </div>
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">사업팀매출</p>
+          <p className="text-base font-bold text-emerald-700">{fmtNum(totalRevenue)}</p>
+        </div>
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">총 비용</p>
+          <p className="text-base font-bold text-amber-700">{fmtNum(totalCost)}</p>
+        </div>
+        <div className="bg-stone-50 rounded-lg p-3">
+          <p className="text-[11px] text-stone-400 mb-1">사용비중</p>
+          <p className={`text-base font-bold ${ratioColor(totalRatio)}`}>{totalRatio !== null ? `${totalRatio}%` : "—"}</p>
+          <p className="text-[10px] text-stone-400">목표 6.5%</p>
+        </div>
+      </div>
 
-// ── 구글시트 연동 ──────────────────────────────────────
-// 시트 자체에 "주차정보" / "실적입력" / "세부항목" / "예산효율" 4개 탭을 두고,
-// Apps Script 웹앱(doGet/doPost)을 통해 읽고 씁니다. target/rate/status 같은
-// 계산값은 시트에 적어도 무시되고(자동계산이 항상 우선) 04(수동 카테고리)만
-// target/rateLabel/rateNum/status를 시트값 그대로 반영합니다.
-
-function toNumOrNull(v: unknown): number | null {
-  if (v === undefined || v === null || v === "") return null;
-  const n = Number(v);
-  return isNaN(n) ? null : n;
-}
-
-// 팀원이 시트에 "01"만 적든, "01 키워드 검색량"이라고 적든, "키워드 검색량"이라고만 적든
-// 전부 같은 카테고리(01)로 인식하도록 유연하게 매칭합니다.
-function resolveCategoryId(raw: unknown): string | null {
-  if (raw === undefined || raw === null) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  if (CATEGORY_DEFS.some((d) => d.id === s)) return s;
-  const m = s.match(/^(\d{2})/);
-  if (m && CATEGORY_DEFS.some((d) => d.id === m[1])) return m[1];
-  const found = CATEGORY_DEFS.find((d) => s.includes(d.title));
-  return found ? found.id : null;
-}
-
-// 대시보드 화면(CategoryEditForm)에서 쓰는 한글 라벨과 동일한 표현을 시트에도 그대로 사용합니다.
-const STATUS_KO_LABEL: Record<Status, string> = { good: "달성", warn: "주의", bad: "미달", unk: "산출중" };
-const BADGE_KO_LABEL: Record<Status, string> = { good: "긍정", warn: "주의", bad: "부정", unk: "중립" };
-
-function parseStatusLenient(v: unknown, koMap: Record<Status, string>): Status | null {
-  if (v === undefined || v === null || v === "") return null;
-  const s = String(v).trim();
-  if (s === "good" || s === "warn" || s === "bad" || s === "unk") return s as Status;
-  const found = (Object.entries(koMap) as [Status, string][]).find(([, label]) => label === s);
-  return found ? found[0] : null;
-}
-
-async function sheetFetchWeek(week: string): Promise<SheetWeekResponse> {
-  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) {
-    throw new Error("구글시트 연동이 설정되지 않았습니다. (Vercel 환경변수 확인 필요)");
-  }
-  const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}&week=${encodeURIComponent(week)}`;
-  const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json();
-  if (data.error) throw new Error(`구글시트 오류: ${data.error}`);
-  return {
-    weekInfo: data.weekInfo ?? null,
-    performance: Array.isArray(data.performance) ? data.performance : [],
-    items: Array.isArray(data.items) ? data.items : [],
-    budgetRows: Array.isArray(data.budgetRows) ? data.budgetRows : [],
-  };
-}
-
-function reportToSheetPayload(report: WeeklyReportData): SheetPushPayload {
-  const weekInfo = {
-    주차명: report.label, 시작일: report.startDate, 종료일: report.endDate, 회장님피드백: report.prevFeedback,
-  };
-  const performance = report.categories
-    .filter((c) => c.id !== "07")
-    .map((c) => ({
-      주차ID: report.week,
-      KPI항목: `${c.id} ${c.title}`,
-      주간목표: c.target,
-      실적숫자: c.actualNum ?? "",
-      실적내용: c.actual,
-      비고: c.note,
-      달성상태: STATUS_KO_LABEL[c.status],
-      대안: c.alternative ?? "",
-    }));
-  const items = report.categories.flatMap((c) =>
-    c.items.map((it, idx) => ({
-      주차ID: report.week,
-      KPI항목: `${c.id} ${c.title}`,
-      순서: idx,
-      이슈제목: it.title, 수치지표: it.metric, 배지: it.badge, 배지상태: BADGE_KO_LABEL[it.badgeStatus],
-      원인: it.cause, 액션: it.action, 마감일: it.due, 미흡사항: it.gap,
-      브랜드: it.brand ?? "", 중목표: it.midTarget ?? "", 중실적: it.midActual ?? "",
-    }))
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-stone-200">
+              <th className="text-left py-1.5 font-semibold text-stone-500">브랜드</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">예산</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">사업팀매출</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">비용</th>
+              <th className="text-right py-1.5 font-semibold text-stone-500">사용비중</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const ratio = r.revenue && r.revenue > 0 ? Math.round(((r.cost ?? 0) / r.revenue) * 1000) / 10 : null;
+              return (
+                <tr key={r.brand} className="border-b border-stone-100">
+                  <td className="py-1.5 font-medium text-stone-700">{r.brand}</td>
+                  <td className="py-1.5 text-right text-stone-500">{fmtNum(r.budget)}</td>
+                  <td className="py-1.5 text-right">
+                    {editable ? (
+                      <input type="number" value={r.revenue ?? ""} onChange={(e) => onChange?.(r.brand, { revenue: e.target.value === "" ? null : Number(e.target.value) })}
+                        className="w-28 border border-stone-200 rounded px-2 py-1 text-right text-xs" />
+                    ) : (
+                      <span className="font-semibold text-emerald-700">{fmtNum(r.revenue)}</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 text-right">
+                    {editable ? (
+                      <input type="number" value={r.cost ?? ""} onChange={(e) => onChange?.(r.brand, { cost: e.target.value === "" ? null : Number(e.target.value) })}
+                        className="w-24 border border-stone-200 rounded px-2 py-1 text-right text-xs" />
+                    ) : (
+                      <span className="text-stone-600">{fmtNum(r.cost)}</span>
+                    )}
+                  </td>
+                  <td className={`py-1.5 text-right font-semibold ${ratioColor(ratio)}`}>{ratio !== null ? `${ratio}%` : "—"}</td>
+                </tr>
+              );
+            })}
+            <tr className="font-bold text-stone-800">
+              <td className="py-1.5">합계</td>
+              <td className="py-1.5 text-right">{fmtNum(totalBudget)}</td>
+              <td className="py-1.5 text-right text-emerald-700">{fmtNum(totalRevenue)}</td>
+              <td className="py-1.5 text-right text-stone-700">{fmtNum(totalCost)}</td>
+              <td className={`py-1.5 text-right ${ratioColor(totalRatio)}`}>{totalRatio !== null ? `${totalRatio}%` : "—"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
-  const budgetCat = report.categories.find((c) => c.id === "07");
-  const budgetRows = (budgetCat?.budgetRows ?? []).map((r) => ({
-    주차ID: report.week,
-    브랜드: r.brand,
-    주간예산: r.budget,
-    달성매출: r.revenue ?? "",
-    사용비용: r.cost ?? "",
-  }));
-  return { week: report.week, weekInfo, performance, items, budgetRows };
 }
 
-function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): WeeklyReportData {
-  if (sheet.weekInfo) {
-    const wi = sheet.weekInfo as SheetWeekInfo;
-    if (wi.주차명) report.label = wi.주차명;
-    if (wi.시작일) report.startDate = wi.시작일;
-    if (wi.종료일) report.endDate = wi.종료일;
-    if (wi.회장님피드백 !== undefined) report.prevFeedback = wi.회장님피드백;
+
+interface CategoryEditFormProps {
+  draft: ReportCategory;
+  onField: <K extends keyof ReportCategory>(key: K, value: ReportCategory[K]) => void;
+  onItemChange: (itemId: string, patch: Partial<ReportItem>) => void;
+  onAddItem: () => void;
+  onRemoveItem: (itemId: string) => void;
+  onBudgetChange: (brand: string, patch: Partial<BudgetRow>) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+}
+
+function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveItem, onBudgetChange, onSave, onCancel, saving }: CategoryEditFormProps) {
+  const isAutoBudget = draft.id === "07" && draft.autoCalculated;
+  const isAutoNumeric = draft.autoCalculated && !isAutoBudget;
+
+  return (
+    <div className="space-y-4 bg-stone-50 rounded-xl p-3">
+      {isAutoBudget ? (
+        <div className="space-y-2">
+          <p className="text-xs text-stone-500">예산은 월 목표 기준 자동 계산돼요. <b className="text-stone-700">사업팀매출</b>과 <b className="text-stone-700">비용</b>만 입력해주세요.</p>
+          <BudgetTable rows={draft.budgetRows ?? []} editable onChange={onBudgetChange} />
+        </div>
+      ) : isAutoNumeric ? (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-stone-500 block mb-1">목표 (월 목표 기준 자동계산)</label>
+            <div className="w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm text-stone-500">{draft.target || "—"}</div>
+          </div>
+          <div>
+            <label className="text-xs text-stone-500 block mb-1">실적 (숫자만 입력)</label>
+            <input type="number" value={draft.actualNum ?? ""} onChange={(e) => onField("actualNum", e.target.value === "" ? null : Number(e.target.value))} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-stone-500 block mb-1">달성률 (자동계산)</label>
+            <div className={`w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm font-bold ${STATUS_TEXT[draft.status]}`}>{draft.rateLabel || "실적 입력 시 계산돼요"}</div>
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-stone-500 block mb-1">인사이트 — 이 숫자가 의미하는 것 (So What)</label>
+            <input value={draft.note} onChange={(e) => onField("note", e.target.value)} placeholder="예: 검색량은 늘었으나 매출 기여는 제한적" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-stone-500 block mb-1">실행 계획 — 다음 주 무엇을 바꿀 것인가 (Now What) {(draft.status === "warn" || draft.status === "bad") && <span className="text-amber-600">(주의·미달 시 작성 권장)</span>}</label>
+            <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="다음 주 바꿀 것을 구체적으로 (예: 전환형 콘텐츠 확대, 검색광고 예산 재배분)" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+        </div>
+      ) : (
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">목표</label>
+          <input value={draft.target} onChange={(e) => onField("target", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">실적 — 결과 요약 (What)</label>
+          <input value={draft.actual} onChange={(e) => onField("actual", e.target.value)} placeholder="예: 목표 대비 539% 달성" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">달성률 표시 (예: 88.8%)</label>
+          <input value={draft.rateLabel} onChange={(e) => onField("rateLabel", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">막대그래프용 숫자 (0~100, 선택)</label>
+          <input type="number" value={draft.rateNum ?? ""} onChange={(e) => onField("rateNum", e.target.value === "" ? null : Number(e.target.value))} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">상태</label>
+          <select value={draft.status} onChange={(e) => onField("status", e.target.value as Status)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm">
+            <option value="good">달성</option>
+            <option value="warn">주의</option>
+            <option value="bad">미달</option>
+            <option value="unk">산출중</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">인사이트 — 이 숫자가 의미하는 것 (So What)</label>
+          <input value={draft.note} onChange={(e) => onField("note", e.target.value)} placeholder="예: 검색량은 늘었으나 매출 기여는 제한적" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-stone-500 block mb-1">실행 계획 — 다음 주 무엇을 바꿀 것인가 (Now What)</label>
+          <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="다음 주 바꿀 것을 구체적으로 (예: 전환형 콘텐츠 확대, 검색광고 예산 재배분)" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+        </div>
+      </div>
+      )}
+
+      <div className="space-y-3">
+        {draft.items.map((it) => (
+          <div key={it.id} className="bg-white border border-stone-200 rounded-lg p-3 space-y-2">
+            <div className="flex gap-2">
+              <input placeholder="항목명 (예: 꿈비 — 시공매트)" value={it.title} onChange={(e) => onItemChange(it.id, { title: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+              <button onClick={() => onRemoveItem(it.id)} className="text-xs text-rose-400 hover:text-rose-600 px-2 shrink-0">삭제</button>
+            </div>
+            <input placeholder="수치 / 지표" value={it.metric} onChange={(e) => onItemChange(it.id, { metric: e.target.value })} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            <div className="flex gap-2 items-center bg-stone-50 rounded-lg p-2">
+              <select value={it.brand ?? ""} onChange={(e) => onItemChange(it.id, { brand: e.target.value })} className="border border-stone-200 rounded-lg px-2 py-1 text-xs bg-white">
+                <option value="">브랜드 선택(선택)</option>
+                {BUDGET_BRAND_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <input type="number" placeholder="중목표" value={it.midTarget ?? ""} onChange={(e) => onItemChange(it.id, { midTarget: e.target.value === "" ? "" : Number(e.target.value) })} className="w-24 border border-stone-200 rounded-lg px-2 py-1 text-xs" />
+              <input type="number" placeholder="중실적" value={it.midActual ?? ""} onChange={(e) => onItemChange(it.id, { midActual: e.target.value === "" ? "" : Number(e.target.value) })} className="w-24 border border-stone-200 rounded-lg px-2 py-1 text-xs" />
+              {it.midRate && <span className="text-xs font-semibold text-stone-500 ml-auto">{it.midRate}</span>}
+            </div>
+            <div className="flex gap-2">
+              <input placeholder="배지 텍스트 (예: 하락)" value={it.badge} onChange={(e) => onItemChange(it.id, { badge: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+              <select value={it.badgeStatus} onChange={(e) => onItemChange(it.id, { badgeStatus: e.target.value as Status })} className="border border-stone-200 rounded-lg px-2 py-1.5 text-sm">
+                <option value="good">긍정</option>
+                <option value="warn">주의</option>
+                <option value="bad">부정</option>
+                <option value="unk">중립</option>
+              </select>
+            </div>
+            <textarea placeholder="원인 (Why) — 채널 / 상품 / 광고 / 비용구조 중 하나 특정" value={it.cause} onChange={(e) => onItemChange(it.id, { cause: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            <textarea placeholder="실행 계획 (Now What) — 다음 주 무엇을 바꿀지" value={it.action} onChange={(e) => onItemChange(it.id, { action: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            <div className="flex gap-2">
+              <input placeholder="마감일 (선택, 예: 6/30)" value={it.due} onChange={(e) => onItemChange(it.id, { due: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+              <input placeholder="보완 필요 메모 (선택)" value={it.gap} onChange={(e) => onItemChange(it.id, { gap: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
+            </div>
+          </div>
+        ))}
+        <button onClick={onAddItem} className="w-full border border-dashed border-stone-300 rounded-lg py-2 text-xs text-stone-500 hover:border-kkumbi-400 hover:text-kkumbi-600">+ 항목 추가</button>
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={onSave} disabled={saving} className="px-4 py-2 bg-kkumbi-500 text-white text-xs font-bold rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
+          {saving ? "저장 중..." : "저장"}
+        </button>
+        <button onClick={onCancel} className="px-4 py-2 border border-stone-200 text-xs font-bold rounded-lg text-stone-600">취소</button>
+      </div>
+    </div>
+  );
+}
+
+export function WeeklyReport() {
+  const [reporterName, setReporterName] = useState("");
+  const [namePromptOpen, setNamePromptOpen] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [teamNames, setTeamNames] = useState<string[]>([]);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [teamNameError, setTeamNameError] = useState("");
+
+  const [weeks, setWeeks] = useState<WeekListEntry[]>([]);
+  const [week, setWeek] = useState("");
+  const [report, setReport] = useState<WeeklyReportData | null>(null);
+  const [monthly, setMonthly] = useState<MonthlySummary | null>(null);
+  const [viewMode, setViewMode] = useState<"weekly" | "monthly">("weekly");
+  const [loading, setLoading] = useState(true);
+
+  const [newWeekOpen, setNewWeekOpen] = useState(false);
+  const [newStart, setNewStart] = useState("");
+  const [newEnd, setNewEnd] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [newWeekSaving, setNewWeekSaving] = useState(false);
+
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [highlightId, setHighlightId] = useState("");
+  const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [editingId, setEditingId] = useState("");
+  const [draftCategory, setDraftCategory] = useState<ReportCategory | null>(null);
+  const [savingCat, setSavingCat] = useState(false);
+
+  const [feedbackDraft, setFeedbackDraft] = useState("");
+  const [editingFeedback, setEditingFeedback] = useState(false);
+
+  const [sheetSyncing, setSheetSyncing] = useState(false);
+  const [sheetSyncMsg, setSheetSyncMsg] = useState("");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("ggumbi_reporter_name");
+    if (saved) setReporterName(saved);
+  }, []);
+
+  const loadWeek = useCallback(async (w?: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/weekly-report${w ? `?week=${encodeURIComponent(w)}` : ""}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setWeeks(data.weeks ?? []);
+      setWeek(data.week ?? "");
+      setReport(data.report ?? null);
+      setMonthly(data.monthly ?? null);
+      setFeedbackDraft(data.report?.prevFeedback ?? "");
+      setTeamNames(data.teamNames ?? []);
+    } catch (e) {
+      console.error("주간보고 로드 실패:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadWeek(); }, [loadWeek]);
+
+  function confirmName() {
+    const finalName = nameInput.trim();
+    if (!finalName) return;
+    localStorage.setItem("ggumbi_reporter_name", finalName);
+    setReporterName(finalName);
+    setNamePromptOpen(false);
   }
 
-  const perfMap = new Map<string, SheetPerformanceRow>();
-  (sheet.performance as SheetPerformanceRow[]).forEach((r) => {
-    const id = resolveCategoryId(r.KPI항목);
-    if (id) perfMap.set(id, r);
-  });
+  function selectTeamName(name: string) {
+    localStorage.setItem("ggumbi_reporter_name", name);
+    setReporterName(name);
+    setNamePromptOpen(false);
+  }
 
-  const itemsByCategory = new Map<string, SheetItemRow[]>();
-  (sheet.items as SheetItemRow[]).forEach((it) => {
-    const id = resolveCategoryId(it.KPI항목);
-    if (!id) return;
-    const arr = itemsByCategory.get(id) ?? [];
-    arr.push(it);
-    itemsByCategory.set(id, arr);
-  });
-
-  report.categories = report.categories.map((cat) => {
-    const perf = perfMap.get(cat.id);
-    if (perf && cat.id !== "07") {
-      if (perf.주간목표) cat.target = perf.주간목표;
-      if (perf.실적내용 !== undefined) cat.actual = perf.실적내용;
-      if (perf.실적숫자 !== undefined && perf.실적숫자 !== "") cat.actualNum = toNumOrNull(perf.실적숫자);
-      const parsedStatus = parseStatusLenient(perf.달성상태, STATUS_KO_LABEL);
-      if (parsedStatus) cat.status = parsedStatus;
-      if (perf.비고 !== undefined) cat.note = perf.비고;
-      if (perf.대안 !== undefined) cat.alternative = perf.대안;
-    }
-
-    const rawItems = itemsByCategory.get(cat.id);
-    if (rawItems && rawItems.length > 0) {
-      cat.items = rawItems
-        .slice()
-        .sort((a, b) => Number(a.순서 ?? 0) - Number(b.순서 ?? 0))
-        .map((it, idx) => ({
-          id: `sheet-${cat.id}-${idx}`,
-          title: it.이슈제목 ?? "",
-          metric: it.수치지표 ?? "",
-          badge: it.배지 ?? "",
-          badgeStatus: parseStatusLenient(it.배지상태, BADGE_KO_LABEL) ?? "warn",
-          cause: it.원인 ?? "",
-          action: it.액션 ?? "",
-          due: it.마감일 ?? "",
-          gap: it.미흡사항 ?? "",
-          brand: it.브랜드 ?? "",
-          midTarget: it.중목표 ?? "",
-          midActual: it.중실적 ?? "",
-          midRate: it.달성률 ?? "",
-        }));
-    }
-
-    if (cat.id === "07" && sheet.budgetRows.length > 0) {
-      const existing = cat.budgetRows ?? [];
-      cat.budgetRows = BUDGET_BRANDS.map((brand) => {
-        const found = (sheet.budgetRows as SheetBudgetRow[]).find((r) => r.브랜드 === brand);
-        const prevRow = existing.find((r) => r.brand === brand);
-        return {
-          brand,
-          budget: prevRow?.budget ?? 0,
-          revenue: found ? toNumOrNull(found.달성매출) : (prevRow?.revenue ?? null),
-          cost: found ? toNumOrNull(found.사용비용) : (prevRow?.cost ?? null),
-        };
+  async function addTeamName() {
+    const name = newTeamName.trim();
+    if (!name) return;
+    setTeamNameError("");
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add_team_name", name }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setTeamNames(data.teamNames ?? []);
+      setNewTeamName("");
+    } catch (e) {
+      setTeamNameError(e instanceof Error ? e.message : "오류 발생");
     }
-
-    return cat;
-  });
-
-  return report;
-}
-
-async function sheetPushWeek(payload: SheetPushPayload): Promise<void> {
-  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return;
-  const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-}
-
-async function syncReportToSheet(report: WeeklyReportData): Promise<boolean> {
-  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return true; // 연동 미설정이면 동기화 대상 자체가 아니므로 실패로 안 침
-  try {
-    await sheetPushWeek(reportToSheetPayload(report));
-    return true;
-  } catch (e) {
-    console.error("구글시트 동기화 실패:", e);
-    return false;
   }
-}
 
-// ── 시드(예시) 데이터 ──────────────────────────────────
-
-function seedItems(catId: string, raw: { title: string; metric: string; badge: string; badgeStatus: Status; cause: string; action: string; due?: string; gap?: string }[]): ReportItem[] {
-  return raw.map((it, idx) => ({
-    id: `${catId}-seed-${idx}`,
-    title: it.title, metric: it.metric, badge: it.badge, badgeStatus: it.badgeStatus,
-    cause: it.cause, action: it.action, due: it.due ?? "", gap: it.gap ?? "",
-  }));
-}
-
-function buildSeedReport(): WeeklyReportData {
-  return {
-    week: "2026-06-22",
-    label: "6월 3주차",
-    startDate: "2026-06-16",
-    endDate: "2026-06-22",
-    prevFeedback: "",
-    categories: [
-      {
-        id: "01", title: "키워드 검색량", target: "170만 건", actual: "151만 건 (70+60+14+7)",
-        rateLabel: "88.8%", rateNum: 88.8, status: "warn", note: "", actualNum: null,
-        items: seedItems("01", [
-          { title: "꿈비/리코코 — 시공매트", metric: "자사 7일평균지수 4.9 · 8개 브랜드 중 최하위", badge: "최하위권", badgeStatus: "bad",
-            cause: "경쟁사(봄봄매트 54.6·알집 51)는 오프라인 베페·라이브를 상시 연계해 트래픽을 만드는데, 자사는 시공매트 전용 오프라인 행사·라이브가 없어 채널 자체가 부족(채널)",
-            action: "매트군 침투 바이럴 착수, 매트 관련 콘텐츠 정기 포스팅 일정 확정" },
-          { title: "꿈비/리코코 — 폴더매트", metric: "자사 7일평균지수 4.0 · 1위 알집매트(48.7)와 격차 큼", badge: "유지", badgeStatus: "warn",
-            cause: "경쟁사는 베페·라이브를 주 단위로 반복 운영, 자사는 인플루언서 후기 콘텐츠 위주라 이벤트성 트래픽 스파이크가 없음(콘텐츠)",
-            action: "", gap: "폴더매트 전용 차주 실행안 미정" },
-          { title: "꿈비/리코코 — 범퍼침대", metric: "자사 7일평균지수 56.3 · 2위(1위 도노도노 79, 격차 22.7)", badge: "하락 -6.6", badgeStatus: "warn",
-            cause: "단순 검색량 확보형이 아닌 전환 효율 중심 광고로 운영 전환 중이라 검색량 지표 자체는 정체(광고)",
-            action: "전환 효율 중심 광고 운영 지속, 격차 축소 위한 전환 캠페인 강화" },
-          { title: "꿈비/리코코 — 매트 키워드 비교(폴더/롤/퍼즐/시공)", metric: "폴더매트만 84.6 유지, 롤·퍼즐매트는 한 자릿수", badge: "유지", badgeStatus: "warn",
-            cause: "롤매트·퍼즐매트는 체험단·바이럴 콘텐츠 배정이 적어 검색 유입 자체가 낮음(콘텐츠)",
-            action: "롤매트·퍼즐매트 체험단·바이럴 콘텐츠 강화로 상위노출 목표" },
-          { title: "꿈비 소싱 — 젖병세척기", metric: "자사 7일평균지수 9.9 · 5개 브랜드 중 최하위", badge: "최하위", badgeStatus: "bad",
-            cause: "6월 메인 행사·홍보 부재, 체험단·바이럴도 신제품(맘마존) 중심으로 이동하며 작업량 감소(콘텐츠)",
-            action: "맘마존 홍보 시 젖병세척기 내용 필수 포함, 7월부터 바이럴 작업량 기존 수준 복원" },
-          { title: "꿈비 소싱 — 분유포트 / 분유쉐이커", metric: "분유포트 71.1(1위,-6.7) · 분유쉐이커 42.5(1위,-8)", badge: "하락", badgeStatus: "warn",
-            cause: "더에르고X링크맘 핫딜·메타광고 행사 종료 및 재고 소진에 따른 자연 하락(광고)",
-            action: "토요일 카카오 쟁쟁한특가에 분유쉐이커 메인 노출 예정 → 분유쉐이커 홍보 집중", due: "6/28" },
-          { title: "꿈비 소싱 — 시즌제품(쿨시트/쿨링커버)", metric: "쿨링커버 41.8(+20.3) · 쿨시트 6.9(유지)", badge: "쿨링커버 상승", badgeStatus: "good",
-            cause: "쿨링커버는 최근 프로모션 영향으로 상승, 쿨시트는 폴레드(40.5)·다이치(12.4) 대비 정체(상품)",
-            action: "쿨시트 가격정책 변경에 따른 베이지 재고 소진 지속, 카카오 쟁쟁한특가 1+1 행사로 트래픽 견인", due: "6/30" },
-          { title: "오가닉그라운드 — 경쟁사 트렌드", metric: "프랭클린에 검색량 역전당함 · 몽디에스가 30% 수준까지 추격", badge: "역전당함", badgeStatus: "bad",
-            cause: "한여름 핵심 수요 상품(워시·수딩크림) 재고 부족으로 기획전 미끼상품·광고 셋팅 불가(상품)",
-            action: "로션 검색 인증 이벤트(6/22) / 재고부족 역이용 카피 적용 / 무예산 정보성 콘텐츠 제작", due: "7/6" },
-          { title: "바바디토 — 경쟁사 트렌드", metric: "자사 7일평균지수 3.2(-1.4) · 5개 브랜드 중 최하위", badge: "유지", badgeStatus: "warn",
-            cause: "건조기시트 체험단 이후 검색량은 회복(2.3→3.2)했지만 위드바바 26기 콘텐츠가 상위노출로 전환되지 못함(콘텐츠)",
-            action: "7월 시크릿링크·다음세일 바이럴로 평균 5 목표, 도비약사 공동구매 추이 점검", due: "8/3" },
-          { title: "파미야 — 키워드 노출", metric: "캣타워·강아지쿨매트 등 핵심 키워드 상위20 미노출/하위권", badge: "미노출", badgeStatus: "bad",
-            cause: "체험단·바이럴 콘텐츠 자체가 부족해 노출 경쟁에서 밀림(콘텐츠)",
-            action: "캣타워 펫바우처 메타 소재 기획 · 무브스테이 7월 계획 · 쿨매트 광고 재개", due: "6/24" },
-        ]),
-      },
-      {
-        id: "02", title: "퍼포먼스 마케팅", target: "102,520,000원", actual: "23,328,580원 (사업팀매출)",
-        rateLabel: "23.6%", rateNum: 23.6, status: "bad", note: "", actualNum: null,
-        items: seedItems("02", [
-          { title: "전체", metric: "ROAS 3,285% · 유입 7,426건 · 광고비 3,000,366원", badge: "미달", badgeStatus: "bad",
-            cause: "침대가드·샤워필터 등 저단가 상품 위주로 트래픽은 확보했지만 객단가가 낮아 매출 볼륨이 목표에 못 미침(상품)",
-            action: "임산부 손목보호대(9,900원 USP) 숏폼 소재 신규 집행, 고단가 제품으로 광고 예산 재배분" },
-        ]),
-      },
-      {
-        id: "03", title: "주력제품 광고매출", target: "45억", actual: "국내 24억 · 스킨케어 5.6억",
-        rateLabel: "", rateNum: null, status: "warn", note: "세부 ROAS 항목별 상이 (71~82%, 일부 미산출)", actualNum: null,
-        items: seedItems("03", [
-          { title: "국내사업", metric: "목표 ROAS 850% · 실적 603%", badge: "71%", badgeStatus: "warn",
-            cause: "더에르고X링크맘 트래픽 캠페인 위주로 전환 + 광고비 축소 → ROAS 산식상 낮게 잡힘. 효율 저하가 아닌 운영 전략 변화(비용구조)",
-            action: "준데이 기획전에서 확인된 '예산축소→고의도유저 재편→CVR개선' 패턴을 타 캠페인에 적용" },
-          { title: "오가닉그라운드", metric: "목표 ROAS 400% · 메타 327%(+41%) · 쇼핑검색 289%(-12%)", badge: "82%", badgeStatus: "warn",
-            cause: "트래픽 캠페인(더에르고X링크맘) 중심 운영으로 메타는 개선, 네이버 쇼핑검색(선케어)은 시즌 하락(채널)",
-            action: "7월 건조기시트/분유포트클리너 시크릿링크(7/1~31, 목표 1,500만) 메타소재 3개 신규", due: "7/1" },
-          { title: "바바디토", metric: "목표 ROAS 300% · SAVE&GIFT 전환 18건(1,106,580원)", badge: "측정중", badgeStatus: "unk",
-            cause: "", action: "", gap: "ROAS 목표 대비 비교수치 미기재" },
-        ]),
-      },
-      {
-        id: "04", title: "키워드 1페이지 노출", target: "핵심 키워드 1페이지 노출 3건 고정", actual: "브랜드별 혼재",
-        rateLabel: "", rateNum: null, status: "warn", note: "14%~80% 혼재, 오가닉그라운드 데이터 누락", actualNum: null,
-        items: seedItems("04", [
-          { title: "꿈비-개발", metric: "핵심 키워드 7개 중 안정적 노출 1개(폴더매트)", badge: "14%", badgeStatus: "bad",
-            cause: "메가인플루언서·서포터즈 콘텐츠가 폴더매트류에만 집중 배정되어 나머지 키워드는 체험단 자체가 없음(콘텐츠)",
-            action: "미노출 5개 키워드(층간소음매트·아기매트·거실매트·유아매트·범퍼침대) 체험단 신규 배정, 범퍼침대 10위권 진입 작업" },
-          { title: "꿈비-소싱&시즌제품", metric: "5개 핵심 키워드 중 4개 블로그·카페 상단 유지", badge: "80%", badgeStatus: "good",
-            cause: "유모차통풍시트만 가이드라인 보강 전까지 블로그 콘텐츠 배정이 0건이었음(콘텐츠)",
-            action: "썸머크루 가이드라인 보강 배포·실행 중 (지난주 0건→1건, 순차 증가 모니터링)" },
-          { title: "오가닉그라운드", metric: "노출 데이터 공란", badge: "데이터없음", badgeStatus: "unk",
-            cause: "", action: "오그맘 36기 선크림 선택 체험단 기획 → 노출 데이터 확보 예정", gap: "노출현황 데이터 미수집" },
-          { title: "바바디토", metric: "건조기시트만 노출(6건), 나머지 대부분 미노출/하위", badge: "부분노출", badgeStatus: "warn",
-            cause: "세제·세탁세제·섬유유연제군은 체험단이 7~8월 시즌에 맞춰 기획 중이라 현재 콘텐츠 공급이 없음(콘텐츠)",
-            action: "7월 아기주방 50인 체험단, 8월 세탁세제&섬유유연제 체험단, 건조기시트 100인 체험단 노출 확인", due: "7/1" },
-        ]),
-      },
-      {
-        id: "05", title: "신규유입", target: "120만 (누적)", actual: "이주 25,251명 (꿈비 22,037 + 오가닉 3,214)",
-        rateLabel: "", rateNum: null, status: "warn", note: "양 브랜드 전주대비 동반 하락", actualNum: null,
-        items: seedItems("05", [
-          { title: "꿈비", metric: "자사몰 -18.4% · 스토어 -3.6%", badge: "하락", badgeStatus: "bad",
-            cause: "광고비 축소 및 6월 행사 종료로 트래픽 감소(비용구조)",
-            action: "7월 기획전 광고(메타·바이럴) 7/1부터 재개해 전체 유입 반등", due: "7/1" },
-          { title: "오가닉그라운드", metric: "자사몰 -40.3% · 스토어 -24.3%", badge: "하락", badgeStatus: "bad",
-            cause: "플친 이벤트 진행에도 '추가 구매 부담' 심리로 오히려 감소(상품)",
-            action: "7월 한 달 회원가입 15%쿠폰·전구매 7%쿠폰·가입특가 SNS 홍보 (메타광고는 예산 이슈로 미집행)", due: "7/1" },
-        ]),
-      },
-      {
-        id: "06", title: "계열사 시너지", target: "5만 명", actual: "0명",
-        rateLabel: "0%", rateNum: 0, status: "bad", note: "", actualNum: null,
-        items: seedItems("06", [
-          { title: "에르모어 / 가이아 → 꿈비", metric: "이번 주 신규 0명 · 누적 0명", badge: "미달", badgeStatus: "bad",
-            cause: "실질적으로 작동하는 업무 협업 방식(트래킹·전환 경로)이 설계되지 않음 — 캠페인명만 있고 유입 측정 체계 부재(채널)",
-            action: "", gap: "시너지 경로별 트래킹 방법 설계 — 차주 실행안 미정" },
-        ]),
-      },
-      {
-        id: "07", title: "예산 효율", target: "매출 대비 6.5% 이내", actual: "7천만원 중반대 마감 예상",
-        rateLabel: "", rateNum: null, status: "unk", note: "매출 대비 % 산출 필요", actualNum: null,
-        items: seedItems("07", [
-          { title: "전체", metric: "3주차 후반부터 감액 시작, 4주차 대폭 감액", badge: "산출필요", badgeStatus: "unk",
-            cause: "월 누적 비율 관리 중이나 매출 대비 % 환산값 미기재(비용구조)",
-            action: "", gap: "정확한 매출 대비 % 계산 후 다음 보고에 반영" },
-        ]),
-      },
-      {
-        id: "08", title: "AI 업무 절감", target: "연 300시간 (주당 약 5.8시간)", actual: "이번 주 약 4.5시간",
-        rateLabel: "78%", rateNum: 78, status: "warn", note: "", actualNum: null,
-        items: seedItems("08", [
-          { title: "전체", metric: "오가닉콘텐츠기획·보도자료·주피미작성·체험단운영·트렌드분석 5건", badge: "유지", badgeStatus: "warn",
-            cause: "클로드코워크 체험단 운영(3h→30m)이 절감 대부분을 견인, 나머지는 소규모 반복 업무(콘텐츠)",
-            action: "절감 사례를 팀 전체 공유해 반복 가능한 업무(보도자료·트렌드분석)에 확대 적용" },
-        ]),
-      },
-    ],
-  };
-}
-
-// ══════════════════════════════════════════════════════
-
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-
-    if (searchParams.get("seed") === "true") {
-      const seedReport = buildSeedReport();
-      await kvSet(reportKey(seedReport.week), seedReport);
-      await addWeekToList({ week: seedReport.week, label: seedReport.label, startDate: seedReport.startDate, endDate: seedReport.endDate });
-      return NextResponse.json({ seeded: true, report: decorateReport(seedReport) });
-    }
-
-    const weeks = await getWeekList();
-    const teamNames = await getTeamNames();
-    let week = searchParams.get("week") || "";
-    if (!week) week = weeks.length ? weeks[weeks.length - 1].week : "";
-
-    if (!week) {
-      return NextResponse.json({ week: "", report: null, weeks: [], teamNames });
-    }
-
-    let report = (await kvGet(reportKey(week))) as WeeklyReportData | null;
-    if (!report) report = blankReport(week);
-    report = fillMissingCategories(report);
-    report = decorateReport(report);
-
-    return NextResponse.json({ week, report, weeks, teamNames });
-  } catch {
-    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { action } = body;
-
-    if (action === "add_team_name") {
-      const name = (body.name || "").trim();
-      if (!name) return NextResponse.json({ error: "이름을 입력해주세요." }, { status: 400 });
-      const names = await getTeamNames();
-      if (!names.includes(name)) names.push(name);
-      await kvSet("weekly_report_team_names", names);
-      return NextResponse.json({ success: true, teamNames: names });
-    }
-
-    if (action === "remove_team_name") {
-      const name = body.name;
-      const names = (await getTeamNames()).filter((n) => n !== name);
-      await kvSet("weekly_report_team_names", names);
-      return NextResponse.json({ success: true, teamNames: names });
-    }
-
-    const { week } = body;
-    if (!week) return NextResponse.json({ error: "week가 필요합니다." }, { status: 400 });
-
-    if (action === "new_week") {
-      const { copyFrom, startDate, endDate, label } = body;
-      let base: WeeklyReportData | null = null;
-      if (copyFrom) base = (await kvGet(reportKey(copyFrom))) as WeeklyReportData | null;
-      const categories: ReportCategory[] = CATEGORY_DEFS.map((def) => {
-        const prev = base?.categories.find((c) => c.id === def.id);
-        return {
-          id: def.id, title: def.title,
-          target: prev?.target ?? "", actual: "", rateLabel: "", rateNum: null,
-          status: "unk", note: "", items: [], actualNum: null,
-        };
+  async function removeTeamName(name: string) {
+    if (!confirm(`"${name}"을 목록에서 삭제할까요?`)) return;
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove_team_name", name }),
       });
-      const newReport: WeeklyReportData = {
-        week, label: label ?? "", startDate: startDate ?? "", endDate: endDate ?? "",
-        prevFeedback: "", categories,
-      };
-      await kvSet(reportKey(week), newReport);
-      await addWeekToList({ week, label: newReport.label, startDate: newReport.startDate, endDate: newReport.endDate });
-      const weeks = await getWeekList();
-      const decorated = decorateReport(newReport);
-      const sheetSynced = await syncReportToSheet(decorated);
-      return NextResponse.json({ success: true, report: decorated, weeks, sheetSynced });
-    }
-
-    let report = (await kvGet(reportKey(week))) as WeeklyReportData | null;
-    if (!report) report = blankReport(week);
-    report = fillMissingCategories(report);
-
-    if (action === "sheet_pull") {
-      try {
-        const sheetData = await sheetFetchWeek(week);
-        const found = !!sheetData.weekInfo || sheetData.performance.length > 0 || sheetData.items.length > 0 || sheetData.budgetRows.length > 0;
-        report = applySheetData(report, sheetData);
-        await kvSet(reportKey(week), report);
-        await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-        const decorated = decorateReport(report);
-        return NextResponse.json({ success: true, report: decorated, found });
-      } catch (e) {
-        return NextResponse.json({ error: e instanceof Error ? e.message : "구글시트에서 가져오기 실패" }, { status: 500 });
-      }
-    }
-
-    if (action === "sheet_push") {
-      try {
-        const decorated = decorateReport(report);
-        await sheetPushWeek(reportToSheetPayload(decorated));
-        return NextResponse.json({ success: true });
-      } catch (e) {
-        return NextResponse.json({ error: e instanceof Error ? e.message : "구글시트로 내보내기 실패" }, { status: 500 });
-      }
-    }
-
-    if (action === "update_feedback") {
-      report.prevFeedback = body.prevFeedback ?? "";
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced });
-    }
-
-    if (action === "update_category") {
-      const { categoryId, target, actual, rateLabel, rateNum, status, note, actualNum, alternative, updatedBy } = body;
-      const cat = report.categories.find((c) => c.id === categoryId);
-      if (!cat) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
-      if (actualNum !== undefined) cat.actualNum = actualNum === null || actualNum === "" ? null : Number(actualNum);
-      if (target !== undefined) cat.target = target;
-      if (actual !== undefined) cat.actual = actual;
-      if (rateLabel !== undefined) cat.rateLabel = rateLabel;
-      if (rateNum !== undefined) cat.rateNum = rateNum === null || rateNum === "" ? null : Number(rateNum);
-      if (status !== undefined) cat.status = status;
-      if (note !== undefined) cat.note = note;
-      if (alternative !== undefined) cat.alternative = alternative;
-      cat.updatedBy = updatedBy ?? cat.updatedBy;
-      cat.updatedAt = new Date().toISOString();
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced });
-    }
-
-    if (action === "save_budget_rows") {
-      const { categoryId, rows, updatedBy } = body;
-      const cat = report.categories.find((c) => c.id === categoryId);
-      if (!cat) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
-      cat.budgetRows = (rows ?? []).map((r: { brand: string; revenue: number | null; cost: number | null }) => ({
-        brand: r.brand, budget: 0, revenue: r.revenue, cost: r.cost,
-      }));
-      cat.updatedBy = updatedBy ?? cat.updatedBy;
-      cat.updatedAt = new Date().toISOString();
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced });
-    }
-
-    if (action === "save_items") {
-      const { categoryId, items, updatedBy } = body;
-      const cat = report.categories.find((c) => c.id === categoryId);
-      if (!cat) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
-      cat.items = items ?? [];
-      cat.updatedBy = updatedBy ?? cat.updatedBy;
-      cat.updatedAt = new Date().toISOString();
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced });
-    }
-
-    if (action === "delete_week") {
-      const list = await getWeekList();
-      await kvSet("weekly_report_weeks", list.filter((w) => w.week !== week));
-      return NextResponse.json({ success: true });
-    }
-
-    return NextResponse.json({ error: "올바르지 않은 action입니다." }, { status: 400 });
-  } catch {
-    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+      const data = await res.json();
+      if (res.ok) setTeamNames(data.teamNames ?? []);
+    } catch {}
   }
+
+  function openNewWeekModal() {
+    let start = "";
+    if (report?.endDate) start = addDays(report.endDate, 1);
+    setNewStart(start);
+    setNewEnd(start ? addDays(start, 6) : "");
+    setNewLabel(start ? suggestLabel(start) : "");
+    setNewWeekOpen(true);
+  }
+
+  function handleNewStartChange(v: string) {
+    setNewStart(v);
+    if (v) {
+      setNewEnd((prev) => prev || addDays(v, 6));
+      setNewLabel((prev) => prev || suggestLabel(v));
+    }
+  }
+
+  async function confirmNewWeek() {
+    if (!newStart || !newEnd) return;
+    setNewWeekSaving(true);
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "new_week", week: newEnd, startDate: newStart, endDate: newEnd,
+          label: newLabel || suggestLabel(newStart), copyFrom: week || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setWeeks(data.weeks ?? []);
+      setWeek(data.report.week);
+      setReport(data.report);
+      setFeedbackDraft("");
+      setNewWeekOpen(false);
+      setSheetSyncMsg(data.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "오류 발생");
+    } finally {
+      setNewWeekSaving(false);
+    }
+  }
+
+  async function saveFeedback() {
+    if (!week) return;
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_feedback", week, prevFeedback: feedbackDraft }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setReport(data.report);
+        setEditingFeedback(false);
+        setSheetSyncMsg(data.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
+      }
+    } catch {}
+  }
+
+  async function pullFromSheet() {
+    if (!week) return;
+    setSheetSyncing(true);
+    setSheetSyncMsg("");
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sheet_pull", week }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setReport(data.report);
+      if (data.monthly !== undefined) setMonthly(data.monthly);
+      setFeedbackDraft(data.report?.prevFeedback ?? "");
+      setSheetSyncMsg(data.found === false ? "구글시트에 이번 주 데이터가 아직 없어요." : "구글시트에서 불러왔습니다.");
+    } catch (e) {
+      setSheetSyncMsg(e instanceof Error ? `가져오기 실패: ${e.message}` : "가져오기 실패");
+    } finally {
+      setSheetSyncing(false);
+    }
+  }
+
+  async function pushToSheet() {
+    if (!week) return;
+    setSheetSyncing(true);
+    setSheetSyncMsg("");
+    try {
+      const res = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sheet_push", week }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "오류 발생");
+      setSheetSyncMsg("구글시트로 내보냈습니다.");
+    } catch (e) {
+      setSheetSyncMsg(e instanceof Error ? `내보내기 실패: ${e.message}` : "내보내기 실패");
+    } finally {
+      setSheetSyncing(false);
+    }
+  }
+
+  function toggleOpen(id: string) {
+    setOpenIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+
+  // 상단 KPI 카드 클릭 → 해당 블록 열고 + 부드럽게 스크롤 + 잠깐 강조
+  function scrollToBlock(id: string) {
+    setOpenIds((prev) => new Set(prev).add(id)); // 항상 열기
+    setHighlightId(id);
+    // 블록이 열리며 높이가 바뀌므로, 다음 렌더 후 스크롤
+    setTimeout(() => {
+      const el = blockRefs.current[id];
+      if (!el) return;
+      // 상단 고정 카드 영역에 가려지지 않도록 여백을 두고 스크롤
+      const STICKY_OFFSET = 240; // 고정된 KPI 카드 영역 대략 높이(px)
+      const y = el.getBoundingClientRect().top + window.scrollY - STICKY_OFFSET;
+      window.scrollTo({ top: y, behavior: "smooth" });
+    }, 60);
+    // 강조 효과 1.6초 후 해제
+    setTimeout(() => setHighlightId((cur) => (cur === id ? "" : cur)), 1600);
+  }
+
+  function startEdit(cat: ReportCategory) {
+    if (!reporterName) { setNameInput(""); setNamePromptOpen(true); return; }
+    setDraftCategory(JSON.parse(JSON.stringify(cat)));
+    setEditingId(cat.id);
+    setOpenIds((prev) => new Set(prev).add(cat.id));
+  }
+  function cancelEdit() { setEditingId(""); setDraftCategory(null); }
+
+  async function saveCategory() {
+    if (!draftCategory || !week) return;
+    setSavingCat(true);
+    try {
+      const isAutoBudget = draftCategory.id === "07" && draftCategory.autoCalculated;
+      const isAutoNumeric = draftCategory.autoCalculated && !isAutoBudget;
+
+      if (isAutoBudget) {
+        const res0 = await fetch("/api/weekly-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "save_budget_rows", week, categoryId: draftCategory.id,
+            rows: (draftCategory.budgetRows ?? []).map((r) => ({ brand: r.brand, revenue: r.revenue, cost: r.cost })),
+            updatedBy: reporterName,
+          }),
+        });
+        const d0 = await res0.json();
+        if (!res0.ok) throw new Error(d0.error || "오류 발생");
+      } else if (isAutoNumeric) {
+        const res0 = await fetch("/api/weekly-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "update_category", week, categoryId: draftCategory.id, actualNum: draftCategory.actualNum, note: draftCategory.note, alternative: draftCategory.alternative, updatedBy: reporterName }),
+        });
+        const d0 = await res0.json();
+        if (!res0.ok) throw new Error(d0.error || "오류 발생");
+      } else {
+        const res0 = await fetch("/api/weekly-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_category", week, categoryId: draftCategory.id,
+            target: draftCategory.target, actual: draftCategory.actual,
+            rateLabel: draftCategory.rateLabel, rateNum: draftCategory.rateNum,
+            status: draftCategory.status, note: draftCategory.note,
+            alternative: draftCategory.alternative, updatedBy: reporterName,
+          }),
+        });
+        const d0 = await res0.json();
+        if (!res0.ok) throw new Error(d0.error || "오류 발생");
+      }
+
+      const res2 = await fetch("/api/weekly-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save_items", week, categoryId: draftCategory.id, items: draftCategory.items, updatedBy: reporterName }),
+      });
+      const d2 = await res2.json();
+      if (!res2.ok) throw new Error(d2.error || "오류 발생");
+      setReport(d2.report);
+      if (d2.monthly !== undefined) setMonthly(d2.monthly);
+      setEditingId(""); setDraftCategory(null);
+      setSheetSyncMsg(d2.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "오류 발생");
+    } finally {
+      setSavingCat(false);
+    }
+  }
+
+  function updateDraftField<K extends keyof ReportCategory>(key: K, value: ReportCategory[K]) {
+    setDraftCategory((prev) => (prev ? { ...prev, [key]: value } : prev));
+  }
+  function updateDraftItem(itemId: string, patch: Partial<ReportItem>) {
+    setDraftCategory((prev) => prev ? { ...prev, items: prev.items.map((it) => it.id === itemId ? { ...it, ...patch } : it) } : prev);
+  }
+  function addDraftItem() {
+    setDraftCategory((prev) => prev ? { ...prev, items: [...prev.items, emptyItem()] } : prev);
+  }
+  function removeDraftItem(itemId: string) {
+    setDraftCategory((prev) => prev ? { ...prev, items: prev.items.filter((it) => it.id !== itemId) } : prev);
+  }
+  function updateDraftBudgetRow(brand: string, patch: Partial<BudgetRow>) {
+    setDraftCategory((prev) => prev ? { ...prev, budgetRows: (prev.budgetRows ?? []).map((r) => r.brand === brand ? { ...r, ...patch } : r) } : prev);
+  }
+
+
+  const categories = report?.categories ?? [];
+  const tally: Record<Status, number> = { good: 0, warn: 0, bad: 0, unk: 0 };
+  categories.forEach((c) => tally[c.status]++);
+
+  const actionRows: { catId: string; text: string; due: string }[] = [];
+  const gapRows: { catTitle: string; itemTitle: string; text: string }[] = [];
+  categories.forEach((c) => {
+    c.items.forEach((it) => {
+      if (it.action) actionRows.push({ catId: c.id, text: it.action, due: it.due });
+      if (it.gap) gapRows.push({ catTitle: c.title, itemTitle: it.title || "(제목없음)", text: it.gap });
+    });
+  });
+
+  const newWeekModal = newWeekOpen ? (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setNewWeekOpen(false)}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-bold text-stone-800">새 주차 만들기</h3>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">시작일</label>
+          <input type="date" value={newStart} onChange={(e) => handleNewStartChange(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">종료일</label>
+          <input type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} min={newStart || undefined} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs text-stone-500 block mb-1">제목</label>
+          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 6월 4주차" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        {newStart && newEnd && <p className="text-xs text-stone-400">{fmtMD(newStart)} ~ {fmtMD(newEnd)}</p>}
+        <div className="flex gap-2">
+          <button onClick={confirmNewWeek} disabled={!newStart || !newEnd || newWeekSaving} className="flex-1 bg-kkumbi-500 text-white text-sm font-bold rounded-lg py-2 disabled:opacity-50">
+            {newWeekSaving ? "만드는 중..." : "만들기"}
+          </button>
+          <button onClick={() => setNewWeekOpen(false)} className="px-4 border border-stone-200 rounded-lg text-sm text-stone-600">취소</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (loading && !report) {
+    return <p className="text-sm text-stone-400 text-center py-12">불러오는 중...</p>;
+  }
+
+  if (!loading && !week) {
+    return (
+      <>
+        <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-3">
+          <p className="text-sm text-stone-500">아직 등록된 주차가 없습니다.</p>
+          <button onClick={openNewWeekModal} className="px-4 py-2 bg-kkumbi-500 text-white text-sm font-bold rounded-lg hover:bg-kkumbi-600">+ 첫 주차 시작하기</button>
+        </div>
+        {newWeekModal}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <div className="inline-flex rounded-lg border border-stone-200 p-0.5 mb-2">
+            <button
+              onClick={() => setViewMode("weekly")}
+              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === "weekly" ? "bg-kkumbi-500 text-white" : "text-stone-500 hover:text-stone-700"}`}
+            >
+              주간보고
+            </button>
+            <button
+              onClick={() => setViewMode("monthly")}
+              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === "monthly" ? "bg-kkumbi-500 text-white" : "text-stone-500 hover:text-stone-700"}`}
+            >
+              월간보고
+            </button>
+          </div>
+          <h2 className="text-base font-bold text-stone-800">{viewMode === "weekly" ? "주간보고 대시보드" : "월간보고 대시보드"}</h2>
+          <p className="text-xs text-stone-500">
+            팬슈머마케팅팀 · {report?.label || week}{report?.startDate && report?.endDate ? ` (${fmtMD(report.startDate)}~${fmtMD(report.endDate)})` : ""} · {reporterName ? `로그인: ${reporterName}` : "이름을 설정해주세요"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={week} onChange={(e) => loadWeek(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm">
+            {weeks.slice().reverse().map((w) => (
+              <option key={w.week} value={w.week}>
+                {w.label || w.week}{w.startDate && w.endDate ? ` (${fmtMD(w.startDate)}~${fmtMD(w.endDate)})` : ""}
+              </option>
+            ))}
+          </select>
+          <button onClick={openNewWeekModal} className="px-3 py-2 bg-kkumbi-500 text-white text-xs font-semibold rounded-lg hover:bg-kkumbi-600">+ 새 주차</button>
+          <button onClick={pullFromSheet} disabled={sheetSyncing} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">
+            {sheetSyncing ? "동기화 중…" : "↓ 시트에서 가져오기"}
+          </button>
+          <button onClick={pushToSheet} disabled={sheetSyncing} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">
+            ↑ 시트로 내보내기
+          </button>
+          <button onClick={() => { setNameInput(reporterName); setNamePromptOpen(true); }} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">
+            {reporterName || "이름 설정"}
+          </button>
+          <button onClick={() => window.print()} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">인쇄</button>
+        </div>
+      </div>
+
+      {sheetSyncMsg && (
+        <p className="text-xs text-stone-500 -mt-2">🔄 {sheetSyncMsg}</p>
+      )}
+
+      {viewMode === "monthly" ? (
+        <MonthlyReport monthly={monthly} />
+      ) : (
+      <>
+      <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 text-xs text-stone-500 flex flex-wrap gap-4">
+        <span><b className="text-stone-700">4단계 필수</b> 결과(달성률) · 원인 · 인사이트 · 실행 계획</span>
+        <span><b className="text-stone-700">원인 특정</b> 채널 / 상품 / 광고 / 비용구조 중 1개</span>
+        <span><b className="text-stone-700">업로드</b> 매주 화 18:00까지</span>
+        <span><b className="text-stone-700">회의 중 신규 자료 공유 금지</b></span>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs font-bold text-amber-800">전주 회장님 피드백</span>
+          {!editingFeedback && <button onClick={() => setEditingFeedback(true)} className="text-xs text-amber-700 hover:underline">수정</button>}
+        </div>
+        {editingFeedback ? (
+          <div className="space-y-2">
+            <textarea value={feedbackDraft} onChange={(e) => setFeedbackDraft(e.target.value)} rows={2} className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm" />
+            <div className="flex gap-2">
+              <button onClick={saveFeedback} className="px-3 py-1 bg-kkumbi-500 text-white text-xs rounded-lg">저장</button>
+              <button onClick={() => { setEditingFeedback(false); setFeedbackDraft(report?.prevFeedback ?? ""); }} className="px-3 py-1 border border-stone-200 text-xs rounded-lg">취소</button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-stone-700">{report?.prevFeedback || "(미기재)"}</p>
+        )}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {(["good", "warn", "bad", "unk"] as Status[]).map((s) => (
+          <div key={s} className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${STATUS_CLASS[s]}`}>
+            <span>{tally[s]}</span><span>{STATUS_LABEL[s]}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {categories.map((c) => (
+            <button key={c.id} onClick={() => scrollToBlock(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
+              <div className="text-xs font-mono text-stone-400 mb-1">KPI {c.id}</div>
+              <div className="text-xs font-bold text-stone-700 mb-1.5 leading-snug min-h-[2.2em]">{c.title}</div>
+              <div className={`text-lg font-extrabold ${STATUS_TEXT[c.status]}`}>{c.rateLabel || STATUS_LABEL[c.status]}</div>
+              <div className="mt-1.5 space-y-0.5 text-[11px] leading-tight">
+                <div className="flex justify-between gap-1">
+                  <span className="text-stone-400 shrink-0">목표</span>
+                  <span className="text-stone-600 font-medium text-right truncate">{c.target || "—"}</span>
+                </div>
+                <div className="flex justify-between gap-1">
+                  <span className="text-stone-400 shrink-0">실적</span>
+                  <span className="text-emerald-700 font-semibold text-right truncate">{c.actual || "—"}</span>
+                </div>
+              </div>
+              <div className="h-1.5 bg-stone-100 rounded-full mt-2 overflow-hidden">
+                <div className={`h-full rounded-full ${STATUS_BAR[c.status]}`} style={{ width: `${Math.min(c.rateNum ?? 0, 100)}%` }} />
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {categories.map((c) => {
+          const isOpen = openIds.has(c.id);
+          const isEditing = editingId === c.id;
+          const isHighlighted = highlightId === c.id;
+          return (
+            <div
+              key={c.id}
+              ref={(el) => { blockRefs.current[c.id] = el; }}
+              className={`bg-white border rounded-xl overflow-hidden transition-all duration-500 ${isHighlighted ? "border-kkumbi-400 ring-2 ring-kkumbi-200 shadow-md" : "border-stone-200"}`}
+            >
+              <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => toggleOpen(c.id)}>
+                <span className="text-xs font-mono text-stone-400 w-6 shrink-0">{c.id}</span>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-stone-800">{c.title}</h3>
+                  <p className="text-xs text-stone-500 mt-0.5 truncate">
+                    목표 {c.target || "—"} · 실적 {c.actual || "—"}{c.note ? ` · ${c.note}` : ""}
+                  </p>
+                </div>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${STATUS_CLASS[c.status]}`}>{c.rateLabel || STATUS_LABEL[c.status]}</span>
+                <button onClick={(e) => { e.stopPropagation(); startEdit(c); }} className="text-xs text-kkumbi-600 font-semibold hover:underline shrink-0">수정</button>
+              </div>
+              {isOpen && (
+                <div className="border-t border-stone-100 px-4 py-3 space-y-3">
+                  {c.updatedBy && (
+                    <p className="text-xs text-stone-400">
+                      마지막 수정: {c.updatedBy}{c.updatedAt ? ` · ${new Date(c.updatedAt).toLocaleString("ko-KR")}` : ""}
+                    </p>
+                  )}
+                  {isEditing && draftCategory ? (
+                    <CategoryEditForm
+                      draft={draftCategory}
+                      onField={updateDraftField}
+                      onItemChange={updateDraftItem}
+                      onAddItem={addDraftItem}
+                      onRemoveItem={removeDraftItem}
+                      onBudgetChange={updateDraftBudgetRow}
+                      onSave={saveCategory}
+                      onCancel={cancelEdit}
+                      saving={savingCat}
+                    />
+                  ) : (
+                    <>
+                      {c.id === "07" && c.autoCalculated && c.budgetRows && (
+                        <BudgetTable rows={c.budgetRows} editable={false} />
+                      )}
+                      {c.note && (
+                        <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+                          <p className="text-[11px] font-bold text-stone-500 uppercase mb-1">인사이트 (So What)</p>
+                          <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.note}</p>
+                        </div>
+                      )}
+                      {c.alternative && (
+                        <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2">
+                          <p className="text-[11px] font-bold text-kkumbi-600 uppercase mb-1">실행 계획 (Now What)</p>
+                          <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.alternative}</p>
+                        </div>
+                      )}
+                      {c.items.length === 0 ? (
+                        <p className="text-xs text-stone-400">등록된 항목이 없습니다. 수정 버튼을 눌러 추가해주세요.</p>
+                      ) : (
+                    c.items.map((it) => (
+                      <div key={it.id} className="border-b border-stone-100 pb-3 last:border-b-0">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-sm font-semibold text-stone-700">{it.title || "(제목없음)"}</span>
+                          {it.badge && <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${STATUS_CLASS[it.badgeStatus]}`}>{it.badge}</span>}
+                        </div>
+                        {it.metric && <p className="text-xs text-stone-500 mb-2">{it.metric}</p>}
+                        {it.brand && (
+                          <p className="text-xs text-stone-500 mb-2">
+                            <span className="font-semibold text-stone-600">{it.brand}</span>
+                            {" · 중목표 "}{it.midTarget || "—"}{" · 중실적 "}{it.midActual || "—"}
+                            {it.midRate ? ` · ${it.midRate}` : ""}
+                          </p>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">원인 (Why)</p><p className="text-xs text-stone-700 leading-relaxed">{it.cause || "—"}</p></div>
+                          <div><p className="text-[11px] font-bold text-stone-400 uppercase mb-1">실행 계획 (Now What)</p><p className="text-xs text-stone-700 leading-relaxed">{it.action || "—"}{it.due ? ` (마감 ${it.due})` : ""}</p></div>
+                        </div>
+                        {it.gap && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1 mt-2">⚠ {it.gap}</p>}
+                      </div>
+                    ))
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="bg-white border border-stone-200 rounded-xl p-4">
+        <h4 className="text-sm font-bold text-stone-800 mb-3">차주 핵심 실행 체크리스트</h4>
+        {actionRows.length === 0 ? (
+          <p className="text-xs text-stone-400">등록된 실행 항목이 없습니다.</p>
+        ) : (
+          <ul className="space-y-2">
+            {actionRows.map((r, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <input type="checkbox" className="mt-0.5" />
+                <span className="font-mono text-stone-400 shrink-0">{r.catId}</span>
+                <span className="text-stone-700 flex-1">{r.text}</span>
+                {r.due && <span className="text-kkumbi-600 font-semibold shrink-0">마감 {r.due}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="bg-white border border-stone-200 rounded-xl p-4">
+        <h4 className="text-sm font-bold text-stone-800 mb-3">업로드 전 보완 필요 항목</h4>
+        {report?.prevFeedback && gapRows.length === 0 ? (
+          <p className="text-xs text-stone-400">보완할 항목이 없습니다.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {!report?.prevFeedback && <li className="text-xs text-stone-500"><b className="text-stone-700">전주 회장님 피드백</b> — 내용 미기재</li>}
+            {gapRows.map((r, i) => (
+              <li key={i} className="text-xs text-stone-500"><b className="text-stone-700">{r.catTitle} · {r.itemTitle}</b> — {r.text}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      </>
+      )}
+
+      {newWeekModal}
+
+      {namePromptOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setNamePromptOpen(false)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-stone-800">이름을 선택해주세요</h3>
+            <p className="text-xs text-stone-500">입력·수정 시 &quot;마지막 수정자&quot;로 기록됩니다. 클릭하면 바로 선택돼요.</p>
+
+            <div className="flex flex-wrap gap-1.5">
+              {teamNames.length === 0 && <p className="text-xs text-stone-400">등록된 팀원이 없습니다. 아래에서 추가해주세요.</p>}
+              {teamNames.map((n) => (
+                <span
+                  key={n}
+                  onClick={() => selectTeamName(n)}
+                  className={`group flex items-center gap-1 text-xs px-3 py-1.5 rounded-full cursor-pointer transition ${n === reporterName ? "bg-kkumbi-500 text-white" : "bg-stone-100 text-stone-700 hover:bg-stone-200"}`}
+                >
+                  {n}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeTeamName(n); }}
+                    className={`hidden group-hover:inline ml-0.5 ${n === reporterName ? "text-white/80 hover:text-white" : "text-rose-400 hover:text-rose-600"}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                placeholder="새 팀원 이름 추가 (예: 김소원JM)"
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addTeamName()}
+                className="flex-1 border border-stone-200 rounded-lg px-3 py-2 text-sm"
+              />
+              <button onClick={addTeamName} className="px-3 py-2 bg-stone-100 text-stone-700 text-sm font-semibold rounded-lg hover:bg-stone-200">+ 추가</button>
+            </div>
+            {teamNameError && <p className="text-xs text-rose-500">{teamNameError}</p>}
+
+            <div className="border-t border-stone-100 pt-3 space-y-2">
+              <input placeholder="목록에 없으면 직접 입력" value={nameInput} onChange={(e) => setNameInput(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+              <div className="flex gap-2">
+                <button onClick={confirmName} className="flex-1 bg-kkumbi-500 text-white text-sm font-bold rounded-lg py-2">이 이름으로 확인</button>
+                <button onClick={() => setNamePromptOpen(false)} className="px-4 border border-stone-200 rounded-lg text-sm text-stone-600">취소</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
