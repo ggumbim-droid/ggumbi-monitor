@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { MonthlyReport } from "./MonthlyReport";
 
 type Status = "good" | "warn" | "bad" | "unk";
 
@@ -61,6 +62,27 @@ interface WeekListEntry {
   label: string;
   startDate: string;
   endDate: string;
+}
+
+interface MonthlyCategorySummary {
+  id: string;
+  title: string;
+  unit: string;
+  cumulativeTarget: number | null;
+  cumulativeActual: number | null;
+  cumulativeRate: number | null;
+  monthTarget: number | null;
+  projectedActual: number | null;
+  projectedRate: number | null;
+  weeksCounted: number;
+  weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[];
+}
+
+interface MonthlySummary {
+  month: string;
+  daysElapsed: number;
+  daysInMonth: number;
+  categories: MonthlyCategorySummary[];
 }
 
 // TEAM_NAMES는 서버(Redis)에서 공유 목록으로 관리됩니다 (teamNames 상태 참고)
@@ -354,6 +376,8 @@ export function WeeklyReport() {
   const [weeks, setWeeks] = useState<WeekListEntry[]>([]);
   const [week, setWeek] = useState("");
   const [report, setReport] = useState<WeeklyReportData | null>(null);
+  const [monthly, setMonthly] = useState<MonthlySummary | null>(null);
+  const [viewMode, setViewMode] = useState<"weekly" | "monthly">("weekly");
   const [loading, setLoading] = useState(true);
 
   const [newWeekOpen, setNewWeekOpen] = useState(false);
@@ -389,6 +413,7 @@ export function WeeklyReport() {
       setWeeks(data.weeks ?? []);
       setWeek(data.week ?? "");
       setReport(data.report ?? null);
+      setMonthly(data.monthly ?? null);
       setFeedbackDraft(data.report?.prevFeedback ?? "");
       setTeamNames(data.teamNames ?? []);
     } catch (e) {
@@ -520,6 +545,7 @@ export function WeeklyReport() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
       setReport(data.report);
+      if (data.monthly !== undefined) setMonthly(data.monthly);
       setFeedbackDraft(data.report?.prevFeedback ?? "");
       setSheetSyncMsg(data.found === false ? "구글시트에 이번 주 데이터가 아직 없어요." : "구글시트에서 불러왔습니다.");
     } catch (e) {
@@ -633,6 +659,7 @@ export function WeeklyReport() {
       const d2 = await res2.json();
       if (!res2.ok) throw new Error(d2.error || "오류 발생");
       setReport(d2.report);
+      if (d2.monthly !== undefined) setMonthly(d2.monthly);
       setEditingId(""); setDraftCategory(null);
       setSheetSyncMsg(d2.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
     } catch (e) {
@@ -719,7 +746,21 @@ export function WeeklyReport() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-base font-bold text-stone-800">주간보고 대시보드</h2>
+          <div className="inline-flex rounded-lg border border-stone-200 p-0.5 mb-2">
+            <button
+              onClick={() => setViewMode("weekly")}
+              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === "weekly" ? "bg-kkumbi-500 text-white" : "text-stone-500 hover:text-stone-700"}`}
+            >
+              주간보고
+            </button>
+            <button
+              onClick={() => setViewMode("monthly")}
+              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === "monthly" ? "bg-kkumbi-500 text-white" : "text-stone-500 hover:text-stone-700"}`}
+            >
+              월간보고
+            </button>
+          </div>
+          <h2 className="text-base font-bold text-stone-800">{viewMode === "weekly" ? "주간보고 대시보드" : "월간보고 대시보드"}</h2>
           <p className="text-xs text-stone-500">
             팬슈머마케팅팀 · {report?.label || week}{report?.startDate && report?.endDate ? ` (${fmtMD(report.startDate)}~${fmtMD(report.endDate)})` : ""} · {reporterName ? `로그인: ${reporterName}` : "이름을 설정해주세요"}
           </p>
@@ -750,6 +791,10 @@ export function WeeklyReport() {
         <p className="text-xs text-stone-500 -mt-2">🔄 {sheetSyncMsg}</p>
       )}
 
+      {viewMode === "monthly" ? (
+        <MonthlyReport monthly={monthly} />
+      ) : (
+      <>
       <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 text-xs text-stone-500 flex flex-wrap gap-4">
         <span><b className="text-stone-700">4단계 필수</b> 결과(달성률) · 원인 · 인사이트 · 실행 계획</span>
         <span><b className="text-stone-700">원인 특정</b> 채널 / 상품 / 광고 / 비용구조 중 1개</span>
@@ -931,6 +976,8 @@ export function WeeklyReport() {
           </ul>
         )}
       </div>
+      </>
+      )}
 
       {newWeekModal}
 
