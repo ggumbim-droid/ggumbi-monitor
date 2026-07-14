@@ -76,6 +76,7 @@ interface MonthlyCategorySummary {
   weeksCounted: number;              // 합산에 포함된 주차 수
   weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[]; // 4주치 인사이트 모음
   weeklySeries: { week: string; label: string; cumActual: number | null; cumProgress: number | null }[]; // 주차별 누적 진행(월목표 대비)
+  brands: { brand: string; cumTarget: number | null; cumActual: number | null; rate: number | null }[]; // 브랜드별 누적(이번 달)
 }
 
 interface MonthlySummary {
@@ -407,6 +408,7 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
     let weeksCounted = 0;
     const weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[] = [];
     const weeklySeries: { week: string; label: string; cumActual: number | null; cumProgress: number | null }[] = [];
+    const brandAgg = new Map<string, { target: number; actual: number; hasT: boolean; hasA: boolean }>();
 
     for (const r of reports) {
       if (!r.startDate || !r.endDate) continue;
@@ -427,6 +429,17 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
         cumActual += a * (daysThisMonth / totalWeekDays);
         actualHasAny = true;
       }
+
+      // 브랜드별 누적 (세부항목 중목표·중실적)
+      (cat?.items ?? []).forEach((it) => {
+        if (!it.brand) return;
+        const e = brandAgg.get(it.brand) ?? { target: 0, actual: 0, hasT: false, hasA: false };
+        const bt = toNumOrNull(it.midTarget);
+        const ba = toNumOrNull(it.midActual);
+        if (bt !== null) { e.target += bt; e.hasT = true; }
+        if (ba !== null) { e.actual += ba; e.hasA = true; }
+        brandAgg.set(it.brand, e);
+      });
 
       // 인사이트 수집: 결과요약(actual)·인사이트(note)·실행계획(alternative)
       if (cat && (cat.actual || cat.note || cat.alternative)) {
@@ -466,10 +479,19 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
       }
     }
 
+    const brands = Array.from(brandAgg.entries())
+      .map(([brand, e]) => ({
+        brand,
+        cumTarget: e.hasT ? Math.round(e.target) : null,
+        cumActual: e.hasA ? Math.round(e.actual) : null,
+        rate: e.hasT && e.target > 0 && e.hasA ? Math.round((e.actual / e.target) * 1000) / 10 : null,
+      }))
+      .sort((x, y) => (y.cumActual ?? -Infinity) - (x.cumActual ?? -Infinity));
+
     catSummaries.push({
       id: def.id, title: def.title, unit: cfg.unit,
       cumulativeTarget, cumulativeActual, cumulativeRate,
-      monthTarget, projectedActual, projectedRate, weeksCounted, weeklyInsights, weeklySeries,
+      monthTarget, projectedActual, projectedRate, weeksCounted, weeklyInsights, weeklySeries, brands,
     });
   }
 
