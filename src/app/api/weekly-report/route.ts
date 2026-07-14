@@ -609,6 +609,15 @@ async function sheetReadReport(week: string): Promise<WeeklyReportData> {
   } catch (e) {
     console.error("구글시트 읽기 실패:", e);
   }
+  // 주차정보에 시작일·종료일이 비어 있어도 월 계산이 되도록 보정 (주차ID = 종료일)
+  if (!report.endDate && /^\d{4}-\d{2}-\d{2}$/.test(week)) report.endDate = week;
+  if (!report.startDate && report.endDate) {
+    const d = new Date(report.endDate);
+    if (!isNaN(d.getTime())) {
+      d.setDate(d.getDate() - 6);
+      report.startDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+  }
   return decorateReport(report);
 }
 
