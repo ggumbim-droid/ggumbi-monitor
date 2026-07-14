@@ -75,6 +75,7 @@ interface MonthlyCategorySummary {
   projectedRate: number | null;      // 예상(착지) 달성률(%)
   weeksCounted: number;              // 합산에 포함된 주차 수
   weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[]; // 4주치 인사이트 모음
+  weeklySeries: { week: string; label: string; cumActual: number | null; cumProgress: number | null }[]; // 주차별 누적 진행(월목표 대비)
 }
 
 interface MonthlySummary {
@@ -405,6 +406,7 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
     let actualHasAny = false;
     let weeksCounted = 0;
     const weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[] = [];
+    const weeklySeries: { week: string; label: string; cumActual: number | null; cumProgress: number | null }[] = [];
 
     for (const r of reports) {
       if (!r.startDate || !r.endDate) continue;
@@ -436,6 +438,13 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
           action: cat.alternative || "",
         });
       }
+      const cumProg = monthTarget && monthTarget > 0 ? Math.round((cumActual / monthTarget) * 1000) / 10 : null;
+      weeklySeries.push({
+        week: r.week,
+        label: r.label || r.week,
+        cumActual: actualHasAny ? Math.round(cumActual) : null,
+        cumProgress: actualHasAny ? cumProg : null,
+      });
       weeksCounted++;
     }
 
@@ -460,7 +469,7 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
     catSummaries.push({
       id: def.id, title: def.title, unit: cfg.unit,
       cumulativeTarget, cumulativeActual, cumulativeRate,
-      monthTarget, projectedActual, projectedRate, weeksCounted, weeklyInsights,
+      monthTarget, projectedActual, projectedRate, weeksCounted, weeklyInsights, weeklySeries,
     });
   }
 
@@ -628,61 +637,6 @@ async function getWeekListFromSheet(): Promise<WeekListEntry[]> {
 
 // ══════════════════════════════════════════════════════
 
-// ── KPI별 주차 추이 (여러 주차 → 자동계산 KPI별 시계열) ──
-// 읽기 전용. 현재 주차가 속한 달의 모든 주차를 시트에서 읽어 KPI별로 묶는다.
-interface KpiTrendWeek {
-  week: string;
-  label: string;
-  target: number | null;
-  actual: number | null;
-  note: string;
-  alternative: string;
-}
-interface KpiTrend {
-  id: string;
-  title: string;
-  unit: string;
-  monthTarget: number | null;
-  weeks: KpiTrendWeek[];
-}
-
-function parseTargetNum(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const m = String(v).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
-  if (!m) return null;
-  const n = Number(m[0]);
-  return isNaN(n) ? null : n;
-}
-
-async function buildKpiTrends(currentWeek: string): Promise<KpiTrend[]> {
-  const month = monthKeyOf(currentWeek);
-  if (!month) return [];
-  const all = await getWeekListFromSheet();
-  const inMonth = all
-    .filter((w) => monthKeyOf(w.week) === month)
-    .sort((a, b) => a.week.localeCompare(b.week));
-  if (inMonth.length === 0) return [];
-
-  const reports = await Promise.all(inMonth.map((w) => sheetReadReport(w.week)));
-  const trends: KpiTrend[] = [];
-  for (const def of CATEGORY_DEFS) {
-    const cfg = AUTO_CALC_CONFIG[def.id];
-    if (!cfg) continue; // 자동계산 숫자 KPI만 (04·07 제외)
-    const weeks: KpiTrendWeek[] = reports.map((r, i) => {
-      const cat = r.categories.find((c) => c.id === def.id);
-      return {
-        week: inMonth[i].week,
-        label: r.label || inMonth[i].label || inMonth[i].week,
-        target: parseTargetNum(cat?.target),
-        actual: cat?.actualNum ?? null,
-        note: cat?.note ?? "",
-        alternative: cat?.alternative ?? "",
-      };
-    });
-    trends.push({ id: def.id, title: def.title, unit: cfg.unit, monthTarget: cfg.monthly[month] ?? null, weeks });
-  }
-  return trends;
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -694,12 +648,6 @@ export async function GET(request: NextRequest) {
 
     if (!week) {
       return NextResponse.json({ week: "", report: null, weeks: [], teamNames: DEFAULT_TEAM_NAMES, monthly: null });
-    }
-
-    // KPI 추이 현황 탭: 한 달치 주차를 KPI별 시계열로 묶어 반환
-    if (searchParams.get("trends")) {
-      const trends = await buildKpiTrends(week);
-      return NextResponse.json({ week, weeks, trends });
     }
 
     // 구글시트에서 직접 읽어옴 (원본은 시트 한 곳)
