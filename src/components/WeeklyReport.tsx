@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MonthlyReport } from "./MonthlyReport";
+import { BrandRanking } from "./BrandRanking";
 
 type Status = "good" | "warn" | "bad" | "unk";
 
@@ -193,7 +194,8 @@ export function WeeklyReport() {
   const [week, setWeek] = useState("");
   const [report, setReport] = useState<WeeklyReportData | null>(null);
   const [monthly, setMonthly] = useState<MonthlySummary | null>(null);
-  const [viewMode, setViewMode] = useState<"weekly" | "monthly">("weekly");
+  const [prevReport, setPrevReport] = useState<WeeklyReportData | null>(null);
+  const [viewMode, setViewMode] = useState<"weekly" | "monthly" | "ranking">("weekly");
   const [loading, setLoading] = useState(true);
 
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
@@ -218,6 +220,26 @@ export function WeeklyReport() {
   }, []);
 
   useEffect(() => { loadWeek(); }, [loadWeek]);
+
+  // 브랜드별 순위 탭에서 전주 대비 증감을 계산하기 위해 직전 주차를 함께 불러옴
+  useEffect(() => {
+    if (viewMode !== "ranking" || !week || weeks.length === 0) { setPrevReport(null); return; }
+    const sorted = weeks.slice().sort((a, b) => a.week.localeCompare(b.week));
+    const idx = sorted.findIndex((w) => w.week === week);
+    const prevWeek = idx > 0 ? sorted[idx - 1].week : "";
+    if (!prevWeek) { setPrevReport(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/weekly-report?week=${encodeURIComponent(prevWeek)}`);
+        const data = await res.json();
+        if (!cancelled && res.ok) setPrevReport(data.report ?? null);
+      } catch {
+        if (!cancelled) setPrevReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [viewMode, week, weeks]);
 
   function toggleOpen(id: string) {
     setOpenIds((prev) => {
@@ -284,8 +306,14 @@ export function WeeklyReport() {
             >
               월간보고
             </button>
+            <button
+              onClick={() => setViewMode("ranking")}
+              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === "ranking" ? "bg-kkumbi-500 text-white" : "text-stone-500 hover:text-stone-700"}`}
+            >
+              브랜드별 순위
+            </button>
           </div>
-          <h2 className="text-base font-bold text-stone-800">{viewMode === "weekly" ? "주간보고 대시보드" : "월간보고 대시보드"}</h2>
+          <h2 className="text-base font-bold text-stone-800">{viewMode === "weekly" ? "주간보고 대시보드" : viewMode === "monthly" ? "월간보고 대시보드" : "브랜드별 순위"}</h2>
           <p className="text-xs text-stone-500">
             팬슈머마케팅팀 · {report?.label || week}{report?.startDate && report?.endDate ? ` (${fmtMD(report.startDate)}~${fmtMD(report.endDate)})` : ""}
           </p>
@@ -307,6 +335,8 @@ export function WeeklyReport() {
 
       {viewMode === "monthly" ? (
         <MonthlyReport monthly={monthly} />
+      ) : viewMode === "ranking" ? (
+        <BrandRanking report={report} prevReport={prevReport} />
       ) : (
       <>
       <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 text-xs text-stone-500 flex flex-wrap gap-4">
