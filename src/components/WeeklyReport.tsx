@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MonthlyReport } from "./MonthlyReport";
-import { KpiOverview } from "./KpiOverview";
+import { CumulativeSummary } from "./CumulativeSummary";
 
 type Status = "good" | "warn" | "bad" | "unk";
 
@@ -75,6 +75,7 @@ interface MonthlyCategorySummary {
   projectedRate: number | null;
   weeksCounted: number;
   weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[];
+  weeklySeries: { week: string; label: string; cumActual: number | null; cumProgress: number | null }[];
 }
 
 interface MonthlySummary {
@@ -90,18 +91,6 @@ const STATUS_CLASS: Record<Status, string> = {
   warn: "bg-amber-50 text-amber-700",
   bad: "bg-rose-50 text-rose-700",
   unk: "bg-stone-100 text-stone-500",
-};
-const STATUS_TEXT: Record<Status, string> = {
-  good: "text-emerald-700",
-  warn: "text-amber-700",
-  bad: "text-rose-700",
-  unk: "text-stone-500",
-};
-const STATUS_BAR: Record<Status, string> = {
-  good: "bg-emerald-500",
-  warn: "bg-amber-500",
-  bad: "bg-rose-500",
-  unk: "bg-stone-300",
 };
 
 function fmtMD(dateStr: string): string {
@@ -194,12 +183,10 @@ export function WeeklyReport() {
   const [week, setWeek] = useState("");
   const [report, setReport] = useState<WeeklyReportData | null>(null);
   const [monthly, setMonthly] = useState<MonthlySummary | null>(null);
-  const [viewMode, setViewMode] = useState<"weekly" | "monthly" | "overview">("weekly");
+  const [viewMode, setViewMode] = useState<"weekly" | "monthly">("weekly");
   const [loading, setLoading] = useState(true);
 
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  const [highlightId, setHighlightId] = useState("");
-  const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const loadWeek = useCallback(async (w?: string) => {
     setLoading(true);
@@ -228,23 +215,7 @@ export function WeeklyReport() {
     });
   }
 
-  // 상단 KPI 카드 클릭 → 해당 블록 열고 + 부드럽게 스크롤 + 잠깐 강조
-  function scrollToBlock(id: string) {
-    setOpenIds((prev) => new Set(prev).add(id));
-    setHighlightId(id);
-    setTimeout(() => {
-      const el = blockRefs.current[id];
-      if (!el) return;
-      const STICKY_OFFSET = 240;
-      const y = el.getBoundingClientRect().top + window.scrollY - STICKY_OFFSET;
-      window.scrollTo({ top: y, behavior: "smooth" });
-    }, 60);
-    setTimeout(() => setHighlightId((cur) => (cur === id ? "" : cur)), 1600);
-  }
-
   const categories = report?.categories ?? [];
-  const tally: Record<Status, number> = { good: 0, warn: 0, bad: 0, unk: 0 };
-  categories.forEach((c) => tally[c.status]++);
 
   const actionRows: { catId: string; text: string; due: string }[] = [];
   const gapRows: { catTitle: string; itemTitle: string; text: string }[] = [];
@@ -285,14 +256,8 @@ export function WeeklyReport() {
             >
               월간보고
             </button>
-            <button
-              onClick={() => setViewMode("overview")}
-              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === "overview" ? "bg-kkumbi-500 text-white" : "text-stone-500 hover:text-stone-700"}`}
-            >
-              KPI 현황
-            </button>
           </div>
-          <h2 className="text-base font-bold text-stone-800">{viewMode === "weekly" ? "주간보고 대시보드" : viewMode === "monthly" ? "월간보고 대시보드" : "KPI 현황 한눈에 보기"}</h2>
+          <h2 className="text-base font-bold text-stone-800">{viewMode === "weekly" ? "주간보고 대시보드" : "월간보고 대시보드"}</h2>
           <p className="text-xs text-stone-500">
             팬슈머마케팅팀 · {report?.label || week}{report?.startDate && report?.endDate ? ` (${fmtMD(report.startDate)}~${fmtMD(report.endDate)})` : ""}
           </p>
@@ -314,13 +279,11 @@ export function WeeklyReport() {
 
       {viewMode === "monthly" ? (
         <MonthlyReport monthly={monthly} />
-      ) : viewMode === "overview" ? (
-        <KpiOverview week={week} />
       ) : (
       <>
       <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 text-xs text-stone-500 flex flex-wrap gap-4">
-        <span><b className="text-stone-700">데이터 입력은 구글시트에서</b> · 이 화면은 시트 데이터를 보여주는 조회 전용입니다</span>
-        <span><b className="text-stone-700">4단계 관점</b> 결과(달성률) · 원인 · 인사이트 · 실행 계획</span>
+        <span><b className="text-stone-700">월 목표 기준 · 누적 관점</b> — 주차 목표가 아니라 이번 달 전체 목표 대비 지금까지의 누적으로 봅니다</span>
+        <span><b className="text-stone-700">입력은 구글시트에서</b> · 이 화면은 조회 전용</span>
       </div>
 
       <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
@@ -330,48 +293,17 @@ export function WeeklyReport() {
         <p className="text-sm text-stone-700 whitespace-pre-wrap">{report?.prevFeedback || "(미기재)"}</p>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {(["good", "warn", "bad", "unk"] as Status[]).map((s) => (
-          <div key={s} className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${STATUS_CLASS[s]}`}>
-            <span>{tally[s]}</span><span>{STATUS_LABEL[s]}</span>
-          </div>
-        ))}
-      </div>
+      <CumulativeSummary monthly={monthly} />
 
-      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {categories.map((c) => (
-            <button key={c.id} onClick={() => scrollToBlock(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
-              <div className="text-xs font-mono text-stone-400 mb-1">KPI {c.id}</div>
-              <div className="text-xs font-bold text-stone-700 mb-1.5 leading-snug min-h-[2.2em]">{c.title}</div>
-              <div className={`text-lg font-extrabold ${STATUS_TEXT[c.status]}`}>{c.rateLabel || STATUS_LABEL[c.status]}</div>
-              <div className="mt-1.5 space-y-0.5 text-[11px] leading-tight">
-                <div className="flex justify-between gap-1">
-                  <span className="text-stone-400 shrink-0">목표</span>
-                  <span className="text-stone-600 font-medium text-right truncate">{c.target || "—"}</span>
-                </div>
-                <div className="flex justify-between gap-1">
-                  <span className="text-stone-400 shrink-0">실적</span>
-                  <span className="text-emerald-700 font-semibold text-right truncate">{c.actual || "—"}</span>
-                </div>
-              </div>
-              <div className="h-1.5 bg-stone-100 rounded-full mt-2 overflow-hidden">
-                <div className={`h-full rounded-full ${STATUS_BAR[c.status]}`} style={{ width: `${Math.min(c.rateNum ?? 0, 100)}%` }} />
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="text-xs font-bold text-stone-600 pt-1">이번 주 상세 · KPI별 입력 내용</div>
 
       <div className="space-y-3">
         {categories.map((c) => {
           const isOpen = openIds.has(c.id);
-          const isHighlighted = highlightId === c.id;
           return (
             <div
               key={c.id}
-              ref={(el) => { blockRefs.current[c.id] = el; }}
-              className={`bg-white border rounded-xl overflow-hidden transition-all duration-500 ${isHighlighted ? "border-kkumbi-400 ring-2 ring-kkumbi-200 shadow-md" : "border-stone-200"}`}
+              className="bg-white border border-stone-200 rounded-xl overflow-hidden"
             >
               <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => toggleOpen(c.id)}>
                 <span className="text-xs font-mono text-stone-400 w-6 shrink-0">{c.id}</span>
