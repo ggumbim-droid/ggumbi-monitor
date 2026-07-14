@@ -134,10 +134,8 @@ export default function HomePage() {
   const [keywordGroups, setKeywordGroups] = useState<KeywordGroups>({});
   const [groupList, setGroupList] = useState<KeywordGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
-  const [selectedPeriod, setSelectedPeriod] = useState("3months");
-  const [customStart, setCustomStart] = useState(getDateBefore(3));
-  const [customEnd, setCustomEnd] = useState(getToday());
   const [chartData, setChartData] = useState<Record<string, string | number>[]>([]);
+  const [chartsData, setChartsData] = useState<Record<string, Record<string, string | number>[]>>({});
   const [trendError, setTrendError] = useState("");
   const [trendLoading, setTrendLoading] = useState(false);
   const [hiddenBrands, setHiddenBrands] = useState<Set<string>>(new Set());
@@ -174,6 +172,7 @@ export default function HomePage() {
 
   const currentGroup = groupList.find((g) => g.id === selectedGroup) ?? null;
   const activeBrand = focusedBrand || hoveredBrand;
+  const TREND_STACK = [{ label: "주간", value: "1week" }, { label: "3개월", value: "3months" }, { label: "1년", value: "1year" }, { label: "3년", value: "3years" }];
   const anyResult = Object.values(groupResults).some(Boolean);
   const allLoginItems = Object.values(groupResults).filter(Boolean).flatMap((r) => r!.channels.flatMap((c) => c.loginRequired));
 
@@ -249,17 +248,24 @@ export default function HomePage() {
   }, [groupResults]);
 
   async function fetchTrend() {
-    setTrendLoading(true); setTrendError(""); setChartData([]); setHiddenBrands(new Set()); setFocusedBrand("");
+    setTrendLoading(true); setTrendError(""); setChartData([]); setChartsData({}); setHiddenBrands(new Set()); setFocusedBrand("");
     try {
-      const res = await fetch("/api/trend", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId: selectedGroup, period: selectedPeriod, customStart: selectedPeriod === "custom" ? customStart : undefined, customEnd: selectedPeriod === "custom" ? customEnd : undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "오류 발생");
-      setChartData(data.results);
+      const entries = await Promise.all(
+        TREND_STACK.map(async (pp) => {
+          const res = await fetch("/api/trend", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ groupId: selectedGroup, period: pp.value }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "오류 발생");
+          return [pp.value, (data.results ?? []) as Record<string, string | number>[]] as const;
+        })
+      );
+      const map = Object.fromEntries(entries);
+      setChartsData(map);
+      setChartData(map["3months"] ?? map["1week"] ?? []);
     } catch (e: unknown) { setTrendError(e instanceof Error ? e.message : "오류 발생"); }
-finally { setTrendLoading(false); }
+    finally { setTrendLoading(false); }
   }
 
   async function fetchBrandData() {
@@ -821,7 +827,7 @@ const data = await res.json();
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex gap-2 flex-wrap">
                   {groupList.map((g) => (
-                    <button key={g.id} onClick={() => { setSelectedGroup(g.id); setChartData([]); setHiddenBrands(new Set()); setFocusedBrand(""); setExpandedBrands(new Set()); }}
+                    <button key={g.id} onClick={() => { setSelectedGroup(g.id); setChartData([]); setChartsData({}); setHiddenBrands(new Set()); setFocusedBrand(""); setExpandedBrands(new Set()); }}
                       className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedGroup === g.id ? "bg-kkumbi-500 text-white" : "bg-white text-gray-600 border border-gray-200 hover:border-kkumbi-300"}`}>
                       {g.label}
                     </button>
@@ -875,27 +881,7 @@ const data = await res.json();
               )}
 
               <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex gap-2 flex-wrap mb-3">
-                  {PRESET_PERIODS.map((p) => (
-                    <button key={p.value} onClick={() => setSelectedPeriod(p.value)}
-                      className={`px-4 py-2 rounded text-sm font-medium transition-colors ${selectedPeriod === p.value ? "bg-stone-800 text-white" : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"}`}>
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-                {selectedPeriod === "custom" && (
-                  <div className="flex items-center gap-3 mt-2">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm text-gray-500">시작일</label>
-                      <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} max={customEnd} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                    </div>
-                    <span className="text-gray-400">~</span>
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm text-gray-500">종료일</label>
-                      <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} min={customStart} max={getToday()} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-                    </div>
-                  </div>
-                )}
+                <p className="text-sm text-gray-500">아래 <b className="text-gray-700">트렌드 조회</b>를 누르면 <b className="text-gray-700">주간 · 3개월 · 1년 · 3년</b> 그래프가 순서대로 나옵니다. (스크롤해서 확인)</p>
               </div>
 
               {currentGroup && (
@@ -971,28 +957,35 @@ const data = await res.json();
                 )}
               </div>
               {trendError && <div className="text-red-500 text-sm">{trendError}</div>}
-              {chartData.length > 0 && currentGroup && (
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
-                  <h2 className="font-semibold text-gray-700 mb-4">{currentGroup.label} 검색량 추이</h2>
-                  <ResponsiveContainer width="100%" height={400}>
-                    <LineChart data={chartData} onMouseLeave={() => setHoveredBrand("")}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip content={<CustomTooltip hoveredBrand={activeBrand} />} />
-                      <Legend />
-                      {currentGroup.brands.map((brand, i) => (
-                        !hiddenBrands.has(brand.name) && (
-                          <Line key={brand.name} type="monotone" dataKey={brand.name} stroke={BRAND_COLORS[i]}
-                            strokeWidth={activeBrand === brand.name ? 4 : activeBrand ? 1 : 2}
-                            opacity={activeBrand && activeBrand !== brand.name ? 0.3 : 1}
-                            dot={false} onMouseEnter={() => setHoveredBrand(brand.name)} />
-                        )
-                      ))}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              {currentGroup && TREND_STACK.map((pp) => {
+                const data = chartsData[pp.value];
+                if (!data || data.length === 0) return null;
+                return (
+                  <div key={pp.value} className="bg-white rounded-xl border border-gray-200 p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-kkumbi-50 text-kkumbi-600">{pp.label}</span>
+                      <h2 className="font-semibold text-gray-700">{currentGroup.label} 검색량 추이</h2>
+                    </div>
+                    <ResponsiveContainer width="100%" height={320}>
+                      <LineChart data={data} onMouseLeave={() => setHoveredBrand("")}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip content={<CustomTooltip hoveredBrand={activeBrand} />} />
+                        <Legend />
+                        {currentGroup.brands.map((brand, i) => (
+                          !hiddenBrands.has(brand.name) && (
+                            <Line key={brand.name} type="monotone" dataKey={brand.name} stroke={BRAND_COLORS[i]}
+                              strokeWidth={activeBrand === brand.name ? 4 : activeBrand ? 1 : 2}
+                              opacity={activeBrand && activeBrand !== brand.name ? 0.3 : 1}
+                              dot={false} onMouseEnter={() => setHoveredBrand(brand.name)} />
+                          )
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })}
             </div>
           )}
 
