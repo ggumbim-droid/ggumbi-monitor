@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const KV_REST_API_URL = process.env.KV_REST_API_URL;
-const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
 const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
 const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
 
@@ -135,14 +133,6 @@ interface SheetWeekResponse {
   budgetRows: SheetBudgetRow[];
 }
 
-interface SheetPushPayload {
-  week: string;
-  weekInfo: { 주차명: string; 시작일: string; 종료일: string; 회장님피드백: string };
-  performance: { 주차ID: string; KPI항목: string; 주간목표: string; 실적숫자: number | string; 실적내용: string; 비고: string; 달성상태: string; 대안: string }[];
-  items: { 주차ID: string; KPI항목: string; 순서: number; 이슈제목: string; 수치지표: string; 배지: string; 배지상태: string; 원인: string; 액션: string; 마감일: string; 미흡사항: string; 브랜드: string; 중목표: number | string; 중실적: number | string }[];
-  budgetRows: { 주차ID: string; 브랜드: string; 주간예산: number; 달성매출: number | string; 사용비용: number | string }[];
-}
-
 const CATEGORY_DEFS: { id: string; title: string }[] = [
   { id: "01", title: "키워드 검색량" },
   { id: "02", title: "퍼포먼스 마케팅" },
@@ -218,67 +208,10 @@ function blankReport(week: string): WeeklyReportData {
   return { week, label: "", startDate: "", endDate: "", prevFeedback: "", categories: CATEGORY_DEFS.map(blankCategory) };
 }
 
-async function kvGet(key: string) {
-  const res = await fetch(`${KV_REST_API_URL}/get/${key}`, {
-    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
-  });
-  const data = await res.json();
-  const raw = data.result ?? data.value ?? null;
-  if (!raw) return null;
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed === "object") return parsed;
-      if (typeof parsed === "string") return JSON.parse(parsed);
-    } catch {
-      return null;
-    }
-  }
-  return raw;
-}
-
-async function kvSet(key: string, value: object) {
-  const jsonStr = JSON.stringify(value);
-  await fetch(`${KV_REST_API_URL}/set/${key}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${KV_REST_API_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(jsonStr),
-  });
-}
-
-function reportKey(week: string) {
-  return `weekly_report:${week}`;
-}
-
-async function getWeekList(): Promise<WeekListEntry[]> {
-  const raw = (await kvGet("weekly_report_weeks")) as unknown;
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) =>
-    typeof item === "string"
-      ? { week: item, label: "", startDate: "", endDate: "" }
-      : (item as WeekListEntry)
-  );
-}
-
-async function addWeekToList(entry: WeekListEntry) {
-  const list = await getWeekList();
-  const idx = list.findIndex((w) => w.week === entry.week);
-  if (idx >= 0) list[idx] = entry;
-  else list.push(entry);
-  list.sort((a, b) => a.week.localeCompare(b.week));
-  await kvSet("weekly_report_weeks", list);
-}
+// 데이터는 구글시트가 유일한 원본(Single Source of Truth)입니다.
+// 이 라우트는 시트를 읽어 대시보드에 보여주기만 하며, 시트에 쓰지 않습니다.
 
 const DEFAULT_TEAM_NAMES = ["방승현 팀장", "김혜림SM", "신동은SM", "김소원JM", "조혜림JM", "이수현AM"];
-
-async function getTeamNames(): Promise<string[]> {
-  const raw = (await kvGet("weekly_report_team_names")) as unknown;
-  if (Array.isArray(raw) && raw.length) return raw as string[];
-  return DEFAULT_TEAM_NAMES;
-}
 
 function fillMissingCategories(report: WeeklyReportData): WeeklyReportData {
   const existingIds = new Set(report.categories.map((c) => c.id));
@@ -429,7 +362,7 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
   if (!month) return null;
 
   // 이 달에 속하고, 현재 주차 종료일 이하인 주차들만 모음
-  const allWeeks = await getWeekList();
+  const allWeeks = await getWeekListFromSheet();
   const currentEnd = currentReport.endDate;
   const relevant = allWeeks
     .filter((w) => w.endDate && monthKeyOf(w.endDate) === month && w.endDate <= currentEnd)
@@ -441,13 +374,14 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
     relevant.sort((a, b) => a.endDate.localeCompare(b.endDate));
   }
 
-  // 각 주차 리포트 로드 (현재 주차는 이미 있는 걸 재사용)
-  const reports: WeeklyReportData[] = [];
-  for (const w of relevant) {
-    if (w.week === currentReport.week) { reports.push(currentReport); continue; }
-    const r = (await kvGet(reportKey(w.week))) as WeeklyReportData | null;
-    if (r) reports.push(fillMissingCategories(r));
-  }
+  // 각 주차 리포트를 시트에서 병렬 로드 (현재 주차는 이미 있는 걸 재사용)
+  const reports: WeeklyReportData[] = await Promise.all(
+    relevant.map((w) =>
+      w.week === currentReport.week
+        ? Promise.resolve(currentReport)
+        : sheetReadReport(w.week)
+    )
+  );
 
   const [y, m] = month.split("-").map(Number);
   const totalDaysInMonth = daysInMonth(y, m);
@@ -579,43 +513,6 @@ async function sheetFetchWeek(week: string): Promise<SheetWeekResponse> {
   };
 }
 
-function reportToSheetPayload(report: WeeklyReportData): SheetPushPayload {
-  const weekInfo = {
-    주차명: report.label, 시작일: report.startDate, 종료일: report.endDate, 회장님피드백: report.prevFeedback,
-  };
-  const performance = report.categories
-    .filter((c) => c.id !== "07")
-    .map((c) => ({
-      주차ID: report.week,
-      KPI항목: `${c.id} ${c.title}`,
-      주간목표: c.target,
-      실적숫자: c.actualNum ?? "",
-      실적내용: c.actual,
-      비고: c.note,
-      달성상태: STATUS_KO_LABEL[c.status],
-      대안: c.alternative ?? "",
-    }));
-  const items = report.categories.flatMap((c) =>
-    c.items.map((it, idx) => ({
-      주차ID: report.week,
-      KPI항목: `${c.id} ${c.title}`,
-      순서: idx,
-      이슈제목: it.title, 수치지표: it.metric, 배지: it.badge, 배지상태: BADGE_KO_LABEL[it.badgeStatus],
-      원인: it.cause, 액션: it.action, 마감일: it.due, 미흡사항: it.gap,
-      브랜드: it.brand ?? "", 중목표: it.midTarget ?? "", 중실적: it.midActual ?? "",
-    }))
-  );
-  const budgetCat = report.categories.find((c) => c.id === "07");
-  const budgetRows = (budgetCat?.budgetRows ?? []).map((r) => ({
-    주차ID: report.week,
-    브랜드: r.brand,
-    주간예산: r.budget,
-    달성매출: r.revenue ?? "",
-    사용비용: r.cost ?? "",
-  }));
-  return { week: report.week, weekInfo, performance, items, budgetRows };
-}
-
 function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): WeeklyReportData {
   if (sheet.weekInfo) {
     const wi = sheet.weekInfo as SheetWeekInfo;
@@ -694,26 +591,38 @@ function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): Wee
   return report;
 }
 
-async function sheetPushWeek(payload: SheetPushPayload): Promise<void> {
-  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return;
-  const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
+// ── 시트에서 한 주차를 읽어 대시보드용 리포트로 변환 (읽기 전용의 핵심) ──
+async function sheetReadReport(week: string): Promise<WeeklyReportData> {
+  let report = fillMissingCategories(blankReport(week));
+  try {
+    const sheetData = await sheetFetchWeek(week);
+    report = applySheetData(report, sheetData);
+  } catch (e) {
+    console.error("구글시트 읽기 실패:", e);
+  }
+  return decorateReport(report);
 }
 
-async function syncReportToSheet(report: WeeklyReportData): Promise<boolean> {
-  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return true;
+// ── 시트(주차정보 탭)에서 주차 목록을 읽음. 주차ID = 종료일(일요일) ──
+async function getWeekListFromSheet(): Promise<WeekListEntry[]> {
+  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return [];
   try {
-    await sheetPushWeek(reportToSheetPayload(report));
-    return true;
+    const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}&action=weeks`;
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+    if (!Array.isArray(data.weeks)) return [];
+    return (data.weeks as { week?: string; label?: string }[])
+      .map((w) => ({
+        week: String(w.week ?? ""),
+        label: String(w.label ?? ""),
+        startDate: "",
+        endDate: String(w.week ?? ""),
+      }))
+      .filter((w) => w.week)
+      .sort((a, b) => a.week.localeCompare(b.week));
   } catch (e) {
-    console.error("구글시트 동기화 실패:", e);
-    return false;
+    console.error("구글시트 주차목록 읽기 실패:", e);
+    return [];
   }
 }
 
@@ -723,177 +632,29 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    const weeks = await getWeekList();
-    const teamNames = await getTeamNames();
+    const weeks = await getWeekListFromSheet();
     let week = searchParams.get("week") || "";
     if (!week) week = weeks.length ? weeks[weeks.length - 1].week : "";
 
     if (!week) {
-      return NextResponse.json({ week: "", report: null, weeks: [], teamNames, monthly: null });
+      return NextResponse.json({ week: "", report: null, weeks: [], teamNames: DEFAULT_TEAM_NAMES, monthly: null });
     }
 
-    let report = (await kvGet(reportKey(week))) as WeeklyReportData | null;
-    if (!report) report = blankReport(week);
-    report = fillMissingCategories(report);
-    report = decorateReport(report);
-
+    // 구글시트에서 직접 읽어옴 (원본은 시트 한 곳)
+    const report = await sheetReadReport(week);
     const monthly = await buildMonthlySummary(report);
 
-    return NextResponse.json({ week, report, weeks, teamNames, monthly });
+    return NextResponse.json({ week, report, weeks, teamNames: DEFAULT_TEAM_NAMES, monthly });
   } catch {
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { action } = body;
-
-    if (action === "add_team_name") {
-      const name = (body.name || "").trim();
-      if (!name) return NextResponse.json({ error: "이름을 입력해주세요." }, { status: 400 });
-      const names = await getTeamNames();
-      if (!names.includes(name)) names.push(name);
-      await kvSet("weekly_report_team_names", names);
-      return NextResponse.json({ success: true, teamNames: names });
-    }
-
-    if (action === "remove_team_name") {
-      const name = body.name;
-      const names = (await getTeamNames()).filter((n) => n !== name);
-      await kvSet("weekly_report_team_names", names);
-      return NextResponse.json({ success: true, teamNames: names });
-    }
-
-    const { week } = body;
-    if (!week) return NextResponse.json({ error: "week가 필요합니다." }, { status: 400 });
-
-    if (action === "new_week") {
-      const { copyFrom, startDate, endDate, label } = body;
-      let base: WeeklyReportData | null = null;
-      if (copyFrom) base = (await kvGet(reportKey(copyFrom))) as WeeklyReportData | null;
-      const categories: ReportCategory[] = CATEGORY_DEFS.map((def) => {
-        const prev = base?.categories.find((c) => c.id === def.id);
-        return {
-          id: def.id, title: def.title,
-          target: prev?.target ?? "", actual: "", rateLabel: "", rateNum: null,
-          status: "unk", note: "", items: [], actualNum: null,
-        };
-      });
-      const newReport: WeeklyReportData = {
-        week, label: label ?? "", startDate: startDate ?? "", endDate: endDate ?? "",
-        prevFeedback: "", categories,
-      };
-      await kvSet(reportKey(week), newReport);
-      await addWeekToList({ week, label: newReport.label, startDate: newReport.startDate, endDate: newReport.endDate });
-      const weeks = await getWeekList();
-      const decorated = decorateReport(newReport);
-      const sheetSynced = await syncReportToSheet(decorated);
-      return NextResponse.json({ success: true, report: decorated, weeks, sheetSynced });
-    }
-
-    let report = (await kvGet(reportKey(week))) as WeeklyReportData | null;
-    if (!report) report = blankReport(week);
-    report = fillMissingCategories(report);
-
-    if (action === "sheet_pull") {
-      try {
-        const sheetData = await sheetFetchWeek(week);
-        const found = !!sheetData.weekInfo || sheetData.performance.length > 0 || sheetData.items.length > 0 || sheetData.budgetRows.length > 0;
-        report = applySheetData(report, sheetData);
-        await kvSet(reportKey(week), report);
-        await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-        const decorated = decorateReport(report);
-        const monthly = await buildMonthlySummary(decorated);
-        return NextResponse.json({ success: true, report: decorated, found, monthly });
-      } catch (e) {
-        return NextResponse.json({ error: e instanceof Error ? e.message : "구글시트에서 가져오기 실패" }, { status: 500 });
-      }
-    }
-
-    if (action === "sheet_push") {
-      try {
-        const decorated = decorateReport(report);
-        await sheetPushWeek(reportToSheetPayload(decorated));
-        return NextResponse.json({ success: true });
-      } catch (e) {
-        return NextResponse.json({ error: e instanceof Error ? e.message : "구글시트로 내보내기 실패" }, { status: 500 });
-      }
-    }
-
-    if (action === "update_feedback") {
-      report.prevFeedback = body.prevFeedback ?? "";
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      const monthly = await buildMonthlySummary(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced, monthly });
-    }
-
-    if (action === "update_category") {
-      const { categoryId, target, actual, rateLabel, rateNum, status, note, actualNum, alternative, updatedBy } = body;
-      const cat = report.categories.find((c) => c.id === categoryId);
-      if (!cat) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
-      if (actualNum !== undefined) cat.actualNum = actualNum === null || actualNum === "" ? null : Number(actualNum);
-      if (target !== undefined) cat.target = target;
-      if (actual !== undefined) cat.actual = actual;
-      if (rateLabel !== undefined) cat.rateLabel = rateLabel;
-      if (rateNum !== undefined) cat.rateNum = rateNum === null || rateNum === "" ? null : Number(rateNum);
-      if (status !== undefined) cat.status = status;
-      if (note !== undefined) cat.note = note;
-      if (alternative !== undefined) cat.alternative = alternative;
-      cat.updatedBy = updatedBy ?? cat.updatedBy;
-      cat.updatedAt = new Date().toISOString();
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      const monthly = await buildMonthlySummary(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced, monthly });
-    }
-
-    if (action === "save_budget_rows") {
-      const { categoryId, rows, updatedBy } = body;
-      const cat = report.categories.find((c) => c.id === categoryId);
-      if (!cat) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
-      cat.budgetRows = (rows ?? []).map((r: { brand: string; revenue: number | null; cost: number | null }) => ({
-        brand: r.brand, budget: 0, revenue: r.revenue, cost: r.cost,
-      }));
-      cat.updatedBy = updatedBy ?? cat.updatedBy;
-      cat.updatedAt = new Date().toISOString();
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      const monthly = await buildMonthlySummary(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced, monthly });
-    }
-
-    if (action === "save_items") {
-      const { categoryId, items, updatedBy } = body;
-      const cat = report.categories.find((c) => c.id === categoryId);
-      if (!cat) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 400 });
-      cat.items = items ?? [];
-      cat.updatedBy = updatedBy ?? cat.updatedBy;
-      cat.updatedAt = new Date().toISOString();
-      await kvSet(reportKey(week), report);
-      await addWeekToList({ week, label: report.label, startDate: report.startDate, endDate: report.endDate });
-      const decorated = decorateReport(report);
-      const sheetSynced = await syncReportToSheet(decorated);
-      const monthly = await buildMonthlySummary(decorated);
-      return NextResponse.json({ success: true, report: decorated, sheetSynced, monthly });
-    }
-
-    if (action === "delete_week") {
-      const list = await getWeekList();
-      await kvSet("weekly_report_weeks", list.filter((w) => w.week !== week));
-      return NextResponse.json({ success: true });
-    }
-
-    return NextResponse.json({ error: "올바르지 않은 action입니다." }, { status: 400 });
-  } catch {
-    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
-  }
+// 읽기 전용 대시보드 — 시트에 쓰지 않습니다.
+// 데이터 입력·수정·주차 생성은 모두 구글시트에서 진행합니다.
+export async function POST() {
+  return NextResponse.json(
+    { error: "이 대시보드는 읽기 전용입니다. 데이터 입력·수정·새 주차 생성은 구글시트에서 진행해주세요." },
+    { status: 405 }
+  );
 }
