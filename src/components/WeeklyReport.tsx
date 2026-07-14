@@ -21,8 +21,6 @@ interface ReportItem {
   midRate?: string;
 }
 
-const BUDGET_BRAND_OPTIONS = ["꿈비", "파미야", "뉴어스", "소브", "오가닉그라운드", "바바디토", "G7커피", "신선미가"];
-
 interface BudgetRow {
   brand: string;
   budget: number;
@@ -85,8 +83,6 @@ interface MonthlySummary {
   categories: MonthlyCategorySummary[];
 }
 
-// TEAM_NAMES는 서버(Redis)에서 공유 목록으로 관리됩니다 (teamNames 상태 참고)
-
 const STATUS_LABEL: Record<Status, string> = { good: "달성", warn: "주의", bad: "미달", unk: "산출중" };
 const STATUS_CLASS: Record<Status, string> = {
   good: "bg-emerald-50 text-emerald-700",
@@ -107,28 +103,6 @@ const STATUS_BAR: Record<Status, string> = {
   unk: "bg-stone-300",
 };
 
-function newId() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function emptyItem(): ReportItem {
-  return { id: newId(), title: "", metric: "", badge: "", badgeStatus: "warn", cause: "", action: "", due: "", gap: "" };
-}
-
-function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
-}
-
-function suggestLabel(startStr: string): string {
-  const d = new Date(startStr);
-  if (isNaN(d.getTime())) return "";
-  const month = d.getMonth() + 1;
-  const weekNum = Math.ceil(d.getDate() / 7);
-  return `${month}월 ${weekNum}주차`;
-}
-
 function fmtMD(dateStr: string): string {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
@@ -147,13 +121,8 @@ function ratioColor(ratio: number | null): string {
   return "text-rose-600";
 }
 
-interface BudgetTableProps {
-  rows: BudgetRow[];
-  editable: boolean;
-  onChange?: (brand: string, patch: Partial<BudgetRow>) => void;
-}
-
-function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
+// ── 예산효율 표 (읽기 전용) ──
+function BudgetTable({ rows }: { rows: BudgetRow[] }) {
   const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
   const totalRevenue = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
   const totalCost = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
@@ -199,22 +168,8 @@ function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
                 <tr key={r.brand} className="border-b border-stone-100">
                   <td className="py-1.5 font-medium text-stone-700">{r.brand}</td>
                   <td className="py-1.5 text-right text-stone-500">{fmtNum(r.budget)}</td>
-                  <td className="py-1.5 text-right">
-                    {editable ? (
-                      <input type="number" value={r.revenue ?? ""} onChange={(e) => onChange?.(r.brand, { revenue: e.target.value === "" ? null : Number(e.target.value) })}
-                        className="w-28 border border-stone-200 rounded px-2 py-1 text-right text-xs" />
-                    ) : (
-                      <span className="font-semibold text-emerald-700">{fmtNum(r.revenue)}</span>
-                    )}
-                  </td>
-                  <td className="py-1.5 text-right">
-                    {editable ? (
-                      <input type="number" value={r.cost ?? ""} onChange={(e) => onChange?.(r.brand, { cost: e.target.value === "" ? null : Number(e.target.value) })}
-                        className="w-24 border border-stone-200 rounded px-2 py-1 text-right text-xs" />
-                    ) : (
-                      <span className="text-stone-600">{fmtNum(r.cost)}</span>
-                    )}
-                  </td>
+                  <td className="py-1.5 text-right"><span className="font-semibold text-emerald-700">{fmtNum(r.revenue)}</span></td>
+                  <td className="py-1.5 text-right"><span className="text-stone-600">{fmtNum(r.cost)}</span></td>
                   <td className={`py-1.5 text-right font-semibold ${ratioColor(ratio)}`}>{ratio !== null ? `${ratio}%` : "—"}</td>
                 </tr>
               );
@@ -233,146 +188,7 @@ function BudgetTable({ rows, editable, onChange }: BudgetTableProps) {
   );
 }
 
-
-interface CategoryEditFormProps {
-  draft: ReportCategory;
-  onField: <K extends keyof ReportCategory>(key: K, value: ReportCategory[K]) => void;
-  onItemChange: (itemId: string, patch: Partial<ReportItem>) => void;
-  onAddItem: () => void;
-  onRemoveItem: (itemId: string) => void;
-  onBudgetChange: (brand: string, patch: Partial<BudgetRow>) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  saving: boolean;
-}
-
-function CategoryEditForm({ draft, onField, onItemChange, onAddItem, onRemoveItem, onBudgetChange, onSave, onCancel, saving }: CategoryEditFormProps) {
-  const isAutoBudget = draft.id === "07" && draft.autoCalculated;
-  const isAutoNumeric = draft.autoCalculated && !isAutoBudget;
-
-  return (
-    <div className="space-y-4 bg-stone-50 rounded-xl p-3">
-      {isAutoBudget ? (
-        <div className="space-y-2">
-          <p className="text-xs text-stone-500">예산은 월 목표 기준 자동 계산돼요. <b className="text-stone-700">사업팀매출</b>과 <b className="text-stone-700">비용</b>만 입력해주세요.</p>
-          <BudgetTable rows={draft.budgetRows ?? []} editable onChange={onBudgetChange} />
-        </div>
-      ) : isAutoNumeric ? (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-stone-500 block mb-1">목표 (월 목표 기준 자동계산)</label>
-            <div className="w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm text-stone-500">{draft.target || "—"}</div>
-          </div>
-          <div>
-            <label className="text-xs text-stone-500 block mb-1">실적 (숫자만 입력)</label>
-            <input type="number" value={draft.actualNum ?? ""} onChange={(e) => onField("actualNum", e.target.value === "" ? null : Number(e.target.value))} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs text-stone-500 block mb-1">달성률 (자동계산)</label>
-            <div className={`w-full border border-stone-200 bg-stone-100 rounded-lg px-2 py-1.5 text-sm font-bold ${STATUS_TEXT[draft.status]}`}>{draft.rateLabel || "실적 입력 시 계산돼요"}</div>
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs text-stone-500 block mb-1">인사이트 — 이 숫자가 의미하는 것 (So What)</label>
-            <input value={draft.note} onChange={(e) => onField("note", e.target.value)} placeholder="예: 검색량은 늘었으나 매출 기여는 제한적" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs text-stone-500 block mb-1">실행 계획 — 다음 주 무엇을 바꿀 것인가 (Now What) {(draft.status === "warn" || draft.status === "bad") && <span className="text-amber-600">(주의·미달 시 작성 권장)</span>}</label>
-            <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="다음 주 바꿀 것을 구체적으로 (예: 전환형 콘텐츠 확대, 검색광고 예산 재배분)" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-          </div>
-        </div>
-      ) : (
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">목표</label>
-          <input value={draft.target} onChange={(e) => onField("target", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">실적 — 결과 요약 (What)</label>
-          <input value={draft.actual} onChange={(e) => onField("actual", e.target.value)} placeholder="예: 목표 대비 539% 달성" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">달성률 표시 (예: 88.8%)</label>
-          <input value={draft.rateLabel} onChange={(e) => onField("rateLabel", e.target.value)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">막대그래프용 숫자 (0~100, 선택)</label>
-          <input type="number" value={draft.rateNum ?? ""} onChange={(e) => onField("rateNum", e.target.value === "" ? null : Number(e.target.value))} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">상태</label>
-          <select value={draft.status} onChange={(e) => onField("status", e.target.value as Status)} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm">
-            <option value="good">달성</option>
-            <option value="warn">주의</option>
-            <option value="bad">미달</option>
-            <option value="unk">산출중</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">인사이트 — 이 숫자가 의미하는 것 (So What)</label>
-          <input value={draft.note} onChange={(e) => onField("note", e.target.value)} placeholder="예: 검색량은 늘었으나 매출 기여는 제한적" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-        </div>
-        <div className="col-span-2">
-          <label className="text-xs text-stone-500 block mb-1">실행 계획 — 다음 주 무엇을 바꿀 것인가 (Now What)</label>
-          <textarea value={draft.alternative ?? ""} onChange={(e) => onField("alternative", e.target.value)} rows={2} placeholder="다음 주 바꿀 것을 구체적으로 (예: 전환형 콘텐츠 확대, 검색광고 예산 재배분)" className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-        </div>
-      </div>
-      )}
-
-      <div className="space-y-3">
-        {draft.items.map((it) => (
-          <div key={it.id} className="bg-white border border-stone-200 rounded-lg p-3 space-y-2">
-            <div className="flex gap-2">
-              <input placeholder="항목명 (예: 꿈비 — 시공매트)" value={it.title} onChange={(e) => onItemChange(it.id, { title: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-              <button onClick={() => onRemoveItem(it.id)} className="text-xs text-rose-400 hover:text-rose-600 px-2 shrink-0">삭제</button>
-            </div>
-            <input placeholder="수치 / 지표" value={it.metric} onChange={(e) => onItemChange(it.id, { metric: e.target.value })} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-            <div className="flex gap-2 items-center bg-stone-50 rounded-lg p-2">
-              <select value={it.brand ?? ""} onChange={(e) => onItemChange(it.id, { brand: e.target.value })} className="border border-stone-200 rounded-lg px-2 py-1 text-xs bg-white">
-                <option value="">브랜드 선택(선택)</option>
-                {BUDGET_BRAND_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-              <input type="number" placeholder="중목표" value={it.midTarget ?? ""} onChange={(e) => onItemChange(it.id, { midTarget: e.target.value === "" ? "" : Number(e.target.value) })} className="w-24 border border-stone-200 rounded-lg px-2 py-1 text-xs" />
-              <input type="number" placeholder="중실적" value={it.midActual ?? ""} onChange={(e) => onItemChange(it.id, { midActual: e.target.value === "" ? "" : Number(e.target.value) })} className="w-24 border border-stone-200 rounded-lg px-2 py-1 text-xs" />
-              {it.midRate && <span className="text-xs font-semibold text-stone-500 ml-auto">{it.midRate}</span>}
-            </div>
-            <div className="flex gap-2">
-              <input placeholder="배지 텍스트 (예: 하락)" value={it.badge} onChange={(e) => onItemChange(it.id, { badge: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-              <select value={it.badgeStatus} onChange={(e) => onItemChange(it.id, { badgeStatus: e.target.value as Status })} className="border border-stone-200 rounded-lg px-2 py-1.5 text-sm">
-                <option value="good">긍정</option>
-                <option value="warn">주의</option>
-                <option value="bad">부정</option>
-                <option value="unk">중립</option>
-              </select>
-            </div>
-            <textarea placeholder="원인 (Why) — 채널 / 상품 / 광고 / 비용구조 중 하나 특정" value={it.cause} onChange={(e) => onItemChange(it.id, { cause: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-            <textarea placeholder="실행 계획 (Now What) — 다음 주 무엇을 바꿀지" value={it.action} onChange={(e) => onItemChange(it.id, { action: e.target.value })} rows={2} className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-            <div className="flex gap-2">
-              <input placeholder="마감일 (선택, 예: 6/30)" value={it.due} onChange={(e) => onItemChange(it.id, { due: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-              <input placeholder="보완 필요 메모 (선택)" value={it.gap} onChange={(e) => onItemChange(it.id, { gap: e.target.value })} className="flex-1 border border-stone-200 rounded-lg px-2 py-1.5 text-sm" />
-            </div>
-          </div>
-        ))}
-        <button onClick={onAddItem} className="w-full border border-dashed border-stone-300 rounded-lg py-2 text-xs text-stone-500 hover:border-kkumbi-400 hover:text-kkumbi-600">+ 항목 추가</button>
-      </div>
-
-      <div className="flex gap-2">
-        <button onClick={onSave} disabled={saving} className="px-4 py-2 bg-kkumbi-500 text-white text-xs font-bold rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
-          {saving ? "저장 중..." : "저장"}
-        </button>
-        <button onClick={onCancel} className="px-4 py-2 border border-stone-200 text-xs font-bold rounded-lg text-stone-600">취소</button>
-      </div>
-    </div>
-  );
-}
-
 export function WeeklyReport() {
-  const [reporterName, setReporterName] = useState("");
-  const [namePromptOpen, setNamePromptOpen] = useState(false);
-  const [nameInput, setNameInput] = useState("");
-  const [teamNames, setTeamNames] = useState<string[]>([]);
-  const [newTeamName, setNewTeamName] = useState("");
-  const [teamNameError, setTeamNameError] = useState("");
-
   const [weeks, setWeeks] = useState<WeekListEntry[]>([]);
   const [week, setWeek] = useState("");
   const [report, setReport] = useState<WeeklyReportData | null>(null);
@@ -380,29 +196,9 @@ export function WeeklyReport() {
   const [viewMode, setViewMode] = useState<"weekly" | "monthly">("weekly");
   const [loading, setLoading] = useState(true);
 
-  const [newWeekOpen, setNewWeekOpen] = useState(false);
-  const [newStart, setNewStart] = useState("");
-  const [newEnd, setNewEnd] = useState("");
-  const [newLabel, setNewLabel] = useState("");
-  const [newWeekSaving, setNewWeekSaving] = useState(false);
-
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [highlightId, setHighlightId] = useState("");
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const [editingId, setEditingId] = useState("");
-  const [draftCategory, setDraftCategory] = useState<ReportCategory | null>(null);
-  const [savingCat, setSavingCat] = useState(false);
-
-  const [feedbackDraft, setFeedbackDraft] = useState("");
-  const [editingFeedback, setEditingFeedback] = useState(false);
-
-  const [sheetSyncing, setSheetSyncing] = useState(false);
-  const [sheetSyncMsg, setSheetSyncMsg] = useState("");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("ggumbi_reporter_name");
-    if (saved) setReporterName(saved);
-  }, []);
 
   const loadWeek = useCallback(async (w?: string) => {
     setLoading(true);
@@ -414,8 +210,6 @@ export function WeeklyReport() {
       setWeek(data.week ?? "");
       setReport(data.report ?? null);
       setMonthly(data.monthly ?? null);
-      setFeedbackDraft(data.report?.prevFeedback ?? "");
-      setTeamNames(data.teamNames ?? []);
     } catch (e) {
       console.error("주간보고 로드 실패:", e);
     } finally {
@@ -424,156 +218,6 @@ export function WeeklyReport() {
   }, []);
 
   useEffect(() => { loadWeek(); }, [loadWeek]);
-
-  function confirmName() {
-    const finalName = nameInput.trim();
-    if (!finalName) return;
-    localStorage.setItem("ggumbi_reporter_name", finalName);
-    setReporterName(finalName);
-    setNamePromptOpen(false);
-  }
-
-  function selectTeamName(name: string) {
-    localStorage.setItem("ggumbi_reporter_name", name);
-    setReporterName(name);
-    setNamePromptOpen(false);
-  }
-
-  async function addTeamName() {
-    const name = newTeamName.trim();
-    if (!name) return;
-    setTeamNameError("");
-    try {
-      const res = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "add_team_name", name }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "오류 발생");
-      setTeamNames(data.teamNames ?? []);
-      setNewTeamName("");
-    } catch (e) {
-      setTeamNameError(e instanceof Error ? e.message : "오류 발생");
-    }
-  }
-
-  async function removeTeamName(name: string) {
-    if (!confirm(`"${name}"을 목록에서 삭제할까요?`)) return;
-    try {
-      const res = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "remove_team_name", name }),
-      });
-      const data = await res.json();
-      if (res.ok) setTeamNames(data.teamNames ?? []);
-    } catch {}
-  }
-
-  function openNewWeekModal() {
-    let start = "";
-    if (report?.endDate) start = addDays(report.endDate, 1);
-    setNewStart(start);
-    setNewEnd(start ? addDays(start, 6) : "");
-    setNewLabel(start ? suggestLabel(start) : "");
-    setNewWeekOpen(true);
-  }
-
-  function handleNewStartChange(v: string) {
-    setNewStart(v);
-    if (v) {
-      setNewEnd((prev) => prev || addDays(v, 6));
-      setNewLabel((prev) => prev || suggestLabel(v));
-    }
-  }
-
-  async function confirmNewWeek() {
-    if (!newStart || !newEnd) return;
-    setNewWeekSaving(true);
-    try {
-      const res = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "new_week", week: newEnd, startDate: newStart, endDate: newEnd,
-          label: newLabel || suggestLabel(newStart), copyFrom: week || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "오류 발생");
-      setWeeks(data.weeks ?? []);
-      setWeek(data.report.week);
-      setReport(data.report);
-      setFeedbackDraft("");
-      setNewWeekOpen(false);
-      setSheetSyncMsg(data.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "오류 발생");
-    } finally {
-      setNewWeekSaving(false);
-    }
-  }
-
-  async function saveFeedback() {
-    if (!week) return;
-    try {
-      const res = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "update_feedback", week, prevFeedback: feedbackDraft }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setReport(data.report);
-        setEditingFeedback(false);
-        setSheetSyncMsg(data.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
-      }
-    } catch {}
-  }
-
-  async function pullFromSheet() {
-    if (!week) return;
-    setSheetSyncing(true);
-    setSheetSyncMsg("");
-    try {
-      const res = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sheet_pull", week }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "오류 발생");
-      setReport(data.report);
-      if (data.monthly !== undefined) setMonthly(data.monthly);
-      setFeedbackDraft(data.report?.prevFeedback ?? "");
-      setSheetSyncMsg(data.found === false ? "구글시트에 이번 주 데이터가 아직 없어요." : "구글시트에서 불러왔습니다.");
-    } catch (e) {
-      setSheetSyncMsg(e instanceof Error ? `가져오기 실패: ${e.message}` : "가져오기 실패");
-    } finally {
-      setSheetSyncing(false);
-    }
-  }
-
-  async function pushToSheet() {
-    if (!week) return;
-    setSheetSyncing(true);
-    setSheetSyncMsg("");
-    try {
-      const res = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sheet_push", week }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "오류 발생");
-      setSheetSyncMsg("구글시트로 내보냈습니다.");
-    } catch (e) {
-      setSheetSyncMsg(e instanceof Error ? `내보내기 실패: ${e.message}` : "내보내기 실패");
-    } finally {
-      setSheetSyncing(false);
-    }
-  }
 
   function toggleOpen(id: string) {
     setOpenIds((prev) => {
@@ -585,106 +229,17 @@ export function WeeklyReport() {
 
   // 상단 KPI 카드 클릭 → 해당 블록 열고 + 부드럽게 스크롤 + 잠깐 강조
   function scrollToBlock(id: string) {
-    setOpenIds((prev) => new Set(prev).add(id)); // 항상 열기
+    setOpenIds((prev) => new Set(prev).add(id));
     setHighlightId(id);
-    // 블록이 열리며 높이가 바뀌므로, 다음 렌더 후 스크롤
     setTimeout(() => {
       const el = blockRefs.current[id];
       if (!el) return;
-      // 상단 고정 카드 영역에 가려지지 않도록 여백을 두고 스크롤
-      const STICKY_OFFSET = 240; // 고정된 KPI 카드 영역 대략 높이(px)
+      const STICKY_OFFSET = 240;
       const y = el.getBoundingClientRect().top + window.scrollY - STICKY_OFFSET;
       window.scrollTo({ top: y, behavior: "smooth" });
     }, 60);
-    // 강조 효과 1.6초 후 해제
     setTimeout(() => setHighlightId((cur) => (cur === id ? "" : cur)), 1600);
   }
-
-  function startEdit(cat: ReportCategory) {
-    if (!reporterName) { setNameInput(""); setNamePromptOpen(true); return; }
-    setDraftCategory(JSON.parse(JSON.stringify(cat)));
-    setEditingId(cat.id);
-    setOpenIds((prev) => new Set(prev).add(cat.id));
-  }
-  function cancelEdit() { setEditingId(""); setDraftCategory(null); }
-
-  async function saveCategory() {
-    if (!draftCategory || !week) return;
-    setSavingCat(true);
-    try {
-      const isAutoBudget = draftCategory.id === "07" && draftCategory.autoCalculated;
-      const isAutoNumeric = draftCategory.autoCalculated && !isAutoBudget;
-
-      if (isAutoBudget) {
-        const res0 = await fetch("/api/weekly-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "save_budget_rows", week, categoryId: draftCategory.id,
-            rows: (draftCategory.budgetRows ?? []).map((r) => ({ brand: r.brand, revenue: r.revenue, cost: r.cost })),
-            updatedBy: reporterName,
-          }),
-        });
-        const d0 = await res0.json();
-        if (!res0.ok) throw new Error(d0.error || "오류 발생");
-      } else if (isAutoNumeric) {
-        const res0 = await fetch("/api/weekly-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "update_category", week, categoryId: draftCategory.id, actualNum: draftCategory.actualNum, note: draftCategory.note, alternative: draftCategory.alternative, updatedBy: reporterName }),
-        });
-        const d0 = await res0.json();
-        if (!res0.ok) throw new Error(d0.error || "오류 발생");
-      } else {
-        const res0 = await fetch("/api/weekly-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "update_category", week, categoryId: draftCategory.id,
-            target: draftCategory.target, actual: draftCategory.actual,
-            rateLabel: draftCategory.rateLabel, rateNum: draftCategory.rateNum,
-            status: draftCategory.status, note: draftCategory.note,
-            alternative: draftCategory.alternative, updatedBy: reporterName,
-          }),
-        });
-        const d0 = await res0.json();
-        if (!res0.ok) throw new Error(d0.error || "오류 발생");
-      }
-
-      const res2 = await fetch("/api/weekly-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save_items", week, categoryId: draftCategory.id, items: draftCategory.items, updatedBy: reporterName }),
-      });
-      const d2 = await res2.json();
-      if (!res2.ok) throw new Error(d2.error || "오류 발생");
-      setReport(d2.report);
-      if (d2.monthly !== undefined) setMonthly(d2.monthly);
-      setEditingId(""); setDraftCategory(null);
-      setSheetSyncMsg(d2.sheetSynced === false ? "저장은 완료됐지만 구글시트 동기화는 실패했어요." : "");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "오류 발생");
-    } finally {
-      setSavingCat(false);
-    }
-  }
-
-  function updateDraftField<K extends keyof ReportCategory>(key: K, value: ReportCategory[K]) {
-    setDraftCategory((prev) => (prev ? { ...prev, [key]: value } : prev));
-  }
-  function updateDraftItem(itemId: string, patch: Partial<ReportItem>) {
-    setDraftCategory((prev) => prev ? { ...prev, items: prev.items.map((it) => it.id === itemId ? { ...it, ...patch } : it) } : prev);
-  }
-  function addDraftItem() {
-    setDraftCategory((prev) => prev ? { ...prev, items: [...prev.items, emptyItem()] } : prev);
-  }
-  function removeDraftItem(itemId: string) {
-    setDraftCategory((prev) => prev ? { ...prev, items: prev.items.filter((it) => it.id !== itemId) } : prev);
-  }
-  function updateDraftBudgetRow(brand: string, patch: Partial<BudgetRow>) {
-    setDraftCategory((prev) => prev ? { ...prev, budgetRows: (prev.budgetRows ?? []).map((r) => r.brand === brand ? { ...r, ...patch } : r) } : prev);
-  }
-
 
   const categories = report?.categories ?? [];
   const tally: Record<Status, number> = { good: 0, warn: 0, bad: 0, unk: 0 };
@@ -699,46 +254,16 @@ export function WeeklyReport() {
     });
   });
 
-  const newWeekModal = newWeekOpen ? (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setNewWeekOpen(false)}>
-      <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-sm font-bold text-stone-800">새 주차 만들기</h3>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">시작일</label>
-          <input type="date" value={newStart} onChange={(e) => handleNewStartChange(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">종료일</label>
-          <input type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} min={newStart || undefined} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-stone-500 block mb-1">제목</label>
-          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 6월 4주차" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
-        </div>
-        {newStart && newEnd && <p className="text-xs text-stone-400">{fmtMD(newStart)} ~ {fmtMD(newEnd)}</p>}
-        <div className="flex gap-2">
-          <button onClick={confirmNewWeek} disabled={!newStart || !newEnd || newWeekSaving} className="flex-1 bg-kkumbi-500 text-white text-sm font-bold rounded-lg py-2 disabled:opacity-50">
-            {newWeekSaving ? "만드는 중..." : "만들기"}
-          </button>
-          <button onClick={() => setNewWeekOpen(false)} className="px-4 border border-stone-200 rounded-lg text-sm text-stone-600">취소</button>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
   if (loading && !report) {
     return <p className="text-sm text-stone-400 text-center py-12">불러오는 중...</p>;
   }
 
   if (!loading && !week) {
     return (
-      <>
-        <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-3">
-          <p className="text-sm text-stone-500">아직 등록된 주차가 없습니다.</p>
-          <button onClick={openNewWeekModal} className="px-4 py-2 bg-kkumbi-500 text-white text-sm font-bold rounded-lg hover:bg-kkumbi-600">+ 첫 주차 시작하기</button>
-        </div>
-        {newWeekModal}
-      </>
+      <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-2">
+        <p className="text-sm text-stone-500">아직 등록된 주차가 없습니다.</p>
+        <p className="text-xs text-stone-400">구글시트에서 주차를 생성하면 여기에 자동으로 표시됩니다.</p>
+      </div>
     );
   }
 
@@ -762,7 +287,7 @@ export function WeeklyReport() {
           </div>
           <h2 className="text-base font-bold text-stone-800">{viewMode === "weekly" ? "주간보고 대시보드" : "월간보고 대시보드"}</h2>
           <p className="text-xs text-stone-500">
-            팬슈머마케팅팀 · {report?.label || week}{report?.startDate && report?.endDate ? ` (${fmtMD(report.startDate)}~${fmtMD(report.endDate)})` : ""} · {reporterName ? `로그인: ${reporterName}` : "이름을 설정해주세요"}
+            팬슈머마케팅팀 · {report?.label || week}{report?.startDate && report?.endDate ? ` (${fmtMD(report.startDate)}~${fmtMD(report.endDate)})` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -773,51 +298,27 @@ export function WeeklyReport() {
               </option>
             ))}
           </select>
-          <button onClick={openNewWeekModal} className="px-3 py-2 bg-kkumbi-500 text-white text-xs font-semibold rounded-lg hover:bg-kkumbi-600">+ 새 주차</button>
-          <button onClick={pullFromSheet} disabled={sheetSyncing} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">
-            {sheetSyncing ? "동기화 중…" : "↓ 시트에서 가져오기"}
-          </button>
-          <button onClick={pushToSheet} disabled={sheetSyncing} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">
-            ↑ 시트로 내보내기
-          </button>
-          <button onClick={() => { setNameInput(reporterName); setNamePromptOpen(true); }} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">
-            {reporterName || "이름 설정"}
+          <button onClick={() => loadWeek(week)} disabled={loading} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">
+            {loading ? "새로고침 중…" : "↻ 새로고침"}
           </button>
           <button onClick={() => window.print()} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">인쇄</button>
         </div>
       </div>
-
-      {sheetSyncMsg && (
-        <p className="text-xs text-stone-500 -mt-2">🔄 {sheetSyncMsg}</p>
-      )}
 
       {viewMode === "monthly" ? (
         <MonthlyReport monthly={monthly} />
       ) : (
       <>
       <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 text-xs text-stone-500 flex flex-wrap gap-4">
-        <span><b className="text-stone-700">4단계 필수</b> 결과(달성률) · 원인 · 인사이트 · 실행 계획</span>
-        <span><b className="text-stone-700">원인 특정</b> 채널 / 상품 / 광고 / 비용구조 중 1개</span>
-        <span><b className="text-stone-700">업로드</b> 매주 화 18:00까지</span>
-        <span><b className="text-stone-700">회의 중 신규 자료 공유 금지</b></span>
+        <span><b className="text-stone-700">데이터 입력은 구글시트에서</b> · 이 화면은 시트 데이터를 보여주는 조회 전용입니다</span>
+        <span><b className="text-stone-700">4단계 관점</b> 결과(달성률) · 원인 · 인사이트 · 실행 계획</span>
       </div>
 
       <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-        <div className="flex items-center justify-between mb-1">
+        <div className="mb-1">
           <span className="text-xs font-bold text-amber-800">전주 회장님 피드백</span>
-          {!editingFeedback && <button onClick={() => setEditingFeedback(true)} className="text-xs text-amber-700 hover:underline">수정</button>}
         </div>
-        {editingFeedback ? (
-          <div className="space-y-2">
-            <textarea value={feedbackDraft} onChange={(e) => setFeedbackDraft(e.target.value)} rows={2} className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm" />
-            <div className="flex gap-2">
-              <button onClick={saveFeedback} className="px-3 py-1 bg-kkumbi-500 text-white text-xs rounded-lg">저장</button>
-              <button onClick={() => { setEditingFeedback(false); setFeedbackDraft(report?.prevFeedback ?? ""); }} className="px-3 py-1 border border-stone-200 text-xs rounded-lg">취소</button>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-stone-700">{report?.prevFeedback || "(미기재)"}</p>
-        )}
+        <p className="text-sm text-stone-700 whitespace-pre-wrap">{report?.prevFeedback || "(미기재)"}</p>
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -856,7 +357,6 @@ export function WeeklyReport() {
       <div className="space-y-3">
         {categories.map((c) => {
           const isOpen = openIds.has(c.id);
-          const isEditing = editingId === c.id;
           const isHighlighted = highlightId === c.id;
           return (
             <div
@@ -873,47 +373,27 @@ export function WeeklyReport() {
                   </p>
                 </div>
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${STATUS_CLASS[c.status]}`}>{c.rateLabel || STATUS_LABEL[c.status]}</span>
-                <button onClick={(e) => { e.stopPropagation(); startEdit(c); }} className="text-xs text-kkumbi-600 font-semibold hover:underline shrink-0">수정</button>
               </div>
               {isOpen && (
                 <div className="border-t border-stone-100 px-4 py-3 space-y-3">
-                  {c.updatedBy && (
-                    <p className="text-xs text-stone-400">
-                      마지막 수정: {c.updatedBy}{c.updatedAt ? ` · ${new Date(c.updatedAt).toLocaleString("ko-KR")}` : ""}
-                    </p>
+                  {c.id === "07" && c.autoCalculated && c.budgetRows && (
+                    <BudgetTable rows={c.budgetRows} />
                   )}
-                  {isEditing && draftCategory ? (
-                    <CategoryEditForm
-                      draft={draftCategory}
-                      onField={updateDraftField}
-                      onItemChange={updateDraftItem}
-                      onAddItem={addDraftItem}
-                      onRemoveItem={removeDraftItem}
-                      onBudgetChange={updateDraftBudgetRow}
-                      onSave={saveCategory}
-                      onCancel={cancelEdit}
-                      saving={savingCat}
-                    />
+                  {c.note && (
+                    <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+                      <p className="text-[11px] font-bold text-stone-500 uppercase mb-1">인사이트 (So What)</p>
+                      <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.note}</p>
+                    </div>
+                  )}
+                  {c.alternative && (
+                    <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2">
+                      <p className="text-[11px] font-bold text-kkumbi-600 uppercase mb-1">실행 계획 (Now What)</p>
+                      <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.alternative}</p>
+                    </div>
+                  )}
+                  {c.items.length === 0 ? (
+                    <p className="text-xs text-stone-400">등록된 항목이 없습니다.</p>
                   ) : (
-                    <>
-                      {c.id === "07" && c.autoCalculated && c.budgetRows && (
-                        <BudgetTable rows={c.budgetRows} editable={false} />
-                      )}
-                      {c.note && (
-                        <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
-                          <p className="text-[11px] font-bold text-stone-500 uppercase mb-1">인사이트 (So What)</p>
-                          <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.note}</p>
-                        </div>
-                      )}
-                      {c.alternative && (
-                        <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2">
-                          <p className="text-[11px] font-bold text-kkumbi-600 uppercase mb-1">실행 계획 (Now What)</p>
-                          <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.alternative}</p>
-                        </div>
-                      )}
-                      {c.items.length === 0 ? (
-                        <p className="text-xs text-stone-400">등록된 항목이 없습니다. 수정 버튼을 눌러 추가해주세요.</p>
-                      ) : (
                     c.items.map((it) => (
                       <div key={it.id} className="border-b border-stone-100 pb-3 last:border-b-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
@@ -935,8 +415,6 @@ export function WeeklyReport() {
                         {it.gap && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1 mt-2">⚠ {it.gap}</p>}
                       </div>
                     ))
-                      )}
-                    </>
                   )}
                 </div>
               )}
@@ -977,56 +455,6 @@ export function WeeklyReport() {
         )}
       </div>
       </>
-      )}
-
-      {newWeekModal}
-
-      {namePromptOpen && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setNamePromptOpen(false)}>
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-stone-800">이름을 선택해주세요</h3>
-            <p className="text-xs text-stone-500">입력·수정 시 &quot;마지막 수정자&quot;로 기록됩니다. 클릭하면 바로 선택돼요.</p>
-
-            <div className="flex flex-wrap gap-1.5">
-              {teamNames.length === 0 && <p className="text-xs text-stone-400">등록된 팀원이 없습니다. 아래에서 추가해주세요.</p>}
-              {teamNames.map((n) => (
-                <span
-                  key={n}
-                  onClick={() => selectTeamName(n)}
-                  className={`group flex items-center gap-1 text-xs px-3 py-1.5 rounded-full cursor-pointer transition ${n === reporterName ? "bg-kkumbi-500 text-white" : "bg-stone-100 text-stone-700 hover:bg-stone-200"}`}
-                >
-                  {n}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeTeamName(n); }}
-                    className={`hidden group-hover:inline ml-0.5 ${n === reporterName ? "text-white/80 hover:text-white" : "text-rose-400 hover:text-rose-600"}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                placeholder="새 팀원 이름 추가 (예: 김소원JM)"
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addTeamName()}
-                className="flex-1 border border-stone-200 rounded-lg px-3 py-2 text-sm"
-              />
-              <button onClick={addTeamName} className="px-3 py-2 bg-stone-100 text-stone-700 text-sm font-semibold rounded-lg hover:bg-stone-200">+ 추가</button>
-            </div>
-            {teamNameError && <p className="text-xs text-rose-500">{teamNameError}</p>}
-
-            <div className="border-t border-stone-100 pt-3 space-y-2">
-              <input placeholder="목록에 없으면 직접 입력" value={nameInput} onChange={(e) => setNameInput(e.target.value)} className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
-              <div className="flex gap-2">
-                <button onClick={confirmName} className="flex-1 bg-kkumbi-500 text-white text-sm font-bold rounded-lg py-2">이 이름으로 확인</button>
-                <button onClick={() => setNamePromptOpen(false)} className="px-4 border border-stone-200 rounded-lg text-sm text-stone-600">취소</button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
