@@ -4,12 +4,13 @@
 export interface CompRow { name: string; mine: boolean; idx: string; delta: string; pk: string; state: string; }
 export interface CompBlock { cat: string; rows: CompRow[]; note: string; }
 export interface IgInfo { upload: string; follow: string; good: string; bad: string; }
+export interface IgContent { name: string; views: string; reach: string; follows: string; shares: string; comments: string; }
 export interface BrandInsight {
   id: string; tag: string; name: string; target: string; noTrend: boolean;
   comp: CompBlock[];
   shopTitle: string; shop: string[][];
   rankNote: string; improvement: string;
-  ig: IgInfo; igContents: string[][];
+  ig: IgInfo; igContents: IgContent[];
   supporters: string; lastWork: string[][]; thisWeek: string[][];
 }
 
@@ -190,14 +191,14 @@ export const BRAND_INSIGHTS: BrandInsight[] = [
       "bad": "매트 기획전 부재로 인스타 발행 명분 부족. 콘텐츠 지표 시트 연동 필요."
     },
     "igContents": [
-      [
-        "매트 콘텐츠 (입력 대기)",
-        "—",
-        "—",
-        "—",
-        "—",
-        "—"
-      ]
+      {
+        "name": "매트 콘텐츠 (입력 대기)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
     ],
     "supporters": "메가 인플루언서·엔젤맘 후기로 폴더매트·범퍼침대 1P 노출 유지 중. 신규 서포터즈는 봄봄·슈슈비 클립매트 1기와 연계 운영.",
     "lastWork": [
@@ -450,14 +451,14 @@ export const BRAND_INSIGHTS: BrandInsight[] = [
       "bad": "과거 유입링크 오류로 판매 종료 제품에 유입되던 문제 발견(전월 방문유입 11건) → 인스타 재정비."
     },
     "igContents": [
-      [
-        "썸머페스타 예고 피드(7/14)",
-        "—",
-        "—",
-        "—",
-        "—",
-        "—"
-      ]
+      {
+        "name": "썸머페스타 예고 피드(7/14)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
     ],
     "supporters": "클립매트 서포터즈 1기 모집(7/14~7/21). 봄봄 10명(스킨텍스처 그란데 5장 무료+시공비 무료+눌림방지패드), 꿈비 10명(디자인클립매트 12장). 우수활동자 2명 꿈비 교구장 3종 증정.",
     "lastWork": [
@@ -753,14 +754,14 @@ export const BRAND_INSIGHTS: BrandInsight[] = [
       "bad": "시즌제품(쿨시트·쿨링커버) 인스타 노출 부족. 콘텐츠 지표 시트 연동 필요."
     },
     "igContents": [
-      [
-        "도토리 무료 런칭체험단 후기(예정)",
-        "—",
-        "—",
-        "—",
-        "—",
-        "—"
-      ]
+      {
+        "name": "도토리 무료 런칭체험단 후기(예정)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
     ],
     "supporters": "도토리 할인체험단 최종 72명 → 포토리뷰·맘카페 후기 142건 생성 예정(미제출자 독려). 브랜드커넥트 10명 ~7/19 블로그 상위노출 콘텐츠 생성. 무료 런칭체험단 20명 발표(~7/15).",
     "lastWork": [
@@ -897,22 +898,22 @@ export const BRAND_INSIGHTS: BrandInsight[] = [
       "bad": "이벤트 종료 이후 검색량 차츰 하락 → 정기화 필요. 콘텐츠별 지표 시트 연동 필요."
     },
     "igContents": [
-      [
-        "7월 혜택 안내 피드",
-        "—",
-        "—",
-        "—",
-        "—",
-        "—"
-      ],
-      [
-        "라이브 이벤트 피드",
-        "—",
-        "—",
-        "—",
-        "—",
-        "—"
-      ]
+      {
+        "name": "7월 혜택 안내 피드",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      },
+      {
+        "name": "라이브 이벤트 피드",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
     ],
     "supporters": "스쿠스쿠 로션 30인 체험단(브랜드커넥트, 마감 7/16) 기획. 오그맘 36기 논나노 미네랄 선크림 선택 체험단(미션 7/8~14) 진행 중 → 블로그·카페 상위노출.",
     "lastWork": [
@@ -1064,14 +1065,14 @@ export const BRAND_INSIGHTS: BrandInsight[] = [
       "bad": "노출 대비 검색 전환 미흡. ‘바바디토 검색’ 이벤트로 브랜드명 반복 노출 필요."
     },
     "igContents": [
-      [
-        "위드바바 27기 콘텐츠(진행)",
-        "—",
-        "—",
-        "—",
-        "—",
-        "—"
-      ]
+      {
+        "name": "위드바바 27기 콘텐츠(진행)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
     ],
     "supporters": "[인스타] 7월 깨끗한 주방 50인 체험단 진행 중. 위드바바 27기 기획(마감 7/15). 제품군별 검색 이벤트 동반 체험단 순차 기획.",
     "lastWork": [
@@ -1202,14 +1203,14 @@ export const BRAND_INSIGHTS: BrandInsight[] = [
       "bad": "대표 키워드 노출 부족. 콘텐츠 지표 시트 연동 필요."
     },
     "igContents": [
-      [
-        "무브스테이 캣타워 체험단(진행)",
-        "—",
-        "—",
-        "—",
-        "—",
-        "—"
-      ]
+      {
+        "name": "무브스테이 캣타워 체험단(진행)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
     ],
     "supporters": "인턴 27기 모집 기획(무브스테이 캣타워·강아지 계단·카페트 매트, 마감 7/15). 체험단 운영과 펫바우처 입점 소식 홍보 병행.",
     "lastWork": [
