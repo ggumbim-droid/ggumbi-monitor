@@ -1,457 +1,381 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { BrandInsights } from "./BrandInsights";
-import { parseNarrative } from "@/lib/narrative";
+import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, type BrandInsight } from "@/lib/brand-insights";
 
-type Status = "good" | "warn" | "bad" | "unk";
+const BRAND_COLORS = ["#f56b3d", "#10B981", "#45B7D1", "#8B5CF6", "#0EA5E9", "#EC4899", "#14B8A6", "#94A3B8"];
+type Row = Record<string, string | number>;
 
-interface ReportItem {
-  id: string; title: string; metric: string; badge: string; badgeStatus: Status;
-  cause: string; action: string; due: string; gap: string;
-  brand?: string; midTarget?: number | string | null; midActual?: number | string | null; midRate?: string;
-}
-interface BudgetRow { brand: string; budget: number; revenue: number | null; cost: number | null; }
-interface ReportCategory {
-  id: string; title: string; target: string; actual: string; rateLabel: string; rateNum: number | null;
-  status: Status; note: string; items: ReportItem[]; actualNum?: number | null; budgetRows?: BudgetRow[];
-  alternative?: string; autoCalculated?: boolean;
-}
-interface WeeklyReportData { categories: ReportCategory[]; }
+interface KwBrand { name: string; keywords: string[] }
+interface KwGroups { [key: string]: { label: string; brands: KwBrand[] } }
 
-interface Brand { brand: string; monthTarget: number | null; cumTarget: number | null; cumActual: number | null; rate: number | null; excluded?: boolean; }
-interface WeeklyInsight { week: string; label: string; result: string; insight: string; action: string; }
-interface SeriesPt { week: string; label: string; cumActual: number | null; cumProgress: number | null; }
-interface MonthlyCat {
-  id: string; title: string; unit: string;
-  cumulativeActual: number | null; cumulativeRate: number | null; monthTarget: number | null;
-  projectedActual: number | null; projectedRate: number | null;
-  weeksCounted: number; weeklyInsights: WeeklyInsight[]; weeklySeries: SeriesPt[]; brands: Brand[];
-}
-interface MonthlySummary { month: string; daysElapsed: number; daysInMonth: number; categories: MonthlyCat[]; }
+const STACK = [
+  { label: "주간(전주 월~일)", value: "lastweek" },
+  { label: "3년", value: "3years" },
+];
 
-function statusOf(rate: number | null): Status {
-  if (rate === null) return "unk";
-  if (rate >= 95) return "good";
-  if (rate >= 70) return "warn";
-  return "bad";
+function stateBadge(state: string) {
+  if (state === "up") return <span className="text-emerald-700 bg-emerald-50 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">상승</span>;
+  if (state === "down") return <span className="text-rose-700 bg-rose-50 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">하락</span>;
+  return <span className="text-stone-500 bg-stone-100 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">유지</span>;
 }
-const BAR_HEX: Record<Status, string> = { good: "#10b981", warn: "#f59e0b", bad: "#f43f5e", unk: "#a8a29e" };
-const RATE_TEXT: Record<Status, string> = { good: "text-emerald-600", warn: "text-amber-600", bad: "text-rose-600", unk: "text-stone-400" };
-const RATE_TEXT2: Record<Status, string> = { good: "text-emerald-700", warn: "text-amber-700", bad: "text-rose-700", unk: "text-stone-500" };
-const CHIP: Record<Status, string> = {
-  good: "bg-emerald-50 text-emerald-700", warn: "bg-amber-50 text-amber-700",
-  bad: "bg-rose-50 text-rose-700", unk: "bg-stone-100 text-stone-500",
+function Delta({ v }: { v: string }) {
+  const n = parseFloat(v);
+  if (!n || isNaN(n)) return <span className="text-stone-400">{v || "0"}</span>;
+  const up = n > 0;
+  return <span className={up ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>{up ? "▲" : "▼"} {Math.abs(n)}</span>;
+}
+const rankStyle: Record<string, { cls: string; t: string }> = {
+  page1: { cls: "text-emerald-700 bg-emerald-50", t: "1P 노출" },
+  part: { cls: "text-amber-700 bg-amber-50", t: "부분 노출" },
+  none: { cls: "text-rose-700 bg-rose-50", t: "미노출" },
 };
-const PROJ_LABEL: Record<Status, string> = { good: "달성 예상", warn: "주의", bad: "미달 예상", unk: "산출중" };
 
-function fmt(n: number | null | undefined, unit = ""): string {
-  if (n === null || n === undefined) return "—";
-  return n.toLocaleString() + unit;
-}
-function shortLabel(label: string): string {
-  const m = label.match(/(\d+)주/);
-  return m ? `${m[1]}주` : label;
-}
-function progressOf(c: MonthlyCat): number | null {
-  if (c.monthTarget && c.monthTarget > 0 && c.cumulativeActual !== null) return Math.round((c.cumulativeActual / c.monthTarget) * 1000) / 10;
-  return null;
-}
-
-function isExclBrand(name: string): boolean {
-  const low = name.trim().toLowerCase().replace(/\s+/g, "");
-  return low === "g7" || low === "g7커피" || low === "g7coffee";
-}
-
-function BudgetTable({ rows }: { rows: BudgetRow[] }) {
-  const totalRows = rows.filter((r) => !isExclBrand(r.brand));
-  const tb = totalRows.reduce((s, r) => s + r.budget, 0);
-  const tr = totalRows.reduce((s, r) => s + (r.revenue ?? 0), 0);
-  const tc = totalRows.reduce((s, r) => s + (r.cost ?? 0), 0);
-  const ratio = tr > 0 ? Math.round((tc / tr) * 1000) / 10 : null;
+interface TooltipEntry { name: string; value: number; color: string; }
+function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) {
+  if (!active || !payload?.length) return null;
   return (
-    <table className="w-full text-xs mt-1">
-      <thead><tr className="border-b border-stone-200 text-stone-500">
-        <th className="text-left py-1.5 font-semibold">브랜드</th>
-        <th className="text-right py-1.5 font-semibold">예산</th>
-        <th className="text-right py-1.5 font-semibold">매출</th>
-        <th className="text-right py-1.5 font-semibold">비용</th>
-        <th className="text-right py-1.5 font-semibold">비중</th>
-      </tr></thead>
-      <tbody>
-        {rows.map((r) => {
-          const rr = r.revenue && r.revenue > 0 ? Math.round(((r.cost ?? 0) / r.revenue) * 1000) / 10 : null;
-          if (isExclBrand(r.brand)) {
-            return (
-              <tr key={r.brand} className="border-b border-stone-100 bg-stone-50/60 text-stone-400">
-                <td className="py-1.5 font-medium">{r.brand} <span className="text-[9px] align-middle bg-stone-200 text-stone-500 rounded px-1 py-0.5 ml-0.5">합계 제외</span></td>
-                <td className="py-1.5 text-right">{fmt(r.budget)}</td>
-                <td className="py-1.5 text-right">{fmt(r.revenue)}</td>
-                <td className="py-1.5 text-right">{fmt(r.cost)}</td>
-                <td className="py-1.5 text-right">{rr !== null ? `${rr}%` : "참고"}</td>
-              </tr>
-            );
-          }
-          return (
-            <tr key={r.brand} className="border-b border-stone-100">
-              <td className="py-1.5 font-medium text-stone-700">{r.brand}</td>
-              <td className="py-1.5 text-right text-stone-500">{fmt(r.budget)}</td>
-              <td className="py-1.5 text-right text-emerald-700">{fmt(r.revenue)}</td>
-              <td className="py-1.5 text-right text-stone-600">{fmt(r.cost)}</td>
-              <td className="py-1.5 text-right font-semibold text-stone-700">{rr !== null ? `${rr}%` : "—"}</td>
-            </tr>
-          );
-        })}
-        <tr className="font-bold text-stone-800">
-          <td className="py-1.5">합계 <span className="text-[9px] font-normal text-stone-400">(G7 제외)</span></td>
-          <td className="py-1.5 text-right">{fmt(tb)}</td>
-          <td className="py-1.5 text-right text-emerald-700">{fmt(tr)}</td>
-          <td className="py-1.5 text-right">{fmt(tc)}</td>
-          <td className="py-1.5 text-right">{ratio !== null ? `${ratio}%` : "—"}</td>
-        </tr>
-      </tbody>
-    </table>
-  );
-}
-
-function Gauge({ rate }: { rate: number | null }) {
-  const st = statusOf(rate);
-  const pct = rate !== null ? Math.min(rate, 100) : 0;
-  const dash = (pct / 100) * 283;
-  return (
-    <svg width="52" height="52" viewBox="0 0 100 100" aria-hidden="true">
-      <circle cx="50" cy="50" r="45" fill="none" stroke="#f5f5f4" strokeWidth="9" />
-      <circle cx="50" cy="50" r="45" fill="none" stroke={BAR_HEX[st]} strokeWidth="9" strokeLinecap="round" strokeDasharray={`${dash} 283`} transform="rotate(-90 50 50)" />
-      <text x="50" y="56" textAnchor="middle" fontSize="23" fill="#292524">{rate !== null ? rate : "—"}</text>
-    </svg>
-  );
-}
-
-function scrollToKpi(id: string) {
-  const el = document.getElementById(`kpi-${id}`);
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-// 주차별 서사 원문을 브랜드 소제목 · 번호항목 · 하위목표로 구조화해 렌더
-function Narrative({ text, accent }: { text: string; accent: "insight" | "action" }) {
-  const blocks = parseNarrative(text);
-  if (blocks.length === 0) return null;
-  // 파싱 결과가 사실상 원문 한 덩어리면(구조 없음) 그냥 원문 표시
-  const structured = blocks.some((b) => b.brand || b.lines.length > 1 || b.lines.some((l) => l.marker));
-  if (!structured) {
-    return <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-wrap">{text}</p>;
-  }
-  const dotColor = accent === "action" ? "bg-kkumbi-400" : "bg-stone-300";
-  const subColor = accent === "action" ? "text-kkumbi-600" : "text-stone-400";
-  return (
-    <div className="space-y-2.5">
-      {blocks.map((b, bi) => (
-        <div key={bi} className={b.brand ? "rounded-md bg-stone-50/70 px-2.5 py-2" : ""}>
-          {b.brand && <p className="text-[11px] font-bold text-stone-700 mb-1.5">{b.brand}</p>}
-          <ul className="space-y-1.5">
-            {b.lines.map((l, li) => {
-              if (l.kind === "sub") {
-                return (
-                  <li key={li} className="ml-4 flex gap-1.5 text-[11px] text-stone-600 leading-relaxed">
-                    <span className={`shrink-0 font-bold ${subColor}`}>{l.marker === "=>" ? "→" : `└ ${l.marker}`}</span>
-                    <span>{l.text}</span>
-                  </li>
-                );
-              }
-              return (
-                <li key={li} className="flex gap-1.5 text-xs text-stone-700 leading-relaxed">
-                  {l.marker ? (
-                    <span className="shrink-0 font-bold text-stone-500 tabular-nums">{l.marker}</span>
-                  ) : (
-                    <span className={`mt-1.5 shrink-0 w-1.5 h-1.5 rounded-full ${dotColor}`} />
-                  )}
-                  <span>{l.text}</span>
-                </li>
-              );
-            })}
-          </ul>
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 10px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)", minWidth: "140px" }}>
+      <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>{label}</p>
+      {payload.map((e) => (
+        <div key={e.name} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "1px 0" }}>
+          <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
+          <span style={{ fontSize: "12px", color: "#6b7280", flex: 1 }}>{e.name}</span>
+          <span style={{ fontSize: "12px", color: e.color }}>{typeof e.value === "number" ? e.value.toFixed(1) : e.value}</span>
         </div>
       ))}
     </div>
   );
 }
 
-export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: MonthlySummary | null; report: WeeklyReportData | null; currentWeek?: string }) {
-  const cats = report?.categories ?? [];
-  const monthlyById = new Map<string, MonthlyCat>();
-  (monthly?.categories ?? []).forEach((m) => monthlyById.set(m.id, m));
-  const pace = monthly && monthly.daysInMonth > 0 ? Math.round((monthly.daysElapsed / monthly.daysInMonth) * 1000) / 10 : 0;
+// 브랜드에 매핑된 키워드 그룹들의 네이버 트렌드를 자동 조회해 표시
+function BrandTrend({ brandId }: { brandId: string }) {
+  const groups = BRAND_TREND_GROUPS[brandId] ?? [];
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [groupBrands, setGroupBrands] = useState<Record<string, KwBrand[]>>({});
+  const [charts, setCharts] = useState<Record<string, Record<string, Row[]>>>({}); // groupId -> period -> rows
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
-  // KPI 요약 카드: 기본 펼침 / 접으면 얇은 바만 남고, 마우스 올리면 임시로 펼쳐짐
-  const [collapsed, setCollapsed] = useState(false);
-  const [peek, setPeek] = useState(false);
-  const showCards = !collapsed || peek;
-  const monthNum = monthly?.month ? Number(monthly.month.split("-")[1]) : null;
-  const monthLabel = monthNum ? `${monthNum}월` : "이번 달";
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/keywords").then((r) => r.json()).then((data: unknown) => {
+      if (!alive || !data || typeof data !== "object") return;
+      const g = data as KwGroups;
+      const lab: Record<string, string> = {};
+      const gb: Record<string, KwBrand[]> = {};
+      groups.forEach((gid) => { if (g[gid]) { lab[gid] = g[gid].label; gb[gid] = g[gid].brands; } });
+      setLabels(lab); setGroupBrands(gb);
+    }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId]);
 
-  function goKpi(id: string) {
-    scrollToKpi(id);
-    // 접힌 상태에서 카드를 눌러 이동하면, 이동 후 다시 접힘 유지
-    if (collapsed) setPeek(false);
+  async function fetchAll() {
+    setLoading(true); setError(""); setLoaded(true);
+    try {
+      const result: Record<string, Record<string, Row[]>> = {};
+      for (const gid of groups) {
+        result[gid] = {};
+        await Promise.all(STACK.map(async (pp) => {
+          const res = await fetch("/api/trend", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ groupId: gid, period: pp.value }),
+          });
+          const data = await res.json();
+          if (res.ok) result[gid][pp.value] = (data.results ?? []) as Row[];
+        }));
+      }
+      setCharts(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  if (cats.length === 0) {
-    return <div className="bg-white border border-stone-200 rounded-xl p-8 text-center text-sm text-stone-500">표시할 KPI 데이터가 없습니다.</div>;
+  if (groups.length === 0) {
+    return <p className="text-xs text-stone-400">이 브랜드에 연결된 검색 트렌드 그룹이 없습니다.</p>;
   }
 
   return (
-    <div className="space-y-4">
-      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200">
-        <div className="flex items-center justify-between mb-2 gap-2">
-          <p className="text-[11px] text-stone-400">
-            월 목표 대비 <b className="text-stone-600">누적</b> · 막대 안 세로선 = 지금쯤 있어야 할 위치(경과 {pace}%) · 카드를 누르면 아래 상세로 이동
-          </p>
-          <button
-            onClick={() => { setCollapsed((v) => !v); setPeek(false); }}
-            className="shrink-0 text-[11px] font-semibold text-stone-500 hover:text-kkumbi-600 border border-stone-200 rounded-full px-2.5 py-1 bg-white transition"
-          >
-            {collapsed ? "▼ 목표 카드 펼치기" : "▲ 목표 카드 접기"}
-          </button>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-[11px] text-stone-400">
+          연결된 검색 그룹: {groups.map((g) => labels[g] || g).join(" · ")}
+        </p>
+        <button onClick={fetchAll} disabled={loading}
+          className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
+          {loading ? "조회 중..." : loaded ? "다시 조회" : "검색 트렌드 조회"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-rose-500">{error}</p>}
+      {!loaded && <p className="text-[11px] text-stone-400">※ 위 버튼을 누르면 네이버 검색 트렌드(주간·3개월)를 불러옵니다.</p>}
+
+      {groups.map((gid) => {
+        const brands = groupBrands[gid] ?? [];
+        const gCharts = charts[gid];
+        return (
+          <div key={gid} className="border border-stone-200 rounded-xl p-3 bg-white">
+            <div className="text-xs font-bold text-stone-700 mb-2">{labels[gid] || gid}</div>
+            {!gCharts ? (
+              <p className="text-[11px] text-stone-300">조회 대기 중</p>
+            ) : (
+              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                {STACK.map((pp) => {
+                  const rows = gCharts[pp.value];
+                  if (!rows || rows.length === 0) return null;
+                  return (
+                    <div key={pp.value}>
+                      <div className="text-[11px] font-semibold text-stone-500 mb-1">{pp.label} 추이</div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <LineChart data={rows}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                          <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                          <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                          <Tooltip content={<TrendTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          {brands.map((b, i) => (
+                            <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-xs font-bold text-kkumbi-700 mb-2 flex items-center gap-1.5">
+      <span className="w-1 h-3.5 bg-kkumbi-400 rounded-sm inline-block" />{children}
+    </div>
+  );
+}
+
+function BrandPanel({ brand }: { brand: BrandInsight }) {
+  return (
+    <div className="space-y-6">
+      <section>
+        <div className="flex items-baseline gap-2 mb-3">
+          <span className="text-[11px] font-bold text-white bg-amber-500 px-2 py-0.5 rounded-md">① 경쟁사 인사이트</span>
+          <span className="text-sm font-bold text-stone-800">검색 트렌드 · 주간 증감 · 특이사항</span>
         </div>
 
-        {/* 접힘 상태: 항상 존재하는 얇은 바 — 여기에 마우스를 올리면 카드가 임시로 펼쳐짐 */}
-        {collapsed && (
-          <div
-            onMouseEnter={() => setPeek(true)}
-            onMouseLeave={() => setPeek(false)}
-            className="flex items-center gap-2 text-[11px] text-stone-400 rounded-lg border border-dashed border-stone-300 bg-white/60 px-3 py-2 cursor-pointer hover:border-kkumbi-300"
-          >
-            <span className="font-semibold text-stone-500">KPI 요약 {peek ? "미리보기" : "접힘"}</span>
-            <span>— 이 줄에 마우스를 올리면 카드가 나타나고, 클릭해서 상세로 이동할 수 있습니다</span>
-          </div>
-        )}
+        <div className="mb-4">
+          <BrandTrend brandId={brand.id} />
+        </div>
 
-        {showCards && (
-          <div
-            onMouseEnter={() => collapsed && setPeek(true)}
-            onMouseLeave={() => collapsed && setPeek(false)}
-            className={`grid grid-cols-2 md:grid-cols-4 gap-2.5 ${collapsed ? "mt-2" : ""}`}
-          >
-            {cats.map((c) => {
-              const m = monthlyById.get(c.id);
-              if (m) {
-                const prog = progressOf(m);
-                const st = statusOf(m.projectedRate);
-                return (
-                  <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
-                    <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
-                    <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-lg font-extrabold text-stone-800">{prog !== null ? `${prog}%` : "—"}</span>
-                      <span className="text-[10px] text-stone-400">누적</span>
-                    </div>
-                    <div className="relative h-2 bg-stone-100 rounded-full overflow-hidden mt-1.5">
-                      <div className="h-full rounded-full" style={{ width: `${prog !== null ? Math.min(prog, 100) : 0}%`, background: BAR_HEX[st] }} />
-                      <div className="absolute top-0 bottom-0 w-px bg-stone-500" style={{ left: `${Math.min(pace, 100)}%` }} />
-                    </div>
-                    <div className="mt-1.5 pt-1.5 border-t border-stone-100 space-y-0.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-stone-400">월 목표</span>
-                        <span className="text-[11px] font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-stone-400">누적 실적</span>
-                        <span className="text-[11px] font-semibold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-stone-400">예상 달성률</span>
-                        <span className={`text-[11px] font-semibold ${RATE_TEXT[st]}`}>{m.projectedRate !== null ? `${m.projectedRate}%` : "—"}</span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              }
+        <div className="space-y-3">
+          {brand.comp.map((block, bi) => (
+            <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
+              <div className="font-bold text-sm text-stone-800 mb-3">{block.cat} · 경쟁사 순위</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-stone-400 text-left">
+                    <th className="py-1 px-1.5 font-medium">브랜드</th>
+                    <th className="py-1 px-1.5 font-medium">7일평균</th>
+                    <th className="py-1 px-1.5 font-medium">증감</th>
+                    <th className="py-1 px-1.5 font-medium">최고점</th>
+                    <th className="py-1 px-1.5 font-medium">상태</th>
+                  </tr></thead>
+                  <tbody>
+                    {block.rows.map((r, i) => (
+                      <tr key={i} className="border-t border-stone-100">
+                        <td className={`py-1.5 px-1.5 ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
+                        <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
+                        <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
+                        <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
+                        <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {block.note && (
+                <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
+                  <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
+                  <p className="text-xs text-stone-600 leading-relaxed mt-1.5">{block.note}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-baseline gap-2 mb-3">
+          <span className="text-[11px] font-bold text-white bg-kkumbi-500 px-2 py-0.5 rounded-md">② 자사 인사이트</span>
+          <span className="text-sm font-bold text-stone-800">목표 달성 현황 · 채널 진단</span>
+        </div>
+        <div className="border border-stone-200 rounded-xl p-4 bg-white space-y-5">
+          <div>
+            <SubLabel>네이버 쇼핑검색 순위 · 1페이지 노출{brand.shopTitle ? ` · ${brand.shopTitle}` : ""}</SubLabel>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-stone-400 text-left border-b border-stone-200">
+                  <th className="py-1.5 px-2 font-medium">키워드</th>
+                  <th className="py-1.5 px-2 font-medium">월검색량</th>
+                  <th className="py-1.5 px-2 font-medium">블로그</th>
+                  <th className="py-1.5 px-2 font-medium">카페</th>
+                  <th className="py-1.5 px-2 font-medium">상태</th>
+                </tr></thead>
+                <tbody>
+                  {brand.shop.map((row, i) => {
+                    const st = rankStyle[row[4]] || rankStyle.none;
+                    return (
+                      <tr key={i} className="border-b border-stone-100">
+                        <td className="py-1.5 px-2 font-semibold text-stone-800">{row[0]}</td>
+                        <td className="py-1.5 px-2 text-stone-600">{row[1]}</td>
+                        <td className="py-1.5 px-2 text-stone-600">{row[2]}</td>
+                        <td className="py-1.5 px-2 text-stone-600">{row[3]}</td>
+                        <td className="py-1.5 px-2"><span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${st.cls}`}>{st.t}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {brand.rankNote && (
+              <div className="mt-2 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2">
+                <p className="text-xs text-stone-600 leading-relaxed">{brand.rankNote}</p>
+              </div>
+            )}
+          </div>
+
+          {brand.lastWork.length > 0 && (
+            <div>
+              <SubLabel>지난주 진행 업무 · 결과 · 달성률</SubLabel>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-stone-400 text-left border-b border-stone-200">
+                    <th className="py-1.5 px-2 font-medium min-w-[130px]">진행 업무</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[150px]">업무 결과</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[90px]">달성률</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[130px]">잘된 점</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[130px]">아쉬운 점</th>
+                  </tr></thead>
+                  <tbody>
+                    {brand.lastWork.map((r, i) => {
+                      const ach = parseFloat(r[2]);
+                      const hasAch = !isNaN(ach);
+                      const color = ach >= 80 ? "bg-emerald-500" : ach >= 40 ? "bg-amber-500" : "bg-rose-500";
+                      const txt = ach >= 80 ? "text-emerald-700" : ach >= 40 ? "text-amber-700" : "text-rose-700";
+                      return (
+                        <tr key={i} className="border-b border-stone-100 align-top">
+                          <td className="py-2 px-2 font-semibold text-stone-800 leading-snug">{r[0]}</td>
+                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[1]}</td>
+                          <td className="py-2 px-2">
+                            {hasAch ? (
+                              <div className="flex items-center gap-1.5 min-w-[80px]">
+                                <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${Math.min(100, ach)}%` }} /></div>
+                                <span className={`text-[11px] font-bold ${txt}`}>{ach}%</span>
+                              </div>
+                            ) : <span className="text-stone-400">—</span>}
+                          </td>
+                          <td className="py-2 px-2 text-emerald-700 leading-snug">{r[3]}</td>
+                          <td className="py-2 px-2 text-rose-700 leading-snug">{r[4]}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {brand.supporters && (
+            <div>
+              <SubLabel>서포터즈 · 인플루언서 관리현황</SubLabel>
+              <p className="text-xs text-stone-600 leading-relaxed">{brand.supporters}</p>
+            </div>
+          )}
+
+          {brand.improvement && (
+            <div>
+              <SubLabel>아쉬운 점 해결방안</SubLabel>
+              <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
+                <span className="text-[10px] font-bold text-kkumbi-700">✎ 시트 연동</span>
+                <p className="text-xs text-kkumbi-800 leading-relaxed mt-1 font-medium">{brand.improvement}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {brand.thisWeek.length > 0 && (
+        <section>
+          <div className="flex items-baseline gap-2 mb-3">
+            <span className="text-[11px] font-bold text-white bg-emerald-500 px-2 py-0.5 rounded-md">③ 금주 업무 · 목표</span>
+            <span className="text-sm font-bold text-stone-800">금주 액션 플랜</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            {brand.thisWeek.map((s, i) => (
+              <div key={i} className="border border-stone-200 border-l-[3px] border-l-emerald-500 rounded-r-lg p-3.5 bg-white">
+                <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">내용</div>
+                <div className="font-bold text-sm text-stone-800 mb-2.5">{s[0]}</div>
+                <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">목표</div>
+                <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md leading-snug mb-2.5">🎯 {s[1]}</div>
+                {s[2] && <>
+                  <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">세부내용</div>
+                  <p className="text-xs text-stone-500 leading-relaxed">{s[2]}</p>
+                </>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+export function BrandInsights() {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
+  const brand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
+
+  return (
+    <div className="mt-5 pt-4 border-t border-stone-200">
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between text-left group">
+        <div>
+          <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
+          <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
+        </div>
+        <span className="text-xs font-semibold text-stone-500 group-hover:text-kkumbi-600 border border-stone-200 rounded-full px-2.5 py-1 shrink-0">
+          {open ? "▲ 접기" : "▼ 펼치기"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-4">
+          <div className="grid gap-2 mb-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+            {BRAND_INSIGHTS.map((b) => {
+              const on = b.id === active;
               return (
-                <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
-                  <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
-                  <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
-                  <div className={`text-base font-extrabold ${RATE_TEXT2[c.status]}`}>{c.rateLabel || PROJ_LABEL[c.status]}</div>
-                  {c.target && <div className="text-[10px] text-stone-400 mt-1.5">목표 {c.target}</div>}
-                  <div className="text-[10px] text-stone-400 mt-0.5 truncate">{c.actual || "—"}</div>
+                <button key={b.id} onClick={() => setActive(b.id)}
+                  className={`text-left rounded-xl px-3 py-2.5 border transition ${on ? "border-kkumbi-400 bg-kkumbi-50" : "border-stone-200 bg-white hover:border-kkumbi-300"}`}>
+                  <div className="text-[11px] text-stone-400 mb-0.5">{b.tag}</div>
+                  <div className={`text-[13px] font-bold leading-tight ${on ? "text-kkumbi-700" : "text-stone-800"}`}>{b.name}</div>
+                  <div className="text-[11px] font-bold text-kkumbi-600 mt-1.5">목표 {b.target}</div>
                 </button>
               );
             })}
           </div>
-        )}
-      </div>
-
-      <div className="space-y-4">
-        {cats.map((c) => {
-          const m = monthlyById.get(c.id);
-          const chartData = m ? m.weeklySeries.map((w) => ({ name: shortLabel(w.label), 누적진행률: w.cumProgress })) : [];
-          const st = m ? statusOf(m.projectedRate) : c.status;
-          return (
-            <div key={c.id} id={`kpi-${c.id}`} className="scroll-mt-56 bg-white border border-stone-200 rounded-xl p-4">
-              <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-                <div className="text-sm font-bold text-stone-800">{c.id} {c.title}</div>
-                {m ? (
-                  <div className="flex items-center gap-3">
-                    <Gauge rate={m.projectedRate} />
-                    <div className="text-[11px] text-stone-400 leading-relaxed">예상 달성률<br /><span className={`font-bold ${RATE_TEXT[st]}`}>{PROJ_LABEL[st]}</span></div>
-                  </div>
-                ) : (
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${CHIP[c.status]}`}>{c.rateLabel || PROJ_LABEL[c.status]}</span>
-                )}
-              </div>
-
-              {m && (
-                <>
-                  <div className="grid grid-cols-3 gap-2 mb-2">
-                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">월 목표 ({monthLabel} 전체)</p><p className="text-sm font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</p></div>
-                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">누적 실적 (현재까지)</p><p className="text-sm font-bold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</p></div>
-                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">예상 실적 (월말)</p><p className="text-sm font-bold text-stone-700">{fmt(m.projectedActual, m.unit)}</p></div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div className="rounded-lg p-2.5 border border-stone-200">
-                      <p className="text-[10px] text-stone-400">누적 달성률 <span className="text-stone-300">(누적÷월목표)</span></p>
-                      <p className={`text-sm font-bold ${RATE_TEXT[statusOf(progressOf(m))]}`}>{progressOf(m) !== null ? `${progressOf(m)}%` : "—"}</p>
-                    </div>
-                    <div className="rounded-lg p-2.5 border border-stone-200">
-                      <p className="text-[10px] text-stone-400">예상 달성률 <span className="text-stone-300">(현 페이스 월말)</span></p>
-                      <p className={`text-sm font-bold ${RATE_TEXT[st]}`}>{m.projectedRate !== null ? `${m.projectedRate}%` : "—"} <span className="text-[10px] font-semibold">· {PROJ_LABEL[st]}</span></p>
-                    </div>
-                  </div>
-                  <div style={{ width: "100%", height: 190 }}>
-                    <ResponsiveContainer>
-                      <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 4, left: 4 }}>
-                        <CartesianGrid stroke="#f0efe9" vertical={false} />
-                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#78716c" }} tickLine={false} axisLine={{ stroke: "#e7e5e4" }} />
-                        <YAxis tick={{ fontSize: 10, fill: "#a8a29e" }} tickLine={false} axisLine={false} domain={[0, (dm: number) => Math.max(100, Math.ceil(dm / 20) * 20)]} tickFormatter={(v: number) => `${v}%`} width={40} />
-                        <Tooltip formatter={(value) => { const v = typeof value === "number" ? value : Number(value); return [isNaN(v) ? "—" : `${v}%`, "누적 진행률"]; }} labelStyle={{ fontSize: 12 }} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e7e5e4" }} />
-                        <ReferenceLine y={100} stroke="#f59e0b" strokeDasharray="5 4" strokeWidth={1.5} label={{ value: "월 목표 100%", position: "insideTopRight", fontSize: 10, fill: "#b45309" }} />
-                        <Line dataKey="누적진행률" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 3, fill: "#6366f1" }} connectNulls />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {m.brands.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-xs font-bold text-stone-600 mb-1">브랜드별 목표 · 실적 ({monthLabel})</p>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs min-w-[420px]">
-                          <thead><tr className="border-b border-stone-200 text-stone-500">
-                            <th className="text-left py-1.5 font-semibold">브랜드</th>
-                            <th className="text-right py-1.5 font-semibold">월 목표 <span className="text-stone-300 font-normal">(전체)</span></th>
-                            <th className="text-right py-1.5 font-semibold">누적 목표 <span className="text-stone-300 font-normal">(경과분)</span></th>
-                            <th className="text-right py-1.5 font-semibold">누적 실적</th>
-                            <th className="text-right py-1.5 font-semibold">달성률</th>
-                          </tr></thead>
-                          <tbody>
-                            {m.brands.map((b) => {
-                              const bst = statusOf(b.rate);
-                              if (b.excluded) {
-                                return (
-                                  <tr key={b.brand} className="border-b border-stone-100 bg-stone-50/60 text-stone-400">
-                                    <td className="py-1.5 font-medium">{b.brand} <span className="text-[9px] align-middle bg-stone-200 text-stone-500 rounded px-1 py-0.5 ml-0.5">합계 제외</span></td>
-                                    <td className="py-1.5 text-right">{fmt(b.monthTarget, m.unit)}</td>
-                                    <td className="py-1.5 text-right">{fmt(b.cumTarget, m.unit)}</td>
-                                    <td className="py-1.5 text-right">{fmt(b.cumActual, m.unit)}</td>
-                                    <td className="py-1.5 text-right">참고</td>
-                                  </tr>
-                                );
-                              }
-                              return (
-                                <tr key={b.brand} className="border-b border-stone-100">
-                                  <td className="py-1.5 font-medium text-stone-700">{b.brand}</td>
-                                  <td className="py-1.5 text-right text-stone-700 font-semibold">{fmt(b.monthTarget, m.unit)}</td>
-                                  <td className="py-1.5 text-right text-stone-500">{fmt(b.cumTarget, m.unit)}</td>
-                                  <td className="py-1.5 text-right text-emerald-700 font-semibold">{fmt(b.cumActual, m.unit)}</td>
-                                  <td className={`py-1.5 text-right font-semibold ${RATE_TEXT[bst]}`}>{b.rate !== null ? `${b.rate}%` : "—"}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="text-[10px] text-stone-400 mt-1">달성률 = 누적 실적 ÷ 누적 목표(경과분). 누적 목표는 월 목표를 경과 일수만큼 안분한 값입니다.</p>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {c.id === "01" && <BrandInsights />}
-
-              {c.id === "07" && c.budgetRows && c.budgetRows.length > 0 && <BudgetTable rows={c.budgetRows} />}
-
-              {m && m.weeklyInsights.length > 0 && (() => {
-                const shown = currentWeek ? m.weeklyInsights.filter((w) => w.week === currentWeek) : m.weeklyInsights;
-                const selLabel = shown[0]?.label ? shortLabel(shown[0].label) : "선택 주차";
-                return (
-                  <details className="mt-3 group">
-                    <summary className="text-xs font-bold text-stone-600 mb-1.5 cursor-pointer list-none flex items-center gap-1.5 select-none">
-                      <span className="text-stone-400 group-open:rotate-90 transition-transform">▶</span>
-                      활동 · 원인 · 실행계획 {currentWeek && <span className="text-[10px] font-normal text-stone-400">· {selLabel} 기준</span>}
-                    </summary>
-                    <div className="mt-2">
-                    {shown.length === 0 ? (
-                      <p className="text-xs text-stone-400 border border-stone-200 rounded-lg px-3 py-2.5">선택한 주차에 등록된 원인·실행계획이 없습니다.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {shown.map((w) => (
-                          <div key={w.week} className="border border-stone-200 rounded-lg px-3 py-2.5 space-y-2">
-                            <p className="text-xs text-stone-700"><span className="text-stone-400 mr-2 font-semibold">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
-                            {w.insight && (
-                              <div>
-                                <p className="text-[10px] font-bold text-stone-400 mb-1">원인</p>
-                                <Narrative text={w.insight} accent="insight" />
-                              </div>
-                            )}
-                            {w.action && (
-                              <div>
-                                <p className="text-[10px] font-bold text-kkumbi-600 mb-1">실행계획</p>
-                                <Narrative text={w.action} accent="action" />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    </div>
-                  </details>
-                );
-              })()}
-
-              {!m && (c.note || c.alternative) && (
-                <div className="space-y-2 mt-1">
-                  {c.note && <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-stone-500 mb-1">인사이트 (So What)</p><Narrative text={c.note} accent="insight" /></div>}
-                  {c.alternative && <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-kkumbi-600 mb-1">실행 계획 (Now What)</p><Narrative text={c.alternative} accent="action" /></div>}
-                </div>
-              )}
-
-              {c.items.length > 0 && (
-                <details className="mt-3">
-                  <summary className="text-xs font-bold text-stone-600 cursor-pointer">이번 주 상세 항목 ({c.items.length})</summary>
-                  <div className="mt-2 space-y-2">
-                    {c.items.map((it) => (
-                      <div key={it.id} className="border-b border-stone-100 pb-2 last:border-b-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-stone-700">{it.title || "(제목없음)"}</span>
-                          {it.badge && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${CHIP[it.badgeStatus]}`}>{it.badge}</span>}
-                        </div>
-                        {it.brand && <p className="text-[11px] text-stone-500 mt-0.5"><span className="font-semibold text-stone-600">{it.brand}</span>{" · 중목표 "}{it.midTarget || "—"}{" · 중실적 "}{it.midActual || "—"}</p>}
-                        {(it.cause || it.action) && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
-                            {it.cause && <p className="text-[11px] text-stone-600"><span className="font-bold text-stone-400">원인</span> {it.cause}</p>}
-                            {it.action && <p className="text-[11px] text-stone-600"><span className="font-bold text-stone-400">실행</span> {it.action}{it.due ? ` (마감 ${it.due})` : ""}</p>}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-          );
-        })}
-      </div>
+          <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
+          <BrandPanel brand={brand} />
+        </div>
+      )}
     </div>
   );
 }
