@@ -1,7 +1,7 @@
 // 브랜드별 경쟁사 인사이트 예시 데이터 (출처: 주간보고 구글시트 템플릿)
 // ⚠️ 지금은 코드에 박아둔 예시입니다. 추후 시트 연동 시 이 파일 대신 API 데이터로 교체하세요.
 
-export interface CompRow { name: string; mine: boolean; idx: string; delta: string; pk: string; state: string; }
+export interface CompRow { name: string; mine: boolean; period?: string; idx: string; delta: string; pkDate?: string; pk: string; state: string; }
 export interface CompBlock { cat: string; rows: CompRow[]; note: string; }
 export interface IgInfo { upload: string; follow: string; good: string; bad: string; }
 export interface IgContent { name: string; views: string; reach: string; follows: string; shares: string; comments: string; }
