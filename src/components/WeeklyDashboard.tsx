@@ -22,7 +22,7 @@ interface ReportCategory {
 }
 interface WeeklyReportData { categories: ReportCategory[]; }
 
-interface Brand { brand: string; cumTarget: number | null; cumActual: number | null; rate: number | null; }
+interface Brand { brand: string; monthTarget: number | null; cumTarget: number | null; cumActual: number | null; rate: number | null; excluded?: boolean; }
 interface WeeklyInsight { week: string; label: string; result: string; insight: string; action: string; }
 interface SeriesPt { week: string; label: string; cumActual: number | null; cumProgress: number | null; }
 interface MonthlyCat {
@@ -61,10 +61,16 @@ function progressOf(c: MonthlyCat): number | null {
   return null;
 }
 
+function isExclBrand(name: string): boolean {
+  const low = name.trim().toLowerCase().replace(/\s+/g, "");
+  return low === "g7" || low === "g7커피" || low === "g7coffee";
+}
+
 function BudgetTable({ rows }: { rows: BudgetRow[] }) {
-  const tb = rows.reduce((s, r) => s + r.budget, 0);
-  const tr = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
-  const tc = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
+  const totalRows = rows.filter((r) => !isExclBrand(r.brand));
+  const tb = totalRows.reduce((s, r) => s + r.budget, 0);
+  const tr = totalRows.reduce((s, r) => s + (r.revenue ?? 0), 0);
+  const tc = totalRows.reduce((s, r) => s + (r.cost ?? 0), 0);
   const ratio = tr > 0 ? Math.round((tc / tr) * 1000) / 10 : null;
   return (
     <table className="w-full text-xs mt-1">
@@ -78,6 +84,17 @@ function BudgetTable({ rows }: { rows: BudgetRow[] }) {
       <tbody>
         {rows.map((r) => {
           const rr = r.revenue && r.revenue > 0 ? Math.round(((r.cost ?? 0) / r.revenue) * 1000) / 10 : null;
+          if (isExclBrand(r.brand)) {
+            return (
+              <tr key={r.brand} className="border-b border-stone-100 bg-stone-50/60 text-stone-400">
+                <td className="py-1.5 font-medium">{r.brand} <span className="text-[9px] align-middle bg-stone-200 text-stone-500 rounded px-1 py-0.5 ml-0.5">합계 제외</span></td>
+                <td className="py-1.5 text-right">{fmt(r.budget)}</td>
+                <td className="py-1.5 text-right">{fmt(r.revenue)}</td>
+                <td className="py-1.5 text-right">{fmt(r.cost)}</td>
+                <td className="py-1.5 text-right">{rr !== null ? `${rr}%` : "참고"}</td>
+              </tr>
+            );
+          }
           return (
             <tr key={r.brand} className="border-b border-stone-100">
               <td className="py-1.5 font-medium text-stone-700">{r.brand}</td>
@@ -89,7 +106,7 @@ function BudgetTable({ rows }: { rows: BudgetRow[] }) {
           );
         })}
         <tr className="font-bold text-stone-800">
-          <td className="py-1.5">합계</td>
+          <td className="py-1.5">합계 <span className="text-[9px] font-normal text-stone-400">(G7 제외)</span></td>
           <td className="py-1.5 text-right">{fmt(tb)}</td>
           <td className="py-1.5 text-right text-emerald-700">{fmt(tr)}</td>
           <td className="py-1.5 text-right">{fmt(tc)}</td>
@@ -187,11 +204,7 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
 
   return (
     <div className="space-y-4">
-      <div
-        className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200"
-        onMouseEnter={() => collapsed && setPeek(true)}
-        onMouseLeave={() => setPeek(false)}
-      >
+      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200">
         <div className="flex items-center justify-between mb-2 gap-2">
           <p className="text-[11px] text-stone-400">
             월 목표 대비 <b className="text-stone-600">누적</b> · 막대 안 세로선 = 지금쯤 있어야 할 위치(경과 {pace}%) · 카드를 누르면 아래 상세로 이동
@@ -204,59 +217,70 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
           </button>
         </div>
 
-        {collapsed && !peek && (
-          <div className="flex items-center gap-2 text-[11px] text-stone-400 px-1 pb-0.5">
-            <span className="font-semibold text-stone-500">KPI 요약 접힘</span>
-            <span>— 이 줄 위에 마우스를 올리면 카드가 다시 나타납니다</span>
+        {/* 접힘 상태: 항상 존재하는 얇은 바 — 여기에 마우스를 올리면 카드가 임시로 펼쳐짐 */}
+        {collapsed && (
+          <div
+            onMouseEnter={() => setPeek(true)}
+            onMouseLeave={() => setPeek(false)}
+            className="flex items-center gap-2 text-[11px] text-stone-400 rounded-lg border border-dashed border-stone-300 bg-white/60 px-3 py-2 cursor-pointer hover:border-kkumbi-300"
+          >
+            <span className="font-semibold text-stone-500">KPI 요약 {peek ? "미리보기" : "접힘"}</span>
+            <span>— 이 줄에 마우스를 올리면 카드가 나타나고, 클릭해서 상세로 이동할 수 있습니다</span>
           </div>
         )}
 
-        <div className={`grid grid-cols-2 md:grid-cols-4 gap-2.5 transition-all ${showCards ? "opacity-100" : "max-h-0 opacity-0 overflow-hidden pointer-events-none"}`}>
-          {cats.map((c) => {
-            const m = monthlyById.get(c.id);
-            if (m) {
-              const prog = progressOf(m);
-              const st = statusOf(m.projectedRate);
+        {showCards && (
+          <div
+            onMouseEnter={() => collapsed && setPeek(true)}
+            onMouseLeave={() => collapsed && setPeek(false)}
+            className={`grid grid-cols-2 md:grid-cols-4 gap-2.5 ${collapsed ? "mt-2" : ""}`}
+          >
+            {cats.map((c) => {
+              const m = monthlyById.get(c.id);
+              if (m) {
+                const prog = progressOf(m);
+                const st = statusOf(m.projectedRate);
+                return (
+                  <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
+                    <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
+                    <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-lg font-extrabold text-stone-800">{prog !== null ? `${prog}%` : "—"}</span>
+                      <span className="text-[10px] text-stone-400">누적</span>
+                    </div>
+                    <div className="relative h-2 bg-stone-100 rounded-full overflow-hidden mt-1.5">
+                      <div className="h-full rounded-full" style={{ width: `${prog !== null ? Math.min(prog, 100) : 0}%`, background: BAR_HEX[st] }} />
+                      <div className="absolute top-0 bottom-0 w-px bg-stone-500" style={{ left: `${Math.min(pace, 100)}%` }} />
+                    </div>
+                    <div className="mt-1.5 pt-1.5 border-t border-stone-100 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-stone-400">월 목표</span>
+                        <span className="text-[11px] font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-stone-400">누적 실적</span>
+                        <span className="text-[11px] font-semibold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-stone-400">예상 달성률</span>
+                        <span className={`text-[11px] font-semibold ${RATE_TEXT[st]}`}>{m.projectedRate !== null ? `${m.projectedRate}%` : "—"}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              }
               return (
                 <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
                   <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
                   <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-lg font-extrabold text-stone-800">{prog !== null ? `${prog}%` : "—"}</span>
-                    <span className="text-[10px] text-stone-400">누적</span>
-                  </div>
-                  <div className="relative h-2 bg-stone-100 rounded-full overflow-hidden mt-1.5">
-                    <div className="h-full rounded-full" style={{ width: `${prog !== null ? Math.min(prog, 100) : 0}%`, background: BAR_HEX[st] }} />
-                    <div className="absolute top-0 bottom-0 w-px bg-stone-500" style={{ left: `${Math.min(pace, 100)}%` }} />
-                  </div>
-                  <div className="mt-1.5 pt-1.5 border-t border-stone-100 space-y-0.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-stone-400">월 목표</span>
-                      <span className="text-[11px] font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-stone-400">누적 실적</span>
-                      <span className="text-[11px] font-semibold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-stone-400">예상 달성률</span>
-                      <span className={`text-[11px] font-semibold ${RATE_TEXT[st]}`}>{m.projectedRate !== null ? `${m.projectedRate}%` : "—"}</span>
-                    </div>
-                  </div>
+                  <div className={`text-base font-extrabold ${RATE_TEXT2[c.status]}`}>{c.rateLabel || PROJ_LABEL[c.status]}</div>
+                  {c.target && <div className="text-[10px] text-stone-400 mt-1.5">목표 {c.target}</div>}
+                  <div className="text-[10px] text-stone-400 mt-0.5 truncate">{c.actual || "—"}</div>
                 </button>
               );
-            }
-            return (
-              <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
-                <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
-                <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
-                <div className={`text-base font-extrabold ${RATE_TEXT2[c.status]}`}>{c.rateLabel || PROJ_LABEL[c.status]}</div>
-                {c.target && <div className="text-[10px] text-stone-400 mt-1.5">목표 {c.target}</div>}
-                <div className="text-[10px] text-stone-400 mt-0.5 truncate">{c.actual || "—"}</div>
-              </button>
-            );
-          })}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -310,28 +334,44 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
 
                   {m.brands.length > 0 && (
                     <div className="mt-3">
-                      <p className="text-xs font-bold text-stone-600 mb-1">브랜드별 누적 ({monthLabel})</p>
-                      <table className="w-full text-xs">
-                        <thead><tr className="border-b border-stone-200 text-stone-500">
-                          <th className="text-left py-1.5 font-semibold">브랜드</th>
-                          <th className="text-right py-1.5 font-semibold">누적 목표 <span className="text-stone-300 font-normal">(경과분)</span></th>
-                          <th className="text-right py-1.5 font-semibold">누적 실적</th>
-                          <th className="text-right py-1.5 font-semibold">달성률</th>
-                        </tr></thead>
-                        <tbody>
-                          {m.brands.map((b) => {
-                            const bst = statusOf(b.rate);
-                            return (
-                              <tr key={b.brand} className="border-b border-stone-100">
-                                <td className="py-1.5 font-medium text-stone-700">{b.brand}</td>
-                                <td className="py-1.5 text-right text-stone-500">{fmt(b.cumTarget, m.unit)}</td>
-                                <td className="py-1.5 text-right text-emerald-700 font-semibold">{fmt(b.cumActual, m.unit)}</td>
-                                <td className={`py-1.5 text-right font-semibold ${RATE_TEXT[bst]}`}>{b.rate !== null ? `${b.rate}%` : "—"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                      <p className="text-xs font-bold text-stone-600 mb-1">브랜드별 목표 · 실적 ({monthLabel})</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs min-w-[420px]">
+                          <thead><tr className="border-b border-stone-200 text-stone-500">
+                            <th className="text-left py-1.5 font-semibold">브랜드</th>
+                            <th className="text-right py-1.5 font-semibold">월 목표 <span className="text-stone-300 font-normal">(전체)</span></th>
+                            <th className="text-right py-1.5 font-semibold">누적 목표 <span className="text-stone-300 font-normal">(경과분)</span></th>
+                            <th className="text-right py-1.5 font-semibold">누적 실적</th>
+                            <th className="text-right py-1.5 font-semibold">달성률</th>
+                          </tr></thead>
+                          <tbody>
+                            {m.brands.map((b) => {
+                              const bst = statusOf(b.rate);
+                              if (b.excluded) {
+                                return (
+                                  <tr key={b.brand} className="border-b border-stone-100 bg-stone-50/60 text-stone-400">
+                                    <td className="py-1.5 font-medium">{b.brand} <span className="text-[9px] align-middle bg-stone-200 text-stone-500 rounded px-1 py-0.5 ml-0.5">합계 제외</span></td>
+                                    <td className="py-1.5 text-right">{fmt(b.monthTarget, m.unit)}</td>
+                                    <td className="py-1.5 text-right">{fmt(b.cumTarget, m.unit)}</td>
+                                    <td className="py-1.5 text-right">{fmt(b.cumActual, m.unit)}</td>
+                                    <td className="py-1.5 text-right">참고</td>
+                                  </tr>
+                                );
+                              }
+                              return (
+                                <tr key={b.brand} className="border-b border-stone-100">
+                                  <td className="py-1.5 font-medium text-stone-700">{b.brand}</td>
+                                  <td className="py-1.5 text-right text-stone-700 font-semibold">{fmt(b.monthTarget, m.unit)}</td>
+                                  <td className="py-1.5 text-right text-stone-500">{fmt(b.cumTarget, m.unit)}</td>
+                                  <td className="py-1.5 text-right text-emerald-700 font-semibold">{fmt(b.cumActual, m.unit)}</td>
+                                  <td className={`py-1.5 text-right font-semibold ${RATE_TEXT[bst]}`}>{b.rate !== null ? `${b.rate}%` : "—"}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-[10px] text-stone-400 mt-1">달성률 = 누적 실적 ÷ 누적 목표(경과분). 누적 목표는 월 목표를 경과 일수만큼 안분한 값입니다.</p>
                     </div>
                   )}
                 </>
