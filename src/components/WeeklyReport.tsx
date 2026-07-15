@@ -28,7 +28,7 @@ interface MonthlyCat {
   projectedActual: number | null; projectedRate: number | null; weeksCounted: number;
   weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[];
   weeklySeries: { week: string; label: string; cumActual: number | null; cumProgress: number | null }[];
-  brands: { brand: string; cumTarget: number | null; cumActual: number | null; rate: number | null }[];
+  brands: { brand: string; monthTarget: number | null; cumTarget: number | null; cumActual: number | null; rate: number | null; excluded?: boolean }[];
 }
 interface MonthlySummary { month: string; daysElapsed: number; daysInMonth: number; categories: MonthlyCat[]; }
 
