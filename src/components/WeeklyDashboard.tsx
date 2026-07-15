@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
-import { NaverTrendEmbed } from "./NaverTrendEmbed";
 import { BrandInsights } from "./BrandInsights";
 import { parseNarrative } from "@/lib/narrative";
 
@@ -378,16 +377,20 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                 </>
               )}
 
+              {c.id === "01" && <BrandInsights />}
+
               {c.id === "07" && c.budgetRows && c.budgetRows.length > 0 && <BudgetTable rows={c.budgetRows} />}
 
               {m && m.weeklyInsights.length > 0 && (() => {
                 const shown = currentWeek ? m.weeklyInsights.filter((w) => w.week === currentWeek) : m.weeklyInsights;
                 const selLabel = shown[0]?.label ? shortLabel(shown[0].label) : "선택 주차";
                 return (
-                  <div className="mt-3">
-                    <p className="text-xs font-bold text-stone-600 mb-1.5">
+                  <details className="mt-3 group">
+                    <summary className="text-xs font-bold text-stone-600 mb-1.5 cursor-pointer list-none flex items-center gap-1.5 select-none">
+                      <span className="text-stone-400 group-open:rotate-90 transition-transform">▶</span>
                       활동 · 원인 · 실행계획 {currentWeek && <span className="text-[10px] font-normal text-stone-400">· {selLabel} 기준</span>}
-                    </p>
+                    </summary>
+                    <div className="mt-2">
                     {shown.length === 0 ? (
                       <p className="text-xs text-stone-400 border border-stone-200 rounded-lg px-3 py-2.5">선택한 주차에 등록된 원인·실행계획이 없습니다.</p>
                     ) : (
@@ -411,7 +414,8 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                         ))}
                       </div>
                     )}
-                  </div>
+                    </div>
+                  </details>
                 );
               })()}
 
@@ -444,9 +448,6 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                   </div>
                 </details>
               )}
-
-              {c.id === "01" && <NaverTrendEmbed />}
-              {c.id === "01" && <BrandInsights />}
             </div>
           );
         })}
