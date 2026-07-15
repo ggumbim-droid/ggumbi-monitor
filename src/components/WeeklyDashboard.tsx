@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
 import { NaverTrendEmbed } from "./NaverTrendEmbed";
+import { BrandInsights } from "./BrandInsights";
 import { parseNarrative } from "@/lib/narrative";
 
 type Status = "good" | "warn" | "bad" | "unk";
@@ -445,6 +446,7 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
               )}
 
               {c.id === "01" && <NaverTrendEmbed />}
+              {c.id === "01" && <BrandInsights />}
             </div>
           );
         })}
