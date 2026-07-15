@@ -137,7 +137,7 @@ export function WeeklyReport() {
             <p className="text-sm text-stone-700 whitespace-pre-wrap mt-1">{report?.prevFeedback || "(미기재)"}</p>
           </div>
 
-          <WeeklyDashboard monthly={monthly} report={report} />
+          <WeeklyDashboard monthly={monthly} report={report} currentWeek={week} />
         </>
       )}
     </div>
