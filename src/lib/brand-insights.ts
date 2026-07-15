@@ -2,7 +2,7 @@
 // ⚠️ 지금은 코드에 박아둔 예시입니다. 추후 시트 연동 시 이 파일 대신 API 데이터로 교체하세요.
 
 export interface CompRow { name: string; mine: boolean; period?: string; idx: string; delta: string; pkDate?: string; pk: string; state: string; }
-export interface CompBlock { cat: string; rows: CompRow[]; note: string; }
+export interface CompBlock { cat: string; rows: CompRow[]; note: string; comment?: string; }
 export interface IgInfo { upload: string; follow: string; good: string; bad: string; }
 export interface IgContent { name: string; views: string; reach: string; follows: string; shares: string; comments: string; }
 export interface BrandInsight {
@@ -11,7 +11,7 @@ export interface BrandInsight {
   shopTitle: string; shop: string[][];
   rankNote: string; improvement: string;
   ig: IgInfo; igContents: IgContent[];
-  supporters: string; lastWork: string[][]; thisWeek: string[][];
+  supporters?: string; lastWork: string[][]; thisWeek: string[][];
 }
 
 // 브랜드 탭 ↔ 네이버 트렌드 키워드 그룹 매핑
