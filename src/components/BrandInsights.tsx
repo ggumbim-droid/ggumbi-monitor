@@ -1,567 +1,1243 @@
-"use client";
+// 브랜드별 경쟁사 인사이트 예시 데이터 (출처: 주간보고 구글시트 템플릿)
+// ⚠️ 지금은 코드에 박아둔 예시입니다. 추후 시트 연동 시 이 파일 대신 API 데이터로 교체하세요.
 
-import { useState, useEffect } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from "recharts";
-import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, BRAND_RANKING_GROUPS, type BrandInsight } from "@/lib/brand-insights";
-
-const BRAND_COLORS = ["#f56b3d", "#10B981", "#45B7D1", "#8B5CF6", "#0EA5E9", "#EC4899", "#14B8A6", "#94A3B8"];
-type Row = Record<string, string | number>;
-
-interface KwBrand { name: string; keywords: string[] }
-interface KwGroups { [key: string]: { label: string; brands: KwBrand[] } }
-
-// 04 키워드 1페이지 노출 (브랜드 모니터링 ranking)
-interface RankRow {
-  keyword: string; volume: number; priceRank: string;
-  blogCount: number; blogRanks: string; blogUrl: string;
-  cafeCount: number; cafeUrl: string; blogSov: string; cafeSov: string; action: string;
+export interface CompRow { name: string; mine: boolean; period?: string; idx: string; delta: string; pkDate?: string; pk: string; state: string; }
+export interface CompBlock { cat: string; rows: CompRow[]; note: string; comment?: string; }
+export interface IgInfo { upload: string; follow: string; good: string; bad: string; }
+export interface IgContent { name: string; views: string; reach: string; follows: string; shares: string; comments: string; }
+export interface BrandInsight {
+  id: string; tag: string; name: string; target: string; noTrend: boolean;
+  comp: CompBlock[];
+  shopTitle: string; shop: string[][];
+  rankNote: string; improvement: string;
+  ig: IgInfo; igContents: IgContent[];
+  supporters?: string; lastWork: string[][]; thisWeek: string[][];
 }
-interface RankGroup { name: string; brand: string; rows: RankRow[]; }
 
-const STACK = [
-  { label: "주간(전주 월~일)", value: "lastweek" },
-  { label: "3년", value: "3years" },
+// 브랜드 탭 ↔ 네이버 트렌드 키워드 그룹 매핑
+// 각 브랜드를 열면 이 그룹들의 검색 트렌드가 자동 조회됩니다.
+// G7커피는 추이 참고용이며 KPI 합계·달성률에는 포함하지 않습니다.
+export const BRAND_TREND_GROUPS: Record<string, string[]> = {
+  "꿈비리코코": ["folder_mat", "bumper_bed"],
+  "봄봄슈슈비": ["construction_mat_kkumbi", "construction_mat_bombom"],
+  "꿈비육아": ["bottle_washer", "formula_pot", "formula_shaker", "stroller_coolseat", "baby_carrier_cover"],
+  "오가닉그라운드": ["organic_ground"],
+  "바바디토": ["babadito"],
+  "파미야": ["dog_coolmat", "cat_tower"],
+};
+
+// 브랜드 탭 ↔ 04 키워드 1페이지 노출(브랜드 모니터링 ranking)의 표 제목(group.name) 매핑
+// 자사 인사이트의 쇼핑검색 순위 표를 04 실시간 데이터로 끌어온다.
+export const BRAND_RANKING_GROUPS: Record<string, string[]> = {
+  "꿈비리코코": ["꿈비개발"],
+  "봄봄슈슈비": ["봄봄매트"],
+  "꿈비육아": ["꿈비맘마존", "꿈비시즌"],
+  "오가닉그라운드": ["오가닉그라운드"],
+  "바바디토": ["바바디토"],
+  "파미야": ["파미야"],
+};
+
+export const BRAND_INSIGHTS: BrandInsight[] = [
+  {
+    "id": "꿈비리코코",
+    "tag": "폴더매트 · 범퍼침대",
+    "name": "꿈비 · 리코코",
+    "target": "70만건",
+    "noTrend": false,
+    "comp": [
+      {
+        "cat": "폴더매트",
+        "rows": [
+          {
+            "name": "알집매트",
+            "mine": false,
+            "idx": "46",
+            "delta": "-2.6",
+            "pk": "54.6",
+            "state": "flat"
+          },
+          {
+            "name": "크림하우스",
+            "mine": false,
+            "idx": "9",
+            "delta": "-0.9",
+            "pk": "11.3",
+            "state": "flat"
+          },
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "4",
+            "delta": "-0.9",
+            "pk": "4.4",
+            "state": "flat"
+          },
+          {
+            "name": "모노맷",
+            "mine": false,
+            "idx": "1",
+            "delta": "0.1",
+            "pk": "1.4",
+            "state": "flat"
+          },
+          {
+            "name": "파크론",
+            "mine": false,
+            "idx": "0.8",
+            "delta": "-0.1",
+            "pk": "1.1",
+            "state": "flat"
+          }
+        ],
+        "note": "꿈비: 넾다세일·매트 공동구매 종료 후 관심도 소폭 감소 → 라이프위크(7/20~) 집중 광고로 메인 검색량 회복 예정."
+      },
+      {
+        "cat": "범퍼침대",
+        "rows": [
+          {
+            "name": "도노도노",
+            "mine": false,
+            "idx": "70.1",
+            "delta": "2.2",
+            "pk": "81.3",
+            "state": "flat"
+          },
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "50.7",
+            "delta": "-4",
+            "pk": "56.6",
+            "state": "flat"
+          },
+          {
+            "name": "쥬다르",
+            "mine": false,
+            "idx": "38.9",
+            "delta": "-7.3",
+            "pk": "43.7",
+            "state": "down"
+          },
+          {
+            "name": "바치",
+            "mine": false,
+            "idx": "22.3",
+            "delta": "-7.8",
+            "pk": "31.1",
+            "state": "down"
+          }
+        ],
+        "note": "꿈비 판매 전주 대비 +238%(+400만원) 증가에도 블로그18·카페20 하단 노출 → 맘카페 데이베드 비교형 콘텐츠로 트렌드 상승 목표."
+      }
+    ],
+    "shopTitle": "꿈비 개발군",
+    "shop": [
+      [
+        "폴더매트",
+        "5,050",
+        "2·10·17위",
+        "5건 상단",
+        "page1"
+      ],
+      [
+        "유아매트",
+        "6,500",
+        "20위",
+        "19위",
+        "page1"
+      ],
+      [
+        "범퍼침대",
+        "11,120",
+        "18위",
+        "20위",
+        "page1"
+      ],
+      [
+        "놀이방매트",
+        "6,830",
+        "12위",
+        "미노출",
+        "part"
+      ],
+      [
+        "아기매트",
+        "26,500",
+        "미노출",
+        "7·8위",
+        "part"
+      ],
+      [
+        "층간소음매트",
+        "19,490",
+        "미노출",
+        "미노출",
+        "none"
+      ],
+      [
+        "거실매트",
+        "17,840",
+        "미노출",
+        "미노출",
+        "none"
+      ]
+    ],
+    "rankNote": "1페이지 3건 고정(유아·폴더·범퍼). 범퍼침대는 판매 급증에도 하단 노출 → ‘데이베드 vs 범퍼침대’ 비교형 카페 콘텐츠·댓글로 상위 10위 진입. 층간소음·거실매트 미노출 → 체험단·바이럴로 신규 노출 확보.",
+    "improvement": "라이프위크(7/20~)를 핵심 프로모션으로 광고 집중. 범퍼침대 상세 전환율이 높게 나온 만큼 광고 비중을 확대해 추가 성과 검증(범퍼침대 메타 주간 광고매출 목표 102만원 / 광고비 12만원).",
+    "ig": {
+      "upload": "—",
+      "follow": "—",
+      "good": "라이프위크 대비 폴더매트·범퍼침대 USP 소재 정비 중.",
+      "bad": "매트 기획전 부재로 인스타 발행 명분 부족. 콘텐츠 지표 시트 연동 필요."
+    },
+    "igContents": [
+      {
+        "name": "매트 콘텐츠 (입력 대기)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
+    ],
+    "supporters": "메가 인플루언서·엔젤맘 후기로 폴더매트·범퍼침대 1P 노출 유지 중. 신규 서포터즈는 봄봄·슈슈비 클립매트 1기와 연계 운영.",
+    "lastWork": [
+      [
+        "제품 상세페이지 랜딩 메타광고 신규 집행(7/10)",
+        "범퍼침대 상세조회 전환율 8.5% / 매트 3.8%",
+        "",
+        "범퍼침대 초기 관심도 높게 확인",
+        "매트 판매 감소로 객단가 하락, 주간 목표 달성률 30.7%"
+      ],
+      [
+        "폴더매트 검색량 회복 운영",
+        "넾다·공구 종료 후 소폭 감소",
+        "",
+        "라이프위크 회복 명분 확보",
+        "기획전 부재로 광고 운영 명분 부족"
+      ]
+    ],
+    "thisWeek": [
+      [
+        "라이프위크 집중 광고(7/20~)",
+        "사업팀 매출 5,000만원 / ROAS 850% / 광고매출 2,600만원",
+        "주력 제품 광고 운영 명분 확보용 핵심 프로모션."
+      ],
+      [
+        "범퍼침대 상위노출",
+        "블로그·카페 상위 10위 진입",
+        "데이베드 비교형 카페 콘텐츠·댓글 참여 강화."
+      ],
+      [
+        "폴더매트 검색량 회복",
+        "폴더매트 검색 관심도 회복",
+        "라이프위크 광고로 메인 검색량 반등."
+      ]
+    ]
+  },
+  {
+    "id": "봄봄슈슈비",
+    "tag": "시공매트 · 클립매트",
+    "name": "봄봄 · 슈슈비",
+    "target": "70만건",
+    "noTrend": false,
+    "comp": [
+      {
+        "cat": "시공매트",
+        "rows": [
+          {
+            "name": "파크론",
+            "mine": false,
+            "idx": "73.7",
+            "delta": "6.8",
+            "pk": "100",
+            "state": "up"
+          },
+          {
+            "name": "봄봄매트",
+            "mine": true,
+            "idx": "49.2",
+            "delta": "2.8",
+            "pk": "63.2",
+            "state": "flat"
+          },
+          {
+            "name": "알집",
+            "mine": false,
+            "idx": "27.4",
+            "delta": "-0.1",
+            "pk": "33.2",
+            "state": "flat"
+          },
+          {
+            "name": "보들매트",
+            "mine": false,
+            "idx": "24.2",
+            "delta": "-3.5",
+            "pk": "30.1",
+            "state": "flat"
+          },
+          {
+            "name": "허그매트",
+            "mine": false,
+            "idx": "21.7",
+            "delta": "1.3",
+            "pk": "31.6",
+            "state": "flat"
+          },
+          {
+            "name": "플로리아",
+            "mine": false,
+            "idx": "21.2",
+            "delta": "-3.9",
+            "pk": "29.5",
+            "state": "flat"
+          },
+          {
+            "name": "에코폼",
+            "mine": false,
+            "idx": "14.7",
+            "delta": "-0.8",
+            "pk": "17.9",
+            "state": "flat"
+          },
+          {
+            "name": "크림하우스",
+            "mine": false,
+            "idx": "11.4",
+            "delta": "0.1",
+            "pk": "17.3",
+            "state": "flat"
+          }
+        ],
+        "note": "파크론 7/8 놀이방매트 체험단 모집(7/8~15) → 우리는 클립매트 서포터즈(7/14)로 봄봄·꿈비 브랜드 검색 유입 확대 추진."
+      },
+      {
+        "cat": "클립매트 [신규]",
+        "rows": [
+          {
+            "name": "슈슈비",
+            "mine": true,
+            "idx": "36.3",
+            "delta": "-1.2",
+            "pk": "66",
+            "state": "flat"
+          },
+          {
+            "name": "파크론",
+            "mine": false,
+            "idx": "14.2",
+            "delta": "1.3",
+            "pk": "19.2",
+            "state": "flat"
+          },
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "7.5",
+            "delta": "-2.7",
+            "pk": "13",
+            "state": "flat"
+          },
+          {
+            "name": "크림하우스",
+            "mine": false,
+            "idx": "1.9",
+            "delta": "0.1",
+            "pk": "2.8",
+            "state": "flat"
+          },
+          {
+            "name": "봄봄매트",
+            "mine": true,
+            "idx": "1.3",
+            "delta": "-0.1",
+            "pk": "2.4",
+            "state": "flat"
+          }
+        ],
+        "note": "슈슈비 7/7~21 맘스홀릭 공구 핫딜(초성 퀴즈 이벤트) 진행 중."
+      },
+      {
+        "cat": "매트 키워드 비교",
+        "rows": [
+          {
+            "name": "시공매트",
+            "mine": false,
+            "idx": "75.4",
+            "delta": "0.1",
+            "pk": "87",
+            "state": "flat"
+          },
+          {
+            "name": "폴더매트",
+            "mine": false,
+            "idx": "65.3",
+            "delta": "7.1",
+            "pk": "73.5",
+            "state": "up"
+          },
+          {
+            "name": "롤매트",
+            "mine": false,
+            "idx": "61.3",
+            "delta": "4.6",
+            "pk": "69.8",
+            "state": "flat"
+          },
+          {
+            "name": "퍼즐매트",
+            "mine": false,
+            "idx": "49.9",
+            "delta": "0.1",
+            "pk": "58.9",
+            "state": "flat"
+          }
+        ],
+        "note": "폴더매트 검색량 상승 견인(+7.1) · 시공매트 카테고리 최상위 유지."
+      }
+    ],
+    "shopTitle": "봄봄매트 키워드",
+    "shop": [
+      [
+        "셀프시공매트",
+        "5,070",
+        "17위",
+        "미노출",
+        "part"
+      ],
+      [
+        "시공매트",
+        "8,820",
+        "미노출",
+        "미노출",
+        "none"
+      ],
+      [
+        "클립매트",
+        "2,070",
+        "미노출",
+        "미노출",
+        "none"
+      ],
+      [
+        "퍼즐매트",
+        "8,610",
+        "미노출",
+        "미노출",
+        "none"
+      ],
+      [
+        "매트시공",
+        "2,410",
+        "미노출",
+        "미노출",
+        "none"
+      ],
+      [
+        "층간소음매트",
+        "19,490",
+        "미노출",
+        "미노출",
+        "none"
+      ]
+    ],
+    "rankNote": "시공·클립·퍼즐매트 전량 미노출 → 클립매트 서포터즈 1기로 관련 키워드 선행 노출 확보 후 그 외 키워드 순차 진행. 셀프시공매트 블로그 17위 → 상단 진입 작업.",
+    "improvement": "인스타 과거 링크 삭제 후 UTM 신규 생성(방문유입 11건 → 1,000건+ 목표). 서포터즈로 미노출 키워드 선행 확보 → 클립·시공매트 검색 유입 견인.",
+    "ig": {
+      "upload": "1",
+      "follow": "—",
+      "good": "썸머페스타 피드 업로드 + 스토어 UTM 링크 신규 세팅 완료.",
+      "bad": "과거 유입링크 오류로 판매 종료 제품에 유입되던 문제 발견(전월 방문유입 11건) → 인스타 재정비."
+    },
+    "igContents": [
+      {
+        "name": "썸머페스타 예고 피드(7/14)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
+    ],
+    "supporters": "클립매트 서포터즈 1기 모집(7/14~7/21). 봄봄 10명(스킨텍스처 그란데 5장 무료+시공비 무료+눌림방지패드), 꿈비 10명(디자인클립매트 12장). 우수활동자 2명 꿈비 교구장 3종 증정.",
+    "lastWork": [
+      [
+        "썸머페스타 홍보(피드·브랜드검색·톡톡)",
+        "7/14 기준 예약 7건",
+        "3",
+        "스토어·인스타 UTM 링크 신규 세팅 완료",
+        "인스타 유입링크 오류(판매 종료 제품 유입) 발견"
+      ],
+      [
+        "클립매트 서포터즈 1기 기획·모집",
+        "7/14~7/21 모집 시작",
+        "",
+        "봄봄10·꿈비10 혜택 구조 확정",
+        "시공·클립 키워드 전량 미노출 상태"
+      ]
+    ],
+    "thisWeek": [
+      [
+        "썸머페스타 유입 전환",
+        "예약 250건 / 7월 스토어 매출 8,700만원 (전환율 0.6%→1%)",
+        "전문가 시공매트 → 해피콜 상담예약(상담예약금 플로우). 피드·브랜드검색·톡톡 세팅 완료."
+      ],
+      [
+        "클립매트 검색량 육성",
+        "월간 검색량 2,510 → 4,000 (+1,490)",
+        "서포터즈 활용 3개월 240건(월 60건) 생성."
+      ],
+      [
+        "미노출 키워드 선행 확보",
+        "1페이지 신규 노출 확보",
+        "시공·클립·퍼즐 키워드 서포터즈 콘텐츠로 노출 시작."
+      ]
+    ]
+  },
+  {
+    "id": "꿈비육아",
+    "tag": "맘마존 · 시즌 · 신제품",
+    "name": "꿈비 육아용품",
+    "target": "60만건",
+    "noTrend": false,
+    "comp": [
+      {
+        "cat": "분유포트 (맘마존)",
+        "rows": [
+          {
+            "name": "나리몽",
+            "mine": false,
+            "idx": "68.4",
+            "delta": "-3.2",
+            "pk": "71.3",
+            "state": "flat"
+          },
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "57.1",
+            "delta": "-9.4",
+            "pk": "60.3",
+            "state": "down"
+          },
+          {
+            "name": "보아르",
+            "mine": false,
+            "idx": "22.4",
+            "delta": "1",
+            "pk": "24.1",
+            "state": "flat"
+          },
+          {
+            "name": "해님",
+            "mine": false,
+            "idx": "4.7",
+            "delta": "0.1",
+            "pk": "6.3",
+            "state": "flat"
+          },
+          {
+            "name": "마베비",
+            "mine": false,
+            "idx": "2.4",
+            "delta": "-0.5",
+            "pk": "4.1",
+            "state": "flat"
+          }
+        ],
+        "note": "나리몽 7/13 맘마존 쇼핑라이브 2회(11시 3,244만·18시 2,696만). 꿈비 전량 품절 → 7월 중순 이후 입고 홀딩."
+      },
+      {
+        "cat": "젖병세척기 (맘마존)",
+        "rows": [
+          {
+            "name": "베이비브레짜",
+            "mine": false,
+            "idx": "64",
+            "delta": "-5.3",
+            "pk": "69.1",
+            "state": "flat"
+          },
+          {
+            "name": "유팡",
+            "mine": false,
+            "idx": "62",
+            "delta": "8",
+            "pk": "70.2",
+            "state": "flat"
+          },
+          {
+            "name": "픽셀",
+            "mine": false,
+            "idx": "48.5",
+            "delta": "6.5",
+            "pk": "63.7",
+            "state": "flat"
+          },
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "9.5",
+            "delta": "0.7",
+            "pk": "11.5",
+            "state": "flat"
+          },
+          {
+            "name": "소베맘",
+            "mine": false,
+            "idx": "5.1",
+            "delta": "-0.5",
+            "pk": "6.9",
+            "state": "flat"
+          }
+        ],
+        "note": "꿈비 전량 품절, 8월초~10월 입고 예정으로 운영 홀딩."
+      },
+      {
+        "cat": "이유식포트 (신제품)",
+        "rows": [
+          {
+            "name": "마베비",
+            "mine": false,
+            "idx": "49.6",
+            "delta": "23.4",
+            "pk": "100",
+            "state": "up"
+          },
+          {
+            "name": "나리몽",
+            "mine": false,
+            "idx": "18.3",
+            "delta": "-0.4",
+            "pk": "21.7",
+            "state": "flat"
+          },
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "5.5",
+            "delta": "3.4",
+            "pk": "9.3",
+            "state": "flat"
+          }
+        ],
+        "note": "마베비 7/8~14 썸머블프(이유식포트 체감가 58,500원)·7/14 보틀워머 리뉴얼로 급상승."
+      },
+      {
+        "cat": "쿨시트 (시즌)",
+        "rows": [
+          {
+            "name": "폴레드",
+            "mine": false,
+            "idx": "31.2",
+            "delta": "5.4",
+            "pk": "48.6",
+            "state": "up"
+          },
+          {
+            "name": "다이치",
+            "mine": false,
+            "idx": "8.3",
+            "delta": "-0.3",
+            "pk": "10.9",
+            "state": "flat"
+          },
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "4.5",
+            "delta": "-0.7",
+            "pk": "6",
+            "state": "flat"
+          },
+          {
+            "name": "루나스토리",
+            "mine": false,
+            "idx": "0.4",
+            "delta": "0",
+            "pk": "0.6",
+            "state": "flat"
+          },
+          {
+            "name": "크림하우스",
+            "mine": false,
+            "idx": "0.2",
+            "delta": "0",
+            "pk": "0.9",
+            "state": "flat"
+          }
+        ],
+        "note": "폴레드 라이브 다수·가격 인하로 상승세. 꿈비 듀얼팬 쿨시트 소진계획 진행 중."
+      },
+      {
+        "cat": "쿨링커버 (시즌)",
+        "rows": [
+          {
+            "name": "꿈비",
+            "mine": true,
+            "idx": "14.6",
+            "delta": "-4",
+            "pk": "21.6",
+            "state": "flat"
+          },
+          {
+            "name": "폴레드",
+            "mine": false,
+            "idx": "5.7",
+            "delta": "-0.5",
+            "pk": "11.8",
+            "state": "flat"
+          }
+        ],
+        "note": "카테고리 자체 검색량 낮음. 아기띠 쿨링커버 소구 강화 필요."
+      }
+    ],
+    "shopTitle": "소싱 · 시즌 · 신제품",
+    "shop": [
+      [
+        "젖병세척기",
+        "15,160",
+        "4건 상단",
+        "2위",
+        "page1"
+      ],
+      [
+        "분유쉐이커",
+        "15,690",
+        "5건 상단",
+        "3건 상단",
+        "page1"
+      ],
+      [
+        "유모차쿨시트",
+        "7,660",
+        "3건 상단",
+        "상단",
+        "page1"
+      ],
+      [
+        "휴대용분유포트",
+        "17,560",
+        "3건 상단",
+        "12·16위",
+        "part"
+      ],
+      [
+        "이유식포트",
+        "1,900",
+        "20위",
+        "5위",
+        "part"
+      ],
+      [
+        "이유식워머",
+        "3,490",
+        "미노출",
+        "상단",
+        "part"
+      ],
+      [
+        "유모차통풍시트",
+        "11,200",
+        "미노출",
+        "4건",
+        "part"
+      ]
+    ],
+    "rankNote": "젖병세척기·분유쉐이커·유모차쿨시트 1P 방어. 휴대용분유포트 카페 하위→상위노출 강화, 이유식포트 블로그 하위→강화, 이유식워머·유모차통풍시트 블로그 미노출→바이럴. ‘이유식워머’ 스토어 랭킹 부재 → 코드 등록 요청 완료.",
+    "improvement": "이유식워머 키워드 코드 등록으로 스토어 랭킹 확보. 맘마존 기획전 추가 홍보 기획. 시즌제품 시크릿특가 준비 + 듀얼팬 쿨시트 소진(테디베어→베이지) 진행.",
+    "ig": {
+      "upload": "—",
+      "follow": "—",
+      "good": "도토리 이유식워머 무료 런칭체험단 20명 → 인스타 후기 발행으로 브랜드 도달 확대 예정.",
+      "bad": "시즌제품(쿨시트·쿨링커버) 인스타 노출 부족. 콘텐츠 지표 시트 연동 필요."
+    },
+    "igContents": [
+      {
+        "name": "도토리 무료 런칭체험단 후기(예정)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
+    ],
+    "supporters": "도토리 할인체험단 최종 72명 → 포토리뷰·맘카페 후기 142건 생성 예정(미제출자 독려). 브랜드커넥트 10명 ~7/19 블로그 상위노출 콘텐츠 생성. 무료 런칭체험단 20명 발표(~7/15).",
+    "lastWork": [
+      [
+        "도토리 이유식워머 론칭(7/6)",
+        "7일간 포토리뷰 81건 · 이유식포트 랭킹 4위 · 매출 878만원(155개)",
+        "81",
+        "포토리뷰 빠르게 누적(달성률 81%)",
+        "‘이유식워머’ 키워드 스토어 랭킹 부재 → 코드 등록 요청"
+      ],
+      [
+        "맘마존 줄라이 자사몰 기획전 홍보",
+        "7/10까지 홍보 중단 상태",
+        "",
+        "—",
+        "홍보 공백 발생 → 추가 홍보 기획 필요"
+      ]
+    ],
+    "thisWeek": [
+      [
+        "도토리 이유식워머 안착",
+        "스토어 랭킹 3위 / 목표매출 4,743만원(700개)",
+        "론칭 1개월 내 포토리뷰 100건 생성 → 스토어 랭킹 상위 진입."
+      ],
+      [
+        "시즌제품 특가 회복",
+        "여름 피크 매출 갭 회복",
+        "쿨링커버·쿨시트 시크릿특가 준비, 듀얼팬 쿨시트 소진."
+      ],
+      [
+        "맘카페 침투 바이럴",
+        "시즌 키워드 노출 확대",
+        "시즌제품 맘카페 댓글 침투 바이럴 일 최대 10건."
+      ]
+    ]
+  },
+  {
+    "id": "오가닉그라운드",
+    "tag": "베이비 스킨케어",
+    "name": "오가닉그라운드",
+    "target": "14만건",
+    "noTrend": false,
+    "comp": [
+      {
+        "cat": "전제품 · 선케어 · 보습",
+        "rows": [
+          {
+            "name": "바를",
+            "mine": false,
+            "idx": "16",
+            "delta": "-2.3",
+            "pk": "21.2",
+            "state": "flat"
+          },
+          {
+            "name": "궁중비책",
+            "mine": false,
+            "idx": "9.7",
+            "delta": "-1.5",
+            "pk": "12.3",
+            "state": "flat"
+          },
+          {
+            "name": "오가닉그라운드",
+            "mine": true,
+            "idx": "6.2",
+            "delta": "1.4",
+            "pk": "10.3",
+            "state": "flat"
+          },
+          {
+            "name": "오가본",
+            "mine": false,
+            "idx": "5.6",
+            "delta": "-1.3",
+            "pk": "6.1",
+            "state": "flat"
+          }
+        ],
+        "note": "오그만 전체·선케어·보습 모두 상승, 경쟁 3사 전 카테고리 동반 하락. 전주 인스타 로션 검색 이벤트로 보습 +48.3%."
+      }
+    ],
+    "shopTitle": "오가닉그라운드 키워드",
+    "shop": [
+      [
+        "아기로션",
+        "8,730",
+        "18위",
+        "미노출",
+        "part"
+      ],
+      [
+        "유아선크림",
+        "3,260",
+        "미노출",
+        "3·17위",
+        "part"
+      ],
+      [
+        "아기선쿠션",
+        "1,240",
+        "미노출",
+        "17건 상단",
+        "part"
+      ],
+      [
+        "탑투토워시",
+        "1,490",
+        "13위",
+        "11건 상단",
+        "part"
+      ],
+      [
+        "아기수딩젤",
+        "3,740",
+        "미노출",
+        "5위",
+        "part"
+      ],
+      [
+        "아기선크림",
+        "8,120",
+        "미노출",
+        "미노출",
+        "none"
+      ]
+    ],
+    "rankNote": "선크림·선쿠션 카페 상단 유지, 아기로션 블로그 상단 진입 작업. 보습 키워드 블로그 미노출 다수 → 스쿠스쿠 로션 30인 체험단(브랜드커넥트)으로 신규 노출.",
+    "improvement": "애드부스트 소재 점검 + 메타 랜딩 페이지 재점검. 검색 이벤트 정기화(3-4주 간격)로 공백기 보습 검색량 방어 → 베이스라인 15대. 로션 쇼핑검색 신규 세팅.",
+    "ig": {
+      "upload": "2",
+      "follow": "—",
+      "good": "로션 검색 이벤트로 보습 카테고리 +48.3% 상승.",
+      "bad": "이벤트 종료 이후 검색량 차츰 하락 → 정기화 필요. 콘텐츠별 지표 시트 연동 필요."
+    },
+    "igContents": [
+      {
+        "name": "7월 혜택 안내 피드",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      },
+      {
+        "name": "라이브 이벤트 피드",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
+    ],
+    "supporters": "스쿠스쿠 로션 30인 체험단(브랜드커넥트, 마감 7/16) 기획. 오그맘 36기 논나노 미네랄 선크림 선택 체험단(미션 7/8~14) 진행 중 → 블로그·카페 상위노출.",
+    "lastWork": [
+      [
+        "[스토어] 상반기결산(7/6~12)",
+        "애드부스트+쇼검 전환매출 486만원 (목표 2,700만 대비 18%)",
+        "18",
+        "메타 랜딩조회당 -16% 개선 · 쇼검 ROAS 244%",
+        "애드부스트 노출 +72%에도 CTR 하락 · 전환 -32%"
+      ],
+      [
+        "[라이브] 7/10 7월 1차 라이브",
+        "달성 약 400만원 (목표 700만)",
+        "57",
+        "카카오푸쉬 노출대비 클릭률 10%",
+        "발송 대비 노출율 37%로 낮음 → 제목 소재 점검"
+      ],
+      [
+        "[자사몰] 한여름 선케어 1+1",
+        "7/7 재입고 게시물 10,300회",
+        "",
+        "‘재입고’ 키워드 트래픽 유인 효과 확인",
+        "달성 매출 미기입"
+      ]
+    ],
+    "thisWeek": [
+      [
+        "여름방학 · 시크릿특가",
+        "스토어 2,500만 / 라이브 700만 / 시크릿특가 500만",
+        "스토어 여름방학(7/13~19) · 7월 2차 라이브 · 자사몰 시크릿특가(타블렛, 7/16~31)."
+      ],
+      [
+        "검색 이벤트 정기화",
+        "보습 베이스라인 9~10대 → 15대",
+        "인스타 검색 이벤트(기획 마감 7/17)로 재유입 반복 구조."
+      ],
+      [
+        "로션 쇼핑검색 신규 세팅",
+        "보습 검색량 13 견인",
+        "‘로션’ 연관 쇼핑검색·애드부스트 입찰 확대(세팅 7/21)."
+      ]
+    ]
+  },
+  {
+    "id": "바바디토",
+    "tag": "세제 · 세탁",
+    "name": "바바디토",
+    "target": "7만건",
+    "noTrend": false,
+    "comp": [
+      {
+        "cat": "세제 카테고리",
+        "rows": [
+          {
+            "name": "레드루트",
+            "mine": false,
+            "idx": "68.9",
+            "delta": "-3.5",
+            "pk": "80",
+            "state": "flat"
+          },
+          {
+            "name": "블랑101",
+            "mine": false,
+            "idx": "54",
+            "delta": "4.7",
+            "pk": "72.3",
+            "state": "flat"
+          },
+          {
+            "name": "프랭클린",
+            "mine": false,
+            "idx": "28.8",
+            "delta": "-5.4",
+            "pk": "33.9",
+            "state": "down"
+          },
+          {
+            "name": "아토팜",
+            "mine": false,
+            "idx": "5",
+            "delta": "1.5",
+            "pk": "7.8",
+            "state": "flat"
+          },
+          {
+            "name": "바바디토",
+            "mine": true,
+            "idx": "2.3",
+            "delta": "-0.7",
+            "pk": "3.5",
+            "state": "flat"
+          }
+        ],
+        "note": "레드루트 캡슐표백제 사전예약 · 블랑101 현대 판교점 팝업 · 프랭클린 ‘우리동네 프랭클린’ 중랑편 모집."
+      }
+    ],
+    "shopTitle": "바바디토 키워드",
+    "shop": [
+      [
+        "건조기시트",
+        "18,050",
+        "3위",
+        "9건",
+        "page1"
+      ],
+      [
+        "건조기시트추천",
+        "3,840",
+        "2위",
+        "7건",
+        "page1"
+      ],
+      [
+        "아기건조기시트",
+        "440",
+        "4·17위",
+        "1·6·7위",
+        "page1"
+      ],
+      [
+        "아기주방세제",
+        "3,050",
+        "미노출",
+        "13위",
+        "part"
+      ],
+      [
+        "아기세제",
+        "11,290",
+        "미노출",
+        "미노출",
+        "none"
+      ],
+      [
+        "아기세탁세제",
+        "4,770",
+        "미노출",
+        "미노출",
+        "none"
+      ]
+    ],
+    "rankNote": "건조기시트 계열 1P 방어. 아기세제·세탁세제·주방세제 미노출 → 타블릿세제·세탁세제 등 제품군별 검색 이벤트 동반 체험단으로 신규 노출.",
+    "improvement": "시크릿특가 메타 소재 교체 후 예산 재배분해 반등 시도. 제품군별 검색 이벤트 동반 체험단 순차 운영으로 검색 전환 유도.",
+    "ig": {
+      "upload": "—",
+      "follow": "—",
+      "good": "건조기시트 100인 체험단 콘텐츠 선행 노출로 네이버 노출량 상승.",
+      "bad": "노출 대비 검색 전환 미흡. ‘바바디토 검색’ 이벤트로 브랜드명 반복 노출 필요."
+    },
+    "igContents": [
+      {
+        "name": "위드바바 27기 콘텐츠(진행)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
+    ],
+    "supporters": "[인스타] 7월 깨끗한 주방 50인 체험단 진행 중. 위드바바 27기 기획(마감 7/15). 제품군별 검색 이벤트 동반 체험단 순차 기획.",
+    "lastWork": [
+      [
+        "건조기시트 시크릿특가 메타광고(7/1~)",
+        "100인 체험단 콘텐츠와 시너지, 소폭 상승 후 재하락",
+        "",
+        "전월 대비 네이버 노출량 상승",
+        "절대 검색량 경쟁사 대비 낮음 · 상승 흐름 꺾임"
+      ]
+    ],
+    "thisWeek": [
+      [
+        "시크릿특가 메타 소재 재점검",
+        "평균 검색량 5",
+        "소재 교체 후 예산 재배분해 반등 시도."
+      ],
+      [
+        "제품군별 체험단 운영",
+        "미노출 키워드 신규 노출",
+        "깨끗한 주방 50인 체험단 · 위드바바 27기(7/15)."
+      ],
+      [
+        "프랭클린 동향 추적",
+        "경쟁 격차 대응안 도출",
+        "3년째 상승 중인 유일 경쟁사 — 스킨케어파트 회의(7/23)."
+      ]
+    ]
+  },
+  {
+    "id": "파미야",
+    "tag": "반려동물",
+    "name": "파미야",
+    "target": "관리",
+    "noTrend": false,
+    "comp": [
+      {
+        "cat": "캣타워 키워드 노출 현황",
+        "rows": [
+          {
+            "name": "캣타워",
+            "mine": false,
+            "idx": "",
+            "delta": "",
+            "pk": "",
+            "state": "flat"
+          },
+          {
+            "name": "고양이캣타워",
+            "mine": false,
+            "idx": "",
+            "delta": "",
+            "pk": "",
+            "state": "flat"
+          },
+          {
+            "name": "미니캣타워",
+            "mine": false,
+            "idx": "",
+            "delta": "",
+            "pk": "",
+            "state": "flat"
+          },
+          {
+            "name": "고양이해먹",
+            "mine": false,
+            "idx": "",
+            "delta": "",
+            "pk": "",
+            "state": "flat"
+          },
+          {
+            "name": "캣타워추천",
+            "mine": false,
+            "idx": "",
+            "delta": "",
+            "pk": "",
+            "state": "flat"
+          }
+        ],
+        "note": "캣타워 상위노출 감소 및 재입고 일정 고려하여 추가 체험단 기획. 대표 키워드 신규 노출 확보 우선."
+      }
+    ],
+    "shopTitle": "파미야 키워드",
+    "shop": [
+      [
+        "미니캣타워",
+        "1,870",
+        "상단 7건",
+        "상단 4건",
+        "page1"
+      ],
+      [
+        "고양이캣타워",
+        "12,310",
+        "16위",
+        "5·14·16위",
+        "part"
+      ],
+      [
+        "고양이해먹",
+        "3,450",
+        "3·8위",
+        "미노출",
+        "part"
+      ],
+      [
+        "캣타워추천",
+        "680",
+        "12위",
+        "다수",
+        "part"
+      ],
+      [
+        "캣타워",
+        "28,230",
+        "미노출",
+        "미노출",
+        "none"
+      ]
+    ],
+    "rankNote": "미니캣타워 상단 유지, 캣타워·고양이캣타워 대표 키워드 미노출/하위 → 체험단·바이럴로 신규 노출 확보 우선.",
+    "improvement": "체험단·바이럴로 캣타워 신규 노출 확보. 펫바우처 입점 홍보 병행.",
+    "ig": {
+      "upload": "—",
+      "follow": "—",
+      "good": "무브스테이 캣타워 브랜드커넥트 10인 체험단 후기 20건 생성 목표(~7/26).",
+      "bad": "대표 키워드 노출 부족. 콘텐츠 지표 시트 연동 필요."
+    },
+    "igContents": [
+      {
+        "name": "무브스테이 캣타워 체험단(진행)",
+        "views": "—",
+        "reach": "—",
+        "follows": "—",
+        "shares": "—",
+        "comments": "—"
+      }
+    ],
+    "supporters": "인턴 27기 모집 기획(무브스테이 캣타워·강아지 계단·카페트 매트, 마감 7/15). 체험단 운영과 펫바우처 입점 소식 홍보 병행.",
+    "lastWork": [
+      [
+        "무브스테이 캣타워 체험단 기획",
+        "브랜드커넥트 10인 체험단 준비",
+        "",
+        "—",
+        "대표 키워드 캣타워 상위 미노출"
+      ]
+    ],
+    "thisWeek": [
+      [
+        "무브스테이 캣타워 체험단",
+        "대표 키워드 신규 노출 (~7/26)",
+        "브랜드커넥트 10인 체험단 후기 20건 생성."
+      ],
+      [
+        "인턴 27기 운영",
+        "품목별 노출 확대 (기획 마감 7/15)",
+        "캣타워·강아지 계단·카페트 매트 3개 품목 체험단 모집."
+      ],
+      [
+        "펫바우처 입점 홍보",
+        "브랜드 도달 확대",
+        "체험단과 병행하여 입점 소식 확산."
+      ]
+    ]
+  }
 ];
-
-function stateBadge(state: string) {
-  if (state === "up") return <span className="text-emerald-700 bg-emerald-50 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">상승</span>;
-  if (state === "down") return <span className="text-rose-700 bg-rose-50 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">하락</span>;
-  return <span className="text-stone-500 bg-stone-100 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">유지</span>;
-}
-function Delta({ v }: { v: string }) {
-  const n = parseFloat(v);
-  if (!n || isNaN(n)) return <span className="text-stone-400">{v || "0"}</span>;
-  const up = n > 0;
-  return <span className={up ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>{up ? "▲" : "▼"} {Math.abs(n)}</span>;
-}
-
-interface TooltipEntry { name: string; value: number; color: string; }
-function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 10px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)", minWidth: "140px" }}>
-      <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>{label}</p>
-      {payload.map((e) => (
-        <div key={e.name} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "1px 0" }}>
-          <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
-          <span style={{ fontSize: "12px", color: "#6b7280", flex: 1 }}>{e.name}</span>
-          <span style={{ fontSize: "12px", color: e.color }}>{typeof e.value === "number" ? e.value.toFixed(1) : e.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// 브랜드에 매핑된 키워드 그룹들의 네이버 트렌드를 자동 조회.
-// onData로 조회 결과(그룹별 차트 데이터·라벨·브랜드)를 부모에 전달해 순위표와 핑퐁 배치한다.
-interface TrendState {
-  labels: Record<string, string>;
-  groupBrands: Record<string, KwBrand[]>;
-  charts: Record<string, Record<string, Row[]>>;
-  loaded: boolean;
-}
-
-function GroupTrendChart({ gid, label, brands, gCharts }: {
-  gid: string; label: string; brands: KwBrand[]; gCharts?: Record<string, Row[]>;
-}) {
-  return (
-    <div className="mb-2">
-      <div className="text-xs font-bold text-stone-700 mb-2">{label || gid} · 검색 트렌드</div>
-      {!gCharts ? (
-        <p className="text-[11px] text-stone-300">검색 트렌드 조회 대기 중</p>
-      ) : (
-        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-          {STACK.map((pp) => {
-            const rows = gCharts[pp.value];
-            if (!rows || rows.length === 0) return null;
-            return (
-              <div key={pp.value}>
-                <div className="text-[11px] font-semibold text-stone-500 mb-1">{pp.label} 추이</div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={rows}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                    <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
-                    <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
-                    <Tooltip content={<TrendTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                    {brands.map((b, i) => (
-                      <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function useBrandTrend(brandId: string) {
-  const groups = BRAND_TREND_GROUPS[brandId] ?? [];
-  const [state, setState] = useState<TrendState>({ labels: {}, groupBrands: {}, charts: {}, loaded: false });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    setState({ labels: {}, groupBrands: {}, charts: {}, loaded: false });
-    setError("");
-    fetch("/api/keywords").then((r) => r.json()).then((data: unknown) => {
-      if (!alive || !data || typeof data !== "object") return;
-      const g = data as KwGroups;
-      const lab: Record<string, string> = {};
-      const gb: Record<string, KwBrand[]> = {};
-      groups.forEach((gid) => { if (g[gid]) { lab[gid] = g[gid].label; gb[gid] = g[gid].brands; } });
-      setState((s) => ({ ...s, labels: lab, groupBrands: gb }));
-    }).catch(() => {});
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId]);
-
-  async function fetchAll() {
-    setLoading(true); setError("");
-    try {
-      const result: Record<string, Record<string, Row[]>> = {};
-      for (const gid of groups) {
-        result[gid] = {};
-        await Promise.all(STACK.map(async (pp) => {
-          const res = await fetch("/api/trend", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ groupId: gid, period: pp.value }),
-          });
-          const data = await res.json();
-          if (res.ok) result[gid][pp.value] = (data.results ?? []) as Row[];
-        }));
-      }
-      setState((s) => ({ ...s, charts: result, loaded: true }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return { groups, state, loading, error, fetchAll };
-}
-
-function SubLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-xs font-bold text-kkumbi-700 mb-2 flex items-center gap-1.5">
-      <span className="w-1 h-3.5 bg-kkumbi-400 rounded-sm inline-block" />{children}
-    </div>
-  );
-}
-
-// 04 키워드 1페이지 노출(브랜드 모니터링) 실시간 조회. 브랜드에 매핑된 표(group.name)만 필터링.
-function useRanking(brandId: string) {
-  const names = BRAND_RANKING_GROUPS[brandId] ?? [];
-  const [groups, setGroups] = useState<RankGroup[]>([]);
-  const [updated, setUpdated] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [loaded, setLoaded] = useState(false);
-
-  async function fetchRanking() {
-    setLoading(true); setError(""); setLoaded(true);
-    try {
-      const res = await fetch("/api/brand-monitor?type=all");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "조회 실패");
-      const all = (data?.ranking?.groups ?? []) as RankGroup[];
-      setGroups(all.filter((g) => names.includes(g.name)));
-      setUpdated(data?.ranking?.updated ?? "");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
-      setGroups([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return { names, groups, updated, loading, error, loaded, fetchRanking };
-}
-
-function RankingBlock({ brandId }: { brandId: string }) {
-  const { names, groups, updated, loading, error, loaded, fetchRanking } = useRanking(brandId);
-  if (names.length === 0) {
-    return <p className="text-xs text-stone-400">이 브랜드에 연결된 1페이지 노출 표가 없습니다.</p>;
-  }
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <p className="text-[11px] text-stone-400">
-          04 키워드 1페이지 노출 연동: {names.join(" · ")}{updated && ` · 최종 조회 ${updated}`}
-        </p>
-        <button onClick={fetchRanking} disabled={loading}
-          className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
-          {loading ? "조회 중..." : loaded ? "다시 조회" : "1페이지 노출 조회"}
-        </button>
-      </div>
-      {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
-      {!loaded && <p className="text-[11px] text-stone-400">※ 위 버튼을 누르면 사이드바 04와 동일한 최신 1페이지 노출 데이터를 불러옵니다.</p>}
-      {loaded && !loading && groups.length === 0 && !error && (
-        <p className="text-xs text-stone-400">연동된 표에 데이터가 없습니다.</p>
-      )}
-      <div className="space-y-4">
-        {groups.map((g) => (
-          <div key={g.name}>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xs font-bold text-stone-700">{g.name}</span>
-              <span className="text-[10px] text-stone-400">브랜드: {g.brand}</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="text-stone-400 text-left border-b border-stone-200">
-                  <th className="py-1.5 px-2 font-medium">키워드</th>
-                  <th className="py-1.5 px-2 font-medium text-center">월검색량</th>
-                  <th className="py-1.5 px-2 font-medium text-center">가격비교</th>
-                  <th className="py-1.5 px-2 font-medium text-center">블로그</th>
-                  <th className="py-1.5 px-2 font-medium text-center">카페</th>
-                  <th className="py-1.5 px-2 font-medium">점유율</th>
-                </tr></thead>
-                <tbody>
-                  {g.rows.map((row) => (
-                    <tr key={row.keyword} className="border-b border-stone-100">
-                      <td className="py-1.5 px-2 font-semibold text-stone-800">{row.keyword}</td>
-                      <td className="py-1.5 px-2 text-center text-stone-600">{Number(row.volume).toLocaleString()}</td>
-                      <td className="py-1.5 px-2 text-center">
-                        {row.priceRank !== "-" ? <span className="bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded">{row.priceRank}위</span> : <span className="text-stone-300">-</span>}
-                      </td>
-                      <td className="py-1.5 px-2 text-center">
-                        {row.blogCount > 0
-                          ? <a href={row.blogUrl} target="_blank" rel="noopener noreferrer" className="bg-blue-50 text-blue-700 font-bold px-1.5 py-0.5 rounded hover:underline">{row.blogCount}건 ({row.blogRanks})</a>
-                          : <span className="text-stone-300">-</span>}
-                      </td>
-                      <td className="py-1.5 px-2 text-center">
-                        {row.cafeCount > 0
-                          ? <a href={row.cafeUrl} target="_blank" rel="noopener noreferrer" className="bg-orange-50 text-orange-700 font-bold px-1.5 py-0.5 rounded hover:underline">{row.cafeCount}건</a>
-                          : <span className="text-stone-300">-</span>}
-                      </td>
-                      <td className="py-1.5 px-2 text-stone-500">
-                        {row.blogSov && <div><span className="text-stone-400">블로그</span> {row.blogSov}</div>}
-                        {row.cafeSov && <div><span className="text-stone-400">카페</span> {row.cafeSov}</div>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BrandPanel({ brand }: { brand: BrandInsight }) {
-  const { groups, state, loading, error, fetchAll } = useBrandTrend(brand.id);
-  return (
-    <div className="space-y-6">
-      <section>
-        <div className="flex items-baseline gap-2 mb-3">
-          <span className="text-[11px] font-bold text-white bg-amber-500 px-2 py-0.5 rounded-md">① 경쟁사 인사이트</span>
-          <span className="text-sm font-bold text-stone-800">검색 트렌드 · 주간 증감 · 특이사항</span>
-        </div>
-
-        {groups.length > 0 && (
-          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-            <p className="text-[11px] text-stone-400">연결된 검색 그룹: {groups.map((g) => state.labels[g] || g).join(" · ")}</p>
-            <button onClick={fetchAll} disabled={loading}
-              className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
-              {loading ? "조회 중..." : state.loaded ? "다시 조회" : "검색 트렌드 조회"}
-            </button>
-          </div>
-        )}
-        {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
-        {!state.loaded && groups.length > 0 && <p className="text-[11px] text-stone-400 mb-3">※ 위 버튼을 누르면 네이버 검색 트렌드(주간·3년)를 불러옵니다.</p>}
-
-        <div className="space-y-3">
-          {brand.comp.map((block, bi) => {
-            const gid = groups[bi]; // comp 카테고리와 키워드 그룹을 순서로 매칭
-            return (
-              <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
-                {gid && (
-                  <GroupTrendChart gid={gid} label={state.labels[gid] || gid} brands={state.groupBrands[gid] ?? []} gCharts={state.charts[gid]} />
-                )}
-                <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead><tr className="text-stone-400 text-left">
-                      <th className="py-1 px-1.5 font-medium">브랜드</th>
-                      <th className="py-1 px-1.5 font-medium">기간</th>
-                      <th className="py-1 px-1.5 font-medium">7일평균</th>
-                      <th className="py-1 px-1.5 font-medium">증감</th>
-                      <th className="py-1 px-1.5 font-medium">최고점</th>
-                      <th className="py-1 px-1.5 font-medium">최고점 날짜</th>
-                      <th className="py-1 px-1.5 font-medium">상태</th>
-                    </tr></thead>
-                    <tbody>
-                      {block.rows.map((r, i) => (
-                        <tr key={i} className="border-t border-stone-100">
-                          <td className={`py-1.5 px-1.5 whitespace-nowrap ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
-                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.period || "—"}</td>
-                          <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
-                          <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
-                          <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
-                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
-                          <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {block.note && (
-                  <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
-                    <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
-                    <p className="text-xs text-stone-600 leading-relaxed mt-1.5">{block.note}</p>
-                  </div>
-                )}
-                {block.comment && (
-                  <div className="mt-3 bg-amber-50 border-l-[3px] border-amber-400 rounded-r-lg px-3 py-2.5">
-                    <span className="text-[10px] font-bold text-amber-700">📝 경쟁사 동향 코멘트</span>
-                    <p className="text-xs text-stone-700 leading-relaxed mt-1">{block.comment}</p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section>
-        <div className="flex items-baseline gap-2 mb-3">
-          <span className="text-[11px] font-bold text-white bg-kkumbi-500 px-2 py-0.5 rounded-md">② 자사 인사이트</span>
-          <span className="text-sm font-bold text-stone-800">목표 달성 현황 · 채널 진단</span>
-        </div>
-        <div className="border border-stone-200 rounded-xl p-4 bg-white space-y-5">
-          <div>
-            <SubLabel>네이버 쇼핑검색 순위 · 1페이지 노출 (04 연동)</SubLabel>
-            <RankingBlock brandId={brand.id} />
-            {brand.rankNote && (
-              <div className="mt-2 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2">
-                <p className="text-xs text-stone-600 leading-relaxed">{brand.rankNote}</p>
-              </div>
-            )}
-          </div>
-
-          {brand.lastWork.length > 0 && (
-            <div>
-              <SubLabel>지난주 진행 업무 · 결과 · 달성률</SubLabel>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead><tr className="text-stone-400 text-left border-b border-stone-200">
-                    <th className="py-1.5 px-2 font-medium min-w-[130px]">진행 업무</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[150px]">업무 결과</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[90px]">달성률</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[130px]">잘된 점</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[130px]">아쉬운 점</th>
-                  </tr></thead>
-                  <tbody>
-                    {brand.lastWork.map((r, i) => {
-                      const ach = parseFloat(r[2]);
-                      const hasAch = !isNaN(ach);
-                      const color = ach >= 80 ? "bg-emerald-500" : ach >= 40 ? "bg-amber-500" : "bg-rose-500";
-                      const txt = ach >= 80 ? "text-emerald-700" : ach >= 40 ? "text-amber-700" : "text-rose-700";
-                      return (
-                        <tr key={i} className="border-b border-stone-100 align-top">
-                          <td className="py-2 px-2 font-semibold text-stone-800 leading-snug">{r[0]}</td>
-                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[1]}</td>
-                          <td className="py-2 px-2">
-                            {hasAch ? (
-                              <div className="flex items-center gap-1.5 min-w-[80px]">
-                                <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${Math.min(100, ach)}%` }} /></div>
-                                <span className={`text-[11px] font-bold ${txt}`}>{ach}%</span>
-                              </div>
-                            ) : <span className="text-stone-400">—</span>}
-                          </td>
-                          <td className="py-2 px-2 text-emerald-700 leading-snug">{r[3]}</td>
-                          <td className="py-2 px-2 text-rose-700 leading-snug">{r[4]}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {(brand.ig.upload || brand.ig.good || brand.ig.bad || brand.igContents.length > 0) && (
-            <div>
-              <SubLabel>인스타그램 주간 인사이트</SubLabel>
-              <div className="flex gap-2 mb-3 flex-wrap">
-                <div className="flex-1 min-w-[120px] bg-stone-50 rounded-lg px-3 py-2.5">
-                  <div className="text-[11px] text-stone-400 mb-0.5">업로드 콘텐츠</div>
-                  <div className="text-base font-extrabold text-stone-800">{brand.ig.upload || "—"}<span className="text-xs font-medium text-stone-400"> 건</span></div>
-                </div>
-                <div className="flex-1 min-w-[120px] bg-stone-50 rounded-lg px-3 py-2.5">
-                  <div className="text-[11px] text-stone-400 mb-0.5">팔로우 증감</div>
-                  <div className="text-base font-extrabold text-stone-800">{brand.ig.follow || "—"}</div>
-                </div>
-              </div>
-              {brand.igContents.length > 0 && (
-                <div className="overflow-x-auto mb-3">
-                  <table className="w-full text-xs">
-                    <thead><tr className="text-stone-400 text-left border-b border-stone-200">
-                      <th className="py-1.5 px-2 font-medium">콘텐츠</th>
-                      <th className="py-1.5 px-2 font-medium">조회</th>
-                      <th className="py-1.5 px-2 font-medium">도달</th>
-                      <th className="py-1.5 px-2 font-medium">팔로우</th>
-                      <th className="py-1.5 px-2 font-medium">공유</th>
-                      <th className="py-1.5 px-2 font-medium">댓글</th>
-                    </tr></thead>
-                    <tbody>
-                      {brand.igContents.map((c, i) => (
-                        <tr key={i} className="border-b border-stone-100">
-                          <td className="py-1.5 px-2 font-semibold text-stone-800">{c.name}</td>
-                          <td className="py-1.5 px-2 text-stone-600">{c.views || "—"}</td>
-                          <td className="py-1.5 px-2 text-stone-600">{c.reach || "—"}</td>
-                          <td className="py-1.5 px-2 text-stone-600">{c.follows || "—"}</td>
-                          <td className="py-1.5 px-2 text-stone-600">{c.shares || "—"}</td>
-                          <td className="py-1.5 px-2 text-stone-600">{c.comments || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {(brand.ig.good || brand.ig.bad) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {brand.ig.good && (
-                    <div className="bg-emerald-50 rounded-lg px-3 py-2">
-                      <div className="text-[11px] font-bold text-emerald-700 mb-1">👍 잘된 점</div>
-                      <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.good}</p>
-                    </div>
-                  )}
-                  {brand.ig.bad && (
-                    <div className="bg-rose-50 rounded-lg px-3 py-2">
-                      <div className="text-[11px] font-bold text-rose-700 mb-1">👀 아쉬운 점</div>
-                      <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.bad}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {brand.improvement && (
-            <div>
-              <SubLabel>아쉬운 점 해결방안</SubLabel>
-              <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
-                <span className="text-[10px] font-bold text-kkumbi-700">✎ 시트 연동</span>
-                <p className="text-xs text-kkumbi-800 leading-relaxed mt-1 font-medium">{brand.improvement}</p>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {brand.thisWeek.length > 0 && (
-        <section>
-          <div className="flex items-baseline gap-2 mb-3">
-            <span className="text-[11px] font-bold text-white bg-emerald-500 px-2 py-0.5 rounded-md">③ 금주 업무 · 목표</span>
-            <span className="text-sm font-bold text-stone-800">금주 액션 플랜</span>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-            {brand.thisWeek.map((s, i) => (
-              <div key={i} className="border border-stone-200 border-l-[3px] border-l-emerald-500 rounded-r-lg p-3.5 bg-white">
-                <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">내용</div>
-                <div className="font-bold text-sm text-stone-800 mb-2.5">{s[0]}</div>
-                <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">목표</div>
-                <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md leading-snug mb-2.5">🎯 {s[1]}</div>
-                {s[2] && <>
-                  <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">세부내용</div>
-                  <p className="text-xs text-stone-500 leading-relaxed">{s[2]}</p>
-                </>}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
-  );
-}
-
-interface SheetBrandData {
-  comp?: BrandInsight["comp"];
-  rankNote?: string; improvement?: string;
-  lastWork?: string[][]; thisWeek?: string[][];
-  ig?: { upload: string; follow: string; good: string; bad: string };
-  igContents?: { name: string; views: string; reach: string; follows: string; shares: string; comments: string }[];
-}
-
-// 시트 실데이터를 예시(fallback) 위에 병합. 시트가 비어있는 필드는 예시를 그대로 유지.
-function mergeBrand(base: BrandInsight, sheet?: SheetBrandData): BrandInsight {
-  if (!sheet) return base;
-  const merged: BrandInsight = { ...base };
-  if (sheet.comp && sheet.comp.length > 0) merged.comp = sheet.comp;
-  if (sheet.rankNote) merged.rankNote = sheet.rankNote;
-  if (sheet.improvement) merged.improvement = sheet.improvement;
-  if (sheet.lastWork && sheet.lastWork.length > 0) merged.lastWork = sheet.lastWork;
-  if (sheet.thisWeek && sheet.thisWeek.length > 0) merged.thisWeek = sheet.thisWeek;
-  if (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow)) merged.ig = sheet.ig;
-  if (sheet.igContents && sheet.igContents.length > 0) merged.igContents = sheet.igContents;
-  return merged;
-}
-
-export function BrandInsights() {
-  const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
-  const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
-  const [live, setLive] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/brand-insights").then((r) => r.json()).then((data: unknown) => {
-      if (!alive || !data || typeof data !== "object") return;
-      const d = data as { brands?: Record<string, SheetBrandData> };
-      if (d.brands && Object.keys(d.brands).length > 0) {
-        setSheetData(d.brands);
-        // 시트에 실데이터가 하나라도 있으면 live 표시
-        const anyData = Object.values(d.brands).some((b) =>
-          (b.comp && b.comp.length > 0) || b.rankNote || b.improvement ||
-          (b.lastWork && b.lastWork.length > 0) || (b.thisWeek && b.thisWeek.length > 0)
-        );
-        setLive(anyData);
-      }
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-
-  const baseBrand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
-  const brand = mergeBrand(baseBrand, sheetData[active]);
-
-  return (
-    <div className="mt-5 pt-4 border-t border-stone-200">
-      <div className="mb-4 flex items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
-          <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
-        </div>
-        <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${live ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}>
-          {live ? "● 시트 연동" : "○ 예시 데이터"}
-        </span>
-      </div>
-
-      <div>
-        <div className="grid gap-2 mb-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-          {BRAND_INSIGHTS.map((b) => {
-            const on = b.id === active;
-            return (
-              <button key={b.id} onClick={() => setActive(b.id)}
-                className={`text-left rounded-xl px-3 py-2.5 border transition ${on ? "border-kkumbi-400 bg-kkumbi-50" : "border-stone-200 bg-white hover:border-kkumbi-300"}`}>
-                <div className="text-[11px] text-stone-400 mb-0.5">{b.tag}</div>
-                <div className={`text-[13px] font-bold leading-tight ${on ? "text-kkumbi-700" : "text-stone-800"}`}>{b.name}</div>
-                <div className="text-[11px] font-bold text-kkumbi-600 mt-1.5">목표 {b.target}</div>
-              </button>
-            );
-          })}
-        </div>
-        <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
-        <BrandPanel brand={brand} />
-      </div>
-    </div>
-  );
-}
