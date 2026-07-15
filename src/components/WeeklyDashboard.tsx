@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
@@ -161,11 +162,24 @@ function Narrative({ text, accent }: { text: string; accent: "insight" | "action
   );
 }
 
-export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary | null; report: WeeklyReportData | null }) {
+export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: MonthlySummary | null; report: WeeklyReportData | null; currentWeek?: string }) {
   const cats = report?.categories ?? [];
   const monthlyById = new Map<string, MonthlyCat>();
   (monthly?.categories ?? []).forEach((m) => monthlyById.set(m.id, m));
   const pace = monthly && monthly.daysInMonth > 0 ? Math.round((monthly.daysElapsed / monthly.daysInMonth) * 1000) / 10 : 0;
+
+  // KPI 요약 카드: 기본 펼침 / 접으면 얇은 바만 남고, 마우스 올리면 임시로 펼쳐짐
+  const [collapsed, setCollapsed] = useState(false);
+  const [peek, setPeek] = useState(false);
+  const showCards = !collapsed || peek;
+  const monthNum = monthly?.month ? Number(monthly.month.split("-")[1]) : null;
+  const monthLabel = monthNum ? `${monthNum}월` : "이번 달";
+
+  function goKpi(id: string) {
+    scrollToKpi(id);
+    // 접힌 상태에서 카드를 눌러 이동하면, 이동 후 다시 접힘 유지
+    if (collapsed) setPeek(false);
+  }
 
   if (cats.length === 0) {
     return <div className="bg-white border border-stone-200 rounded-xl p-8 text-center text-sm text-stone-500">표시할 KPI 데이터가 없습니다.</div>;
@@ -173,16 +187,38 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
 
   return (
     <div className="space-y-4">
-      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200">
-        <p className="text-[11px] text-stone-400 mb-2">월 목표 대비 <b className="text-stone-600">누적</b> · 막대 안 세로선 = 지금쯤 있어야 할 위치(경과 {pace}%) · 카드를 누르면 아래 상세로 이동</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+      <div
+        className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-stone-50/95 backdrop-blur border-b border-stone-200"
+        onMouseEnter={() => collapsed && setPeek(true)}
+        onMouseLeave={() => setPeek(false)}
+      >
+        <div className="flex items-center justify-between mb-2 gap-2">
+          <p className="text-[11px] text-stone-400">
+            월 목표 대비 <b className="text-stone-600">누적</b> · 막대 안 세로선 = 지금쯤 있어야 할 위치(경과 {pace}%) · 카드를 누르면 아래 상세로 이동
+          </p>
+          <button
+            onClick={() => { setCollapsed((v) => !v); setPeek(false); }}
+            className="shrink-0 text-[11px] font-semibold text-stone-500 hover:text-kkumbi-600 border border-stone-200 rounded-full px-2.5 py-1 bg-white transition"
+          >
+            {collapsed ? "▼ 목표 카드 펼치기" : "▲ 목표 카드 접기"}
+          </button>
+        </div>
+
+        {collapsed && !peek && (
+          <div className="flex items-center gap-2 text-[11px] text-stone-400 px-1 pb-0.5">
+            <span className="font-semibold text-stone-500">KPI 요약 접힘</span>
+            <span>— 이 줄 위에 마우스를 올리면 카드가 다시 나타납니다</span>
+          </div>
+        )}
+
+        <div className={`grid grid-cols-2 md:grid-cols-4 gap-2.5 transition-all ${showCards ? "opacity-100" : "max-h-0 opacity-0 overflow-hidden pointer-events-none"}`}>
           {cats.map((c) => {
             const m = monthlyById.get(c.id);
             if (m) {
               const prog = progressOf(m);
               const st = statusOf(m.projectedRate);
               return (
-                <button key={c.id} onClick={() => scrollToKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
+                <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
                   <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
                   <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
                   <div className="flex items-baseline gap-1.5">
@@ -193,19 +229,30 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
                     <div className="h-full rounded-full" style={{ width: `${prog !== null ? Math.min(prog, 100) : 0}%`, background: BAR_HEX[st] }} />
                     <div className="absolute top-0 bottom-0 w-px bg-stone-500" style={{ left: `${Math.min(pace, 100)}%` }} />
                   </div>
-                  <div className="flex items-center justify-between mt-1.5">
-                    <span className="text-[10px] text-stone-400">누적 {fmt(m.cumulativeActual, m.unit)}</span>
-                    <span className={`text-[11px] font-semibold ${RATE_TEXT[st]}`}>예상 {m.projectedRate !== null ? `${m.projectedRate}%` : "—"}</span>
+                  <div className="mt-1.5 pt-1.5 border-t border-stone-100 space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-400">월 목표</span>
+                      <span className="text-[11px] font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-400">누적 실적</span>
+                      <span className="text-[11px] font-semibold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-400">예상 달성률</span>
+                      <span className={`text-[11px] font-semibold ${RATE_TEXT[st]}`}>{m.projectedRate !== null ? `${m.projectedRate}%` : "—"}</span>
+                    </div>
                   </div>
                 </button>
               );
             }
             return (
-              <button key={c.id} onClick={() => scrollToKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
+              <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
                 <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
                 <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
                 <div className={`text-base font-extrabold ${RATE_TEXT2[c.status]}`}>{c.rateLabel || PROJ_LABEL[c.status]}</div>
-                <div className="text-[10px] text-stone-400 mt-1.5 truncate">{c.actual || c.target || "—"}</div>
+                {c.target && <div className="text-[10px] text-stone-400 mt-1.5">목표 {c.target}</div>}
+                <div className="text-[10px] text-stone-400 mt-0.5 truncate">{c.actual || "—"}</div>
               </button>
             );
           })}
@@ -233,10 +280,20 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
 
               {m && (
                 <>
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">월 목표</p><p className="text-sm font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</p></div>
-                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">누적 실적</p><p className="text-sm font-bold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</p></div>
-                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">예상 실적</p><p className="text-sm font-bold text-stone-700">{fmt(m.projectedActual, m.unit)}</p></div>
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">월 목표 ({monthLabel} 전체)</p><p className="text-sm font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</p></div>
+                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">누적 실적 (현재까지)</p><p className="text-sm font-bold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</p></div>
+                    <div className="bg-stone-50 rounded-lg p-2.5"><p className="text-[10px] text-stone-400">예상 실적 (월말)</p><p className="text-sm font-bold text-stone-700">{fmt(m.projectedActual, m.unit)}</p></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="rounded-lg p-2.5 border border-stone-200">
+                      <p className="text-[10px] text-stone-400">누적 달성률 <span className="text-stone-300">(누적÷월목표)</span></p>
+                      <p className={`text-sm font-bold ${RATE_TEXT[statusOf(progressOf(m))]}`}>{progressOf(m) !== null ? `${progressOf(m)}%` : "—"}</p>
+                    </div>
+                    <div className="rounded-lg p-2.5 border border-stone-200">
+                      <p className="text-[10px] text-stone-400">예상 달성률 <span className="text-stone-300">(현 페이스 월말)</span></p>
+                      <p className={`text-sm font-bold ${RATE_TEXT[st]}`}>{m.projectedRate !== null ? `${m.projectedRate}%` : "—"} <span className="text-[10px] font-semibold">· {PROJ_LABEL[st]}</span></p>
+                    </div>
                   </div>
                   <div style={{ width: "100%", height: 190 }}>
                     <ResponsiveContainer>
@@ -253,11 +310,11 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
 
                   {m.brands.length > 0 && (
                     <div className="mt-3">
-                      <p className="text-xs font-bold text-stone-600 mb-1">브랜드별 누적 (이번 달)</p>
+                      <p className="text-xs font-bold text-stone-600 mb-1">브랜드별 누적 ({monthLabel})</p>
                       <table className="w-full text-xs">
                         <thead><tr className="border-b border-stone-200 text-stone-500">
                           <th className="text-left py-1.5 font-semibold">브랜드</th>
-                          <th className="text-right py-1.5 font-semibold">누적 목표</th>
+                          <th className="text-right py-1.5 font-semibold">누적 목표 <span className="text-stone-300 font-normal">(경과분)</span></th>
                           <th className="text-right py-1.5 font-semibold">누적 실적</th>
                           <th className="text-right py-1.5 font-semibold">달성률</th>
                         </tr></thead>
@@ -282,30 +339,40 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
 
               {c.id === "07" && c.budgetRows && c.budgetRows.length > 0 && <BudgetTable rows={c.budgetRows} />}
 
-              {m && m.weeklyInsights.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-bold text-stone-600 mb-1.5">주차별 활동 · 원인 · 실행계획</p>
-                  <div className="space-y-2">
-                    {m.weeklyInsights.map((w) => (
-                      <div key={w.week} className="border border-stone-200 rounded-lg px-3 py-2.5 space-y-2">
-                        <p className="text-xs text-stone-700"><span className="text-stone-400 mr-2 font-semibold">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
-                        {w.insight && (
-                          <div>
-                            <p className="text-[10px] font-bold text-stone-400 mb-1">원인</p>
-                            <Narrative text={w.insight} accent="insight" />
+              {m && m.weeklyInsights.length > 0 && (() => {
+                const shown = currentWeek ? m.weeklyInsights.filter((w) => w.week === currentWeek) : m.weeklyInsights;
+                const selLabel = shown[0]?.label ? shortLabel(shown[0].label) : "선택 주차";
+                return (
+                  <div className="mt-3">
+                    <p className="text-xs font-bold text-stone-600 mb-1.5">
+                      활동 · 원인 · 실행계획 {currentWeek && <span className="text-[10px] font-normal text-stone-400">· {selLabel} 기준</span>}
+                    </p>
+                    {shown.length === 0 ? (
+                      <p className="text-xs text-stone-400 border border-stone-200 rounded-lg px-3 py-2.5">선택한 주차에 등록된 원인·실행계획이 없습니다.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {shown.map((w) => (
+                          <div key={w.week} className="border border-stone-200 rounded-lg px-3 py-2.5 space-y-2">
+                            <p className="text-xs text-stone-700"><span className="text-stone-400 mr-2 font-semibold">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
+                            {w.insight && (
+                              <div>
+                                <p className="text-[10px] font-bold text-stone-400 mb-1">원인</p>
+                                <Narrative text={w.insight} accent="insight" />
+                              </div>
+                            )}
+                            {w.action && (
+                              <div>
+                                <p className="text-[10px] font-bold text-kkumbi-600 mb-1">실행계획</p>
+                                <Narrative text={w.action} accent="action" />
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {w.action && (
-                          <div>
-                            <p className="text-[10px] font-bold text-kkumbi-600 mb-1">실행계획</p>
-                            <Narrative text={w.action} accent="action" />
-                          </div>
-                        )}
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {!m && (c.note || c.alternative) && (
                 <div className="space-y-2 mt-1">
