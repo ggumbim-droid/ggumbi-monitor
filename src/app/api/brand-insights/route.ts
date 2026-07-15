@@ -15,7 +15,7 @@ interface SheetPayload {
 }
 
 // 화면(BrandInsights)이 기대하는 브랜드별 구조
-interface CompRow { name: string; mine: boolean; idx: string; delta: string; pk: string; state: string; }
+interface CompRow { name: string; mine: boolean; period: string; idx: string; delta: string; pkDate: string; pk: string; state: string; }
 interface CompBlock { cat: string; rows: CompRow[]; note: string; }
 interface IgContent { name: string; views: string; reach: string; follows: string; shares: string; comments: string; }
 interface BrandData {
@@ -55,8 +55,10 @@ function buildBrand(payload: SheetPayload, brandId: string): BrandData {
     block.rows.push({
       name: s(r["이름"]),
       mine: truthy(r["자사여부"]),
+      period: s(r["기간"]),
       idx: s(r["7일평균"]),
       delta: s(r["증감"]),
+      pkDate: s(r["최고점날짜"]),
       pk: s(r["최고점"]),
       state: s(r["상태"]) || "flat",
     });
