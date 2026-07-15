@@ -39,7 +39,16 @@ function getPeriodDates(period: string, customStart?: string, customEnd?: string
   const start = new Date();
   let timeUnit = "date";
 
-  if (period === "1week") {
+  if (period === "lastweek") {
+    // 전주 월요일 ~ 전주 일요일 (조회일 기준 지난 완결 주)
+    const day = end.getDay(); // 0=일, 1=월 ... 6=토
+    const daysSinceMonday = (day + 6) % 7; // 이번주 월요일까지 며칠 지났나
+    const lastSunday = new Date(end);
+    lastSunday.setDate(end.getDate() - daysSinceMonday - 1); // 지난주 일요일
+    const lastMonday = new Date(lastSunday);
+    lastMonday.setDate(lastSunday.getDate() - 6); // 지난주 월요일
+    return { startDate: fmt(lastMonday), endDate: fmt(lastSunday), timeUnit: "date" };
+  } else if (period === "1week") {
     start.setDate(end.getDate() - 7);
     timeUnit = "date";
   } else if (period === "3months") {
