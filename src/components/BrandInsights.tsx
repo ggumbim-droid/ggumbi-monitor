@@ -320,6 +320,12 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                     <p className="text-xs text-stone-600 leading-relaxed mt-1.5">{block.note}</p>
                   </div>
                 )}
+                {block.comment && (
+                  <div className="mt-3 bg-amber-50 border-l-[3px] border-amber-400 rounded-r-lg px-3 py-2.5">
+                    <span className="text-[10px] font-bold text-amber-700">📝 경쟁사 동향 코멘트</span>
+                    <p className="text-xs text-stone-700 leading-relaxed mt-1">{block.comment}</p>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -380,13 +386,6 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-
-          {brand.supporters && (
-            <div>
-              <SubLabel>서포터즈 · 인플루언서 관리현황</SubLabel>
-              <p className="text-xs text-stone-600 leading-relaxed">{brand.supporters}</p>
             </div>
           )}
 
@@ -489,7 +488,6 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
 interface SheetBrandData {
   comp?: BrandInsight["comp"];
   rankNote?: string; improvement?: string;
-  supporters?: string;
   lastWork?: string[][]; thisWeek?: string[][];
   ig?: { upload: string; follow: string; good: string; bad: string };
   igContents?: { name: string; views: string; reach: string; follows: string; shares: string; comments: string }[];
@@ -502,7 +500,6 @@ function mergeBrand(base: BrandInsight, sheet?: SheetBrandData): BrandInsight {
   if (sheet.comp && sheet.comp.length > 0) merged.comp = sheet.comp;
   if (sheet.rankNote) merged.rankNote = sheet.rankNote;
   if (sheet.improvement) merged.improvement = sheet.improvement;
-  if (sheet.supporters) merged.supporters = sheet.supporters;
   if (sheet.lastWork && sheet.lastWork.length > 0) merged.lastWork = sheet.lastWork;
   if (sheet.thisWeek && sheet.thisWeek.length > 0) merged.thisWeek = sheet.thisWeek;
   if (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow)) merged.ig = sheet.ig;
@@ -524,7 +521,7 @@ export function BrandInsights() {
         setSheetData(d.brands);
         // 시트에 실데이터가 하나라도 있으면 live 표시
         const anyData = Object.values(d.brands).some((b) =>
-          (b.comp && b.comp.length > 0) || b.rankNote || b.improvement || b.supporters ||
+          (b.comp && b.comp.length > 0) || b.rankNote || b.improvement ||
           (b.lastWork && b.lastWork.length > 0) || (b.thisWeek && b.thisWeek.length > 0)
         );
         setLive(anyData);
