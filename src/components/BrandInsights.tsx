@@ -292,18 +292,22 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                   <table className="w-full text-xs">
                     <thead><tr className="text-stone-400 text-left">
                       <th className="py-1 px-1.5 font-medium">브랜드</th>
+                      <th className="py-1 px-1.5 font-medium">기간</th>
                       <th className="py-1 px-1.5 font-medium">7일평균</th>
                       <th className="py-1 px-1.5 font-medium">증감</th>
                       <th className="py-1 px-1.5 font-medium">최고점</th>
+                      <th className="py-1 px-1.5 font-medium">최고점 날짜</th>
                       <th className="py-1 px-1.5 font-medium">상태</th>
                     </tr></thead>
                     <tbody>
                       {block.rows.map((r, i) => (
                         <tr key={i} className="border-t border-stone-100">
-                          <td className={`py-1.5 px-1.5 ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
+                          <td className={`py-1.5 px-1.5 whitespace-nowrap ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
+                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.period || "—"}</td>
                           <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
                           <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
                           <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
+                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
                           <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
                         </tr>
                       ))}
