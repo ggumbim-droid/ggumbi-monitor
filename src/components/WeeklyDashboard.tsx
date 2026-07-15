@@ -3,6 +3,8 @@
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
+import { NaverTrendEmbed } from "./NaverTrendEmbed";
+import { parseNarrative } from "@/lib/narrative";
 
 type Status = "good" | "warn" | "bad" | "unk";
 
@@ -113,6 +115,50 @@ function Gauge({ rate }: { rate: number | null }) {
 function scrollToKpi(id: string) {
   const el = document.getElementById(`kpi-${id}`);
   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// 주차별 서사 원문을 브랜드 소제목 · 번호항목 · 하위목표로 구조화해 렌더
+function Narrative({ text, accent }: { text: string; accent: "insight" | "action" }) {
+  const blocks = parseNarrative(text);
+  if (blocks.length === 0) return null;
+  // 파싱 결과가 사실상 원문 한 덩어리면(구조 없음) 그냥 원문 표시
+  const structured = blocks.some((b) => b.brand || b.lines.length > 1 || b.lines.some((l) => l.marker));
+  if (!structured) {
+    return <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-wrap">{text}</p>;
+  }
+  const dotColor = accent === "action" ? "bg-kkumbi-400" : "bg-stone-300";
+  const subColor = accent === "action" ? "text-kkumbi-600" : "text-stone-400";
+  return (
+    <div className="space-y-2.5">
+      {blocks.map((b, bi) => (
+        <div key={bi} className={b.brand ? "rounded-md bg-stone-50/70 px-2.5 py-2" : ""}>
+          {b.brand && <p className="text-[11px] font-bold text-stone-700 mb-1.5">{b.brand}</p>}
+          <ul className="space-y-1.5">
+            {b.lines.map((l, li) => {
+              if (l.kind === "sub") {
+                return (
+                  <li key={li} className="ml-4 flex gap-1.5 text-[11px] text-stone-600 leading-relaxed">
+                    <span className={`shrink-0 font-bold ${subColor}`}>{l.marker === "=>" ? "→" : `└ ${l.marker}`}</span>
+                    <span>{l.text}</span>
+                  </li>
+                );
+              }
+              return (
+                <li key={li} className="flex gap-1.5 text-xs text-stone-700 leading-relaxed">
+                  {l.marker ? (
+                    <span className="shrink-0 font-bold text-stone-500 tabular-nums">{l.marker}</span>
+                  ) : (
+                    <span className={`mt-1.5 shrink-0 w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                  )}
+                  <span>{l.text}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary | null; report: WeeklyReportData | null }) {
@@ -241,10 +287,20 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
                   <p className="text-xs font-bold text-stone-600 mb-1.5">주차별 활동 · 원인 · 실행계획</p>
                   <div className="space-y-2">
                     {m.weeklyInsights.map((w) => (
-                      <div key={w.week} className="border border-stone-200 rounded-lg px-3 py-2">
-                        <p className="text-xs text-stone-700 mb-1"><span className="text-stone-400 mr-2">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
-                        {w.insight && <p className="text-xs text-stone-600 leading-relaxed"><span className="text-[10px] font-bold text-stone-400 mr-1">원인</span>{w.insight}</p>}
-                        {w.action && <p className="text-xs text-stone-600 leading-relaxed mt-0.5"><span className="text-[10px] font-bold text-kkumbi-600 mr-1">실행계획</span>{w.action}</p>}
+                      <div key={w.week} className="border border-stone-200 rounded-lg px-3 py-2.5 space-y-2">
+                        <p className="text-xs text-stone-700"><span className="text-stone-400 mr-2 font-semibold">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
+                        {w.insight && (
+                          <div>
+                            <p className="text-[10px] font-bold text-stone-400 mb-1">원인</p>
+                            <Narrative text={w.insight} accent="insight" />
+                          </div>
+                        )}
+                        {w.action && (
+                          <div>
+                            <p className="text-[10px] font-bold text-kkumbi-600 mb-1">실행계획</p>
+                            <Narrative text={w.action} accent="action" />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -253,8 +309,8 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
 
               {!m && (c.note || c.alternative) && (
                 <div className="space-y-2 mt-1">
-                  {c.note && <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-stone-500 mb-1">인사이트 (So What)</p><p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.note}</p></div>}
-                  {c.alternative && <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-kkumbi-600 mb-1">실행 계획 (Now What)</p><p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">{c.alternative}</p></div>}
+                  {c.note && <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-stone-500 mb-1">인사이트 (So What)</p><Narrative text={c.note} accent="insight" /></div>}
+                  {c.alternative && <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-kkumbi-600 mb-1">실행 계획 (Now What)</p><Narrative text={c.alternative} accent="action" /></div>}
                 </div>
               )}
 
@@ -280,6 +336,8 @@ export function WeeklyDashboard({ monthly, report }: { monthly: MonthlySummary |
                   </div>
                 </details>
               )}
+
+              {c.id === "01" && <NaverTrendEmbed />}
             </div>
           );
         })}
