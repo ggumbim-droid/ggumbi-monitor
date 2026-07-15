@@ -233,7 +233,7 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
           <div
             onMouseEnter={() => collapsed && setPeek(true)}
             onMouseLeave={() => collapsed && setPeek(false)}
-            className={`grid grid-cols-2 md:grid-cols-4 gap-2.5 ${collapsed ? "mt-2" : ""}`}
+            className={`grid grid-cols-2 md:grid-cols-4 gap-2 ${collapsed ? "mt-2" : ""}`}
           >
             {cats.map((c) => {
               const m = monthlyById.get(c.id);
@@ -241,41 +241,33 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                 const prog = progressOf(m);
                 const st = statusOf(m.projectedRate);
                 return (
-                  <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
-                    <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
-                    <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-lg font-extrabold text-stone-800">{prog !== null ? `${prog}%` : "—"}</span>
-                      <span className="text-[10px] text-stone-400">누적</span>
+                  <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-lg p-2 hover:border-kkumbi-300 transition">
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span className="text-[10px] font-mono text-stone-400">KPI {c.id}</span>
+                      <span className={`text-[10px] font-semibold ${RATE_TEXT[st]}`}>예상 {m.projectedRate !== null ? `${m.projectedRate}%` : "—"}</span>
                     </div>
-                    <div className="relative h-2 bg-stone-100 rounded-full overflow-hidden mt-1.5">
+                    <div className="text-[11px] font-bold text-stone-700 leading-tight mt-0.5 mb-1 truncate">{c.title}</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-base font-extrabold text-stone-800 leading-none">{prog !== null ? `${prog}%` : "—"}</span>
+                      <span className="text-[9px] text-stone-400">누적</span>
+                    </div>
+                    <div className="relative h-1.5 bg-stone-100 rounded-full overflow-hidden mt-1">
                       <div className="h-full rounded-full" style={{ width: `${prog !== null ? Math.min(prog, 100) : 0}%`, background: BAR_HEX[st] }} />
                       <div className="absolute top-0 bottom-0 w-px bg-stone-500" style={{ left: `${Math.min(pace, 100)}%` }} />
                     </div>
-                    <div className="mt-1.5 pt-1.5 border-t border-stone-100 space-y-0.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-stone-400">월 목표</span>
-                        <span className="text-[11px] font-bold text-stone-700">{fmt(m.monthTarget, m.unit)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-stone-400">누적 실적</span>
-                        <span className="text-[11px] font-semibold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-stone-400">예상 달성률</span>
-                        <span className={`text-[11px] font-semibold ${RATE_TEXT[st]}`}>{m.projectedRate !== null ? `${m.projectedRate}%` : "—"}</span>
-                      </div>
+                    <div className="flex items-center justify-between mt-1 text-[9px]">
+                      <span className="text-stone-400">목표 {fmt(m.monthTarget, m.unit)}</span>
+                      <span className="font-semibold text-emerald-700">{fmt(m.cumulativeActual, m.unit)}</span>
                     </div>
                   </button>
                 );
               }
               return (
-                <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-xl p-3 hover:border-kkumbi-300 transition">
-                  <div className="text-[11px] font-mono text-stone-400">KPI {c.id}</div>
-                  <div className="text-xs font-bold text-stone-700 leading-snug min-h-[2.4em] mt-0.5 mb-1">{c.title}</div>
-                  <div className={`text-base font-extrabold ${RATE_TEXT2[c.status]}`}>{c.rateLabel || PROJ_LABEL[c.status]}</div>
-                  {c.target && <div className="text-[10px] text-stone-400 mt-1.5">목표 {c.target}</div>}
-                  <div className="text-[10px] text-stone-400 mt-0.5 truncate">{c.actual || "—"}</div>
+                <button key={c.id} onClick={() => goKpi(c.id)} className="text-left bg-white border border-stone-200 rounded-lg p-2 hover:border-kkumbi-300 transition">
+                  <div className="text-[10px] font-mono text-stone-400">KPI {c.id}</div>
+                  <div className="text-[11px] font-bold text-stone-700 leading-tight mt-0.5 mb-1 truncate">{c.title}</div>
+                  <div className={`text-sm font-extrabold ${RATE_TEXT2[c.status]}`}>{c.rateLabel || PROJ_LABEL[c.status]}</div>
+                  <div className="text-[9px] text-stone-400 mt-0.5 truncate">{c.target ? `목표 ${c.target}` : (c.actual || "—")}</div>
                 </button>
               );
             })}
