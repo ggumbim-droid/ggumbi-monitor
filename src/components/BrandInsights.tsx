@@ -4,13 +4,21 @@ import { useState, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, type BrandInsight } from "@/lib/brand-insights";
+import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, BRAND_RANKING_GROUPS, type BrandInsight } from "@/lib/brand-insights";
 
 const BRAND_COLORS = ["#f56b3d", "#10B981", "#45B7D1", "#8B5CF6", "#0EA5E9", "#EC4899", "#14B8A6", "#94A3B8"];
 type Row = Record<string, string | number>;
 
 interface KwBrand { name: string; keywords: string[] }
 interface KwGroups { [key: string]: { label: string; brands: KwBrand[] } }
+
+// 04 키워드 1페이지 노출 (브랜드 모니터링 ranking)
+interface RankRow {
+  keyword: string; volume: number; priceRank: string;
+  blogCount: number; blogRanks: string; blogUrl: string;
+  cafeCount: number; cafeUrl: string; blogSov: string; cafeSov: string; action: string;
+}
+interface RankGroup { name: string; brand: string; rows: RankRow[]; }
 
 const STACK = [
   { label: "주간(전주 월~일)", value: "lastweek" },
@@ -28,11 +36,6 @@ function Delta({ v }: { v: string }) {
   const up = n > 0;
   return <span className={up ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>{up ? "▲" : "▼"} {Math.abs(n)}</span>;
 }
-const rankStyle: Record<string, { cls: string; t: string }> = {
-  page1: { cls: "text-emerald-700 bg-emerald-50", t: "1P 노출" },
-  part: { cls: "text-amber-700 bg-amber-50", t: "부분 노출" },
-  none: { cls: "text-rose-700 bg-rose-50", t: "미노출" },
-};
 
 interface TooltipEntry { name: string; value: number; color: string; }
 function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) {
@@ -153,6 +156,107 @@ function SubLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+// 04 키워드 1페이지 노출(브랜드 모니터링) 실시간 조회. 브랜드에 매핑된 표(group.name)만 필터링.
+function useRanking(brandId: string) {
+  const names = BRAND_RANKING_GROUPS[brandId] ?? [];
+  const [groups, setGroups] = useState<RankGroup[]>([]);
+  const [updated, setUpdated] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  async function fetchRanking() {
+    setLoading(true); setError(""); setLoaded(true);
+    try {
+      const res = await fetch("/api/brand-monitor?type=all");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "조회 실패");
+      const all = (data?.ranking?.groups ?? []) as RankGroup[];
+      setGroups(all.filter((g) => names.includes(g.name)));
+      setUpdated(data?.ranking?.updated ?? "");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
+      setGroups([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return { names, groups, updated, loading, error, loaded, fetchRanking };
+}
+
+function RankingBlock({ brandId }: { brandId: string }) {
+  const { names, groups, updated, loading, error, loaded, fetchRanking } = useRanking(brandId);
+  if (names.length === 0) {
+    return <p className="text-xs text-stone-400">이 브랜드에 연결된 1페이지 노출 표가 없습니다.</p>;
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <p className="text-[11px] text-stone-400">
+          04 키워드 1페이지 노출 연동: {names.join(" · ")}{updated && ` · 최종 조회 ${updated}`}
+        </p>
+        <button onClick={fetchRanking} disabled={loading}
+          className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
+          {loading ? "조회 중..." : loaded ? "다시 조회" : "1페이지 노출 조회"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
+      {!loaded && <p className="text-[11px] text-stone-400">※ 위 버튼을 누르면 사이드바 04와 동일한 최신 1페이지 노출 데이터를 불러옵니다.</p>}
+      {loaded && !loading && groups.length === 0 && !error && (
+        <p className="text-xs text-stone-400">연동된 표에 데이터가 없습니다.</p>
+      )}
+      <div className="space-y-4">
+        {groups.map((g) => (
+          <div key={g.name}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-bold text-stone-700">{g.name}</span>
+              <span className="text-[10px] text-stone-400">브랜드: {g.brand}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-stone-400 text-left border-b border-stone-200">
+                  <th className="py-1.5 px-2 font-medium">키워드</th>
+                  <th className="py-1.5 px-2 font-medium text-center">월검색량</th>
+                  <th className="py-1.5 px-2 font-medium text-center">가격비교</th>
+                  <th className="py-1.5 px-2 font-medium text-center">블로그</th>
+                  <th className="py-1.5 px-2 font-medium text-center">카페</th>
+                  <th className="py-1.5 px-2 font-medium">점유율</th>
+                </tr></thead>
+                <tbody>
+                  {g.rows.map((row) => (
+                    <tr key={row.keyword} className="border-b border-stone-100">
+                      <td className="py-1.5 px-2 font-semibold text-stone-800">{row.keyword}</td>
+                      <td className="py-1.5 px-2 text-center text-stone-600">{Number(row.volume).toLocaleString()}</td>
+                      <td className="py-1.5 px-2 text-center">
+                        {row.priceRank !== "-" ? <span className="bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded">{row.priceRank}위</span> : <span className="text-stone-300">-</span>}
+                      </td>
+                      <td className="py-1.5 px-2 text-center">
+                        {row.blogCount > 0
+                          ? <a href={row.blogUrl} target="_blank" rel="noopener noreferrer" className="bg-blue-50 text-blue-700 font-bold px-1.5 py-0.5 rounded hover:underline">{row.blogCount}건 ({row.blogRanks})</a>
+                          : <span className="text-stone-300">-</span>}
+                      </td>
+                      <td className="py-1.5 px-2 text-center">
+                        {row.cafeCount > 0
+                          ? <a href={row.cafeUrl} target="_blank" rel="noopener noreferrer" className="bg-orange-50 text-orange-700 font-bold px-1.5 py-0.5 rounded hover:underline">{row.cafeCount}건</a>
+                          : <span className="text-stone-300">-</span>}
+                      </td>
+                      <td className="py-1.5 px-2 text-stone-500">
+                        {row.blogSov && <div><span className="text-stone-400">블로그</span> {row.blogSov}</div>}
+                        {row.cafeSov && <div><span className="text-stone-400">카페</span> {row.cafeSov}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BrandPanel({ brand }: { brand: BrandInsight }) {
   const { groups, state, loading, error, fetchAll } = useBrandTrend(brand.id);
   return (
@@ -225,32 +329,8 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
         </div>
         <div className="border border-stone-200 rounded-xl p-4 bg-white space-y-5">
           <div>
-            <SubLabel>네이버 쇼핑검색 순위 · 1페이지 노출{brand.shopTitle ? ` · ${brand.shopTitle}` : ""}</SubLabel>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="text-stone-400 text-left border-b border-stone-200">
-                  <th className="py-1.5 px-2 font-medium">키워드</th>
-                  <th className="py-1.5 px-2 font-medium">월검색량</th>
-                  <th className="py-1.5 px-2 font-medium">블로그</th>
-                  <th className="py-1.5 px-2 font-medium">카페</th>
-                  <th className="py-1.5 px-2 font-medium">상태</th>
-                </tr></thead>
-                <tbody>
-                  {brand.shop.map((row, i) => {
-                    const st = rankStyle[row[4]] || rankStyle.none;
-                    return (
-                      <tr key={i} className="border-b border-stone-100">
-                        <td className="py-1.5 px-2 font-semibold text-stone-800">{row[0]}</td>
-                        <td className="py-1.5 px-2 text-stone-600">{row[1]}</td>
-                        <td className="py-1.5 px-2 text-stone-600">{row[2]}</td>
-                        <td className="py-1.5 px-2 text-stone-600">{row[3]}</td>
-                        <td className="py-1.5 px-2"><span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${st.cls}`}>{st.t}</span></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <SubLabel>네이버 쇼핑검색 순위 · 1페이지 노출 (04 연동)</SubLabel>
+            <RankingBlock brandId={brand.id} />
             {brand.rankNote && (
               <div className="mt-2 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2">
                 <p className="text-xs text-stone-600 leading-relaxed">{brand.rankNote}</p>
