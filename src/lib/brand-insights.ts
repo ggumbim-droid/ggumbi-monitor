@@ -25,6 +25,17 @@ export const BRAND_TREND_GROUPS: Record<string, string[]> = {
   "파미야": ["dog_coolmat", "cat_tower"],
 };
 
+// 브랜드 탭 ↔ 04 키워드 1페이지 노출(브랜드 모니터링 ranking)의 표 제목(group.name) 매핑
+// 자사 인사이트의 쇼핑검색 순위 표를 04 실시간 데이터로 끌어온다.
+export const BRAND_RANKING_GROUPS: Record<string, string[]> = {
+  "꿈비리코코": ["꿈비개발"],
+  "봄봄슈슈비": ["봄봄매트"],
+  "꿈비육아": ["꿈비맘마존", "꿈비시즌"],
+  "오가닉그라운드": ["오가닉그라운드"],
+  "바바디토": ["바바디토"],
+  "파미야": ["파미야"],
+};
+
 export const BRAND_INSIGHTS: BrandInsight[] = [
   {
     "id": "꿈비리코코",
