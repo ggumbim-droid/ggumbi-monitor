@@ -51,32 +51,76 @@ function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: 
   );
 }
 
-// 브랜드에 매핑된 키워드 그룹들의 네이버 트렌드를 자동 조회해 표시
-function BrandTrend({ brandId }: { brandId: string }) {
+// 브랜드에 매핑된 키워드 그룹들의 네이버 트렌드를 자동 조회.
+// onData로 조회 결과(그룹별 차트 데이터·라벨·브랜드)를 부모에 전달해 순위표와 핑퐁 배치한다.
+interface TrendState {
+  labels: Record<string, string>;
+  groupBrands: Record<string, KwBrand[]>;
+  charts: Record<string, Record<string, Row[]>>;
+  loaded: boolean;
+}
+
+function GroupTrendChart({ gid, label, brands, gCharts }: {
+  gid: string; label: string; brands: KwBrand[]; gCharts?: Record<string, Row[]>;
+}) {
+  return (
+    <div className="mb-2">
+      <div className="text-xs font-bold text-stone-700 mb-2">{label || gid} · 검색 트렌드</div>
+      {!gCharts ? (
+        <p className="text-[11px] text-stone-300">검색 트렌드 조회 대기 중</p>
+      ) : (
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          {STACK.map((pp) => {
+            const rows = gCharts[pp.value];
+            if (!rows || rows.length === 0) return null;
+            return (
+              <div key={pp.value}>
+                <div className="text-[11px] font-semibold text-stone-500 mb-1">{pp.label} 추이</div>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={rows}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                    <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                    <Tooltip content={<TrendTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    {brands.map((b, i) => (
+                      <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useBrandTrend(brandId: string) {
   const groups = BRAND_TREND_GROUPS[brandId] ?? [];
-  const [labels, setLabels] = useState<Record<string, string>>({});
-  const [groupBrands, setGroupBrands] = useState<Record<string, KwBrand[]>>({});
-  const [charts, setCharts] = useState<Record<string, Record<string, Row[]>>>({}); // groupId -> period -> rows
+  const [state, setState] = useState<TrendState>({ labels: {}, groupBrands: {}, charts: {}, loaded: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    setState({ labels: {}, groupBrands: {}, charts: {}, loaded: false });
+    setError("");
     fetch("/api/keywords").then((r) => r.json()).then((data: unknown) => {
       if (!alive || !data || typeof data !== "object") return;
       const g = data as KwGroups;
       const lab: Record<string, string> = {};
       const gb: Record<string, KwBrand[]> = {};
       groups.forEach((gid) => { if (g[gid]) { lab[gid] = g[gid].label; gb[gid] = g[gid].brands; } });
-      setLabels(lab); setGroupBrands(gb);
+      setState((s) => ({ ...s, labels: lab, groupBrands: gb }));
     }).catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
   async function fetchAll() {
-    setLoading(true); setError(""); setLoaded(true);
+    setLoading(true); setError("");
     try {
       const result: Record<string, Record<string, Row[]>> = {};
       for (const gid of groups) {
@@ -90,7 +134,7 @@ function BrandTrend({ brandId }: { brandId: string }) {
           if (res.ok) result[gid][pp.value] = (data.results ?? []) as Row[];
         }));
       }
-      setCharts(result);
+      setState((s) => ({ ...s, charts: result, loaded: true }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
     } finally {
@@ -98,62 +142,7 @@ function BrandTrend({ brandId }: { brandId: string }) {
     }
   }
 
-  if (groups.length === 0) {
-    return <p className="text-xs text-stone-400">이 브랜드에 연결된 검색 트렌드 그룹이 없습니다.</p>;
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <p className="text-[11px] text-stone-400">
-          연결된 검색 그룹: {groups.map((g) => labels[g] || g).join(" · ")}
-        </p>
-        <button onClick={fetchAll} disabled={loading}
-          className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
-          {loading ? "조회 중..." : loaded ? "다시 조회" : "검색 트렌드 조회"}
-        </button>
-      </div>
-      {error && <p className="text-xs text-rose-500">{error}</p>}
-      {!loaded && <p className="text-[11px] text-stone-400">※ 위 버튼을 누르면 네이버 검색 트렌드(주간·3개월)를 불러옵니다.</p>}
-
-      {groups.map((gid) => {
-        const brands = groupBrands[gid] ?? [];
-        const gCharts = charts[gid];
-        return (
-          <div key={gid} className="border border-stone-200 rounded-xl p-3 bg-white">
-            <div className="text-xs font-bold text-stone-700 mb-2">{labels[gid] || gid}</div>
-            {!gCharts ? (
-              <p className="text-[11px] text-stone-300">조회 대기 중</p>
-            ) : (
-              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-                {STACK.map((pp) => {
-                  const rows = gCharts[pp.value];
-                  if (!rows || rows.length === 0) return null;
-                  return (
-                    <div key={pp.value}>
-                      <div className="text-[11px] font-semibold text-stone-500 mb-1">{pp.label} 추이</div>
-                      <ResponsiveContainer width="100%" height={180}>
-                        <LineChart data={rows}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                          <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
-                          <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
-                          <Tooltip content={<TrendTooltip />} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          {brands.map((b, i) => (
-                            <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
-                          ))}
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+  return { groups, state, loading, error, fetchAll };
 }
 
 function SubLabel({ children }: { children: React.ReactNode }) {
@@ -165,6 +154,7 @@ function SubLabel({ children }: { children: React.ReactNode }) {
 }
 
 function BrandPanel({ brand }: { brand: BrandInsight }) {
+  const { groups, state, loading, error, fetchAll } = useBrandTrend(brand.id);
   return (
     <div className="space-y-6">
       <section>
@@ -173,44 +163,58 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
           <span className="text-sm font-bold text-stone-800">검색 트렌드 · 주간 증감 · 특이사항</span>
         </div>
 
-        <div className="mb-4">
-          <BrandTrend brandId={brand.id} />
-        </div>
+        {groups.length > 0 && (
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+            <p className="text-[11px] text-stone-400">연결된 검색 그룹: {groups.map((g) => state.labels[g] || g).join(" · ")}</p>
+            <button onClick={fetchAll} disabled={loading}
+              className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
+              {loading ? "조회 중..." : state.loaded ? "다시 조회" : "검색 트렌드 조회"}
+            </button>
+          </div>
+        )}
+        {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
+        {!state.loaded && groups.length > 0 && <p className="text-[11px] text-stone-400 mb-3">※ 위 버튼을 누르면 네이버 검색 트렌드(주간·3년)를 불러옵니다.</p>}
 
         <div className="space-y-3">
-          {brand.comp.map((block, bi) => (
-            <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
-              <div className="font-bold text-sm text-stone-800 mb-3">{block.cat} · 경쟁사 순위</div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead><tr className="text-stone-400 text-left">
-                    <th className="py-1 px-1.5 font-medium">브랜드</th>
-                    <th className="py-1 px-1.5 font-medium">7일평균</th>
-                    <th className="py-1 px-1.5 font-medium">증감</th>
-                    <th className="py-1 px-1.5 font-medium">최고점</th>
-                    <th className="py-1 px-1.5 font-medium">상태</th>
-                  </tr></thead>
-                  <tbody>
-                    {block.rows.map((r, i) => (
-                      <tr key={i} className="border-t border-stone-100">
-                        <td className={`py-1.5 px-1.5 ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
-                        <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
-                        <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
-                        <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
-                        <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {block.note && (
-                <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
-                  <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
-                  <p className="text-xs text-stone-600 leading-relaxed mt-1.5">{block.note}</p>
+          {brand.comp.map((block, bi) => {
+            const gid = groups[bi]; // comp 카테고리와 키워드 그룹을 순서로 매칭
+            return (
+              <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
+                {gid && (
+                  <GroupTrendChart gid={gid} label={state.labels[gid] || gid} brands={state.groupBrands[gid] ?? []} gCharts={state.charts[gid]} />
+                )}
+                <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-stone-400 text-left">
+                      <th className="py-1 px-1.5 font-medium">브랜드</th>
+                      <th className="py-1 px-1.5 font-medium">7일평균</th>
+                      <th className="py-1 px-1.5 font-medium">증감</th>
+                      <th className="py-1 px-1.5 font-medium">최고점</th>
+                      <th className="py-1 px-1.5 font-medium">상태</th>
+                    </tr></thead>
+                    <tbody>
+                      {block.rows.map((r, i) => (
+                        <tr key={i} className="border-t border-stone-100">
+                          <td className={`py-1.5 px-1.5 ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
+                          <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
+                          <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
+                          <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
+                          <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </div>
-          ))}
+                {block.note && (
+                  <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
+                    <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
+                    <p className="text-xs text-stone-600 leading-relaxed mt-1.5">{block.note}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -341,41 +345,33 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
 }
 
 export function BrandInsights() {
-  const [open, setOpen] = useState(false);
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
   const brand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
 
   return (
     <div className="mt-5 pt-4 border-t border-stone-200">
-      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between text-left group">
-        <div>
-          <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
-          <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
-        </div>
-        <span className="text-xs font-semibold text-stone-500 group-hover:text-kkumbi-600 border border-stone-200 rounded-full px-2.5 py-1 shrink-0">
-          {open ? "▲ 접기" : "▼ 펼치기"}
-        </span>
-      </button>
+      <div className="mb-4">
+        <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
+        <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
+      </div>
 
-      {open && (
-        <div className="mt-4">
-          <div className="grid gap-2 mb-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-            {BRAND_INSIGHTS.map((b) => {
-              const on = b.id === active;
-              return (
-                <button key={b.id} onClick={() => setActive(b.id)}
-                  className={`text-left rounded-xl px-3 py-2.5 border transition ${on ? "border-kkumbi-400 bg-kkumbi-50" : "border-stone-200 bg-white hover:border-kkumbi-300"}`}>
-                  <div className="text-[11px] text-stone-400 mb-0.5">{b.tag}</div>
-                  <div className={`text-[13px] font-bold leading-tight ${on ? "text-kkumbi-700" : "text-stone-800"}`}>{b.name}</div>
-                  <div className="text-[11px] font-bold text-kkumbi-600 mt-1.5">목표 {b.target}</div>
-                </button>
-              );
-            })}
-          </div>
-          <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
-          <BrandPanel brand={brand} />
+      <div>
+        <div className="grid gap-2 mb-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+          {BRAND_INSIGHTS.map((b) => {
+            const on = b.id === active;
+            return (
+              <button key={b.id} onClick={() => setActive(b.id)}
+                className={`text-left rounded-xl px-3 py-2.5 border transition ${on ? "border-kkumbi-400 bg-kkumbi-50" : "border-stone-200 bg-white hover:border-kkumbi-300"}`}>
+                <div className="text-[11px] text-stone-400 mb-0.5">{b.tag}</div>
+                <div className={`text-[13px] font-bold leading-tight ${on ? "text-kkumbi-700" : "text-stone-800"}`}>{b.name}</div>
+                <div className="text-[11px] font-bold text-kkumbi-600 mt-1.5">목표 {b.target}</div>
+              </button>
+            );
+          })}
         </div>
-      )}
+        <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
+        <BrandPanel brand={brand} />
+      </div>
     </div>
   );
 }
