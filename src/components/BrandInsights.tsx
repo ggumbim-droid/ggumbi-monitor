@@ -386,6 +386,64 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
             </div>
           )}
 
+          {(brand.ig.upload || brand.ig.good || brand.ig.bad || brand.igContents.length > 0) && (
+            <div>
+              <SubLabel>인스타그램 주간 인사이트</SubLabel>
+              <div className="flex gap-2 mb-3 flex-wrap">
+                <div className="flex-1 min-w-[120px] bg-stone-50 rounded-lg px-3 py-2.5">
+                  <div className="text-[11px] text-stone-400 mb-0.5">업로드 콘텐츠</div>
+                  <div className="text-base font-extrabold text-stone-800">{brand.ig.upload || "—"}<span className="text-xs font-medium text-stone-400"> 건</span></div>
+                </div>
+                <div className="flex-1 min-w-[120px] bg-stone-50 rounded-lg px-3 py-2.5">
+                  <div className="text-[11px] text-stone-400 mb-0.5">팔로우 증감</div>
+                  <div className="text-base font-extrabold text-stone-800">{brand.ig.follow || "—"}</div>
+                </div>
+              </div>
+              {brand.igContents.length > 0 && (
+                <div className="overflow-x-auto mb-3">
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-stone-400 text-left border-b border-stone-200">
+                      <th className="py-1.5 px-2 font-medium">콘텐츠</th>
+                      <th className="py-1.5 px-2 font-medium">조회</th>
+                      <th className="py-1.5 px-2 font-medium">도달</th>
+                      <th className="py-1.5 px-2 font-medium">팔로우</th>
+                      <th className="py-1.5 px-2 font-medium">공유</th>
+                      <th className="py-1.5 px-2 font-medium">댓글</th>
+                    </tr></thead>
+                    <tbody>
+                      {brand.igContents.map((c, i) => (
+                        <tr key={i} className="border-b border-stone-100">
+                          <td className="py-1.5 px-2 font-semibold text-stone-800">{c.name}</td>
+                          <td className="py-1.5 px-2 text-stone-600">{c.views || "—"}</td>
+                          <td className="py-1.5 px-2 text-stone-600">{c.reach || "—"}</td>
+                          <td className="py-1.5 px-2 text-stone-600">{c.follows || "—"}</td>
+                          <td className="py-1.5 px-2 text-stone-600">{c.shares || "—"}</td>
+                          <td className="py-1.5 px-2 text-stone-600">{c.comments || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {(brand.ig.good || brand.ig.bad) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {brand.ig.good && (
+                    <div className="bg-emerald-50 rounded-lg px-3 py-2">
+                      <div className="text-[11px] font-bold text-emerald-700 mb-1">👍 잘된 점</div>
+                      <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.good}</p>
+                    </div>
+                  )}
+                  {brand.ig.bad && (
+                    <div className="bg-rose-50 rounded-lg px-3 py-2">
+                      <div className="text-[11px] font-bold text-rose-700 mb-1">👀 아쉬운 점</div>
+                      <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.bad}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {brand.improvement && (
             <div>
               <SubLabel>아쉬운 점 해결방안</SubLabel>
@@ -424,15 +482,66 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
   );
 }
 
+interface SheetBrandData {
+  comp?: BrandInsight["comp"];
+  rankNote?: string; improvement?: string;
+  supporters?: string;
+  lastWork?: string[][]; thisWeek?: string[][];
+  ig?: { upload: string; follow: string; good: string; bad: string };
+  igContents?: { name: string; views: string; reach: string; follows: string; shares: string; comments: string }[];
+}
+
+// 시트 실데이터를 예시(fallback) 위에 병합. 시트가 비어있는 필드는 예시를 그대로 유지.
+function mergeBrand(base: BrandInsight, sheet?: SheetBrandData): BrandInsight {
+  if (!sheet) return base;
+  const merged: BrandInsight = { ...base };
+  if (sheet.comp && sheet.comp.length > 0) merged.comp = sheet.comp;
+  if (sheet.rankNote) merged.rankNote = sheet.rankNote;
+  if (sheet.improvement) merged.improvement = sheet.improvement;
+  if (sheet.supporters) merged.supporters = sheet.supporters;
+  if (sheet.lastWork && sheet.lastWork.length > 0) merged.lastWork = sheet.lastWork;
+  if (sheet.thisWeek && sheet.thisWeek.length > 0) merged.thisWeek = sheet.thisWeek;
+  if (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow)) merged.ig = sheet.ig;
+  if (sheet.igContents && sheet.igContents.length > 0) merged.igContents = sheet.igContents;
+  return merged;
+}
+
 export function BrandInsights() {
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
-  const brand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
+  const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/brand-insights").then((r) => r.json()).then((data: unknown) => {
+      if (!alive || !data || typeof data !== "object") return;
+      const d = data as { brands?: Record<string, SheetBrandData> };
+      if (d.brands && Object.keys(d.brands).length > 0) {
+        setSheetData(d.brands);
+        // 시트에 실데이터가 하나라도 있으면 live 표시
+        const anyData = Object.values(d.brands).some((b) =>
+          (b.comp && b.comp.length > 0) || b.rankNote || b.improvement || b.supporters ||
+          (b.lastWork && b.lastWork.length > 0) || (b.thisWeek && b.thisWeek.length > 0)
+        );
+        setLive(anyData);
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const baseBrand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
+  const brand = mergeBrand(baseBrand, sheetData[active]);
 
   return (
     <div className="mt-5 pt-4 border-t border-stone-200">
-      <div className="mb-4">
-        <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
-        <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
+      <div className="mb-4 flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
+          <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${live ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}>
+          {live ? "● 시트 연동" : "○ 예시 데이터"}
+        </span>
       </div>
 
       <div>
