@@ -76,7 +76,7 @@ interface MonthlyCategorySummary {
   weeksCounted: number;              // 합산에 포함된 주차 수
   weeklyInsights: { week: string; label: string; result: string; insight: string; action: string }[]; // 4주치 인사이트 모음
   weeklySeries: { week: string; label: string; cumActual: number | null; cumProgress: number | null }[]; // 주차별 누적 진행(월목표 대비)
-  brands: { brand: string; cumTarget: number | null; cumActual: number | null; rate: number | null }[]; // 브랜드별 누적(이번 달)
+  brands: { brand: string; monthTarget: number | null; cumTarget: number | null; cumActual: number | null; rate: number | null; excluded: boolean }[]; // 브랜드별 누적(이번 달)
 }
 
 interface MonthlySummary {
@@ -198,6 +198,63 @@ const AUTO_CALC_CONFIG: Record<string, { monthly: Record<string, number>; unit: 
   "08": { monthly: AI_SAVING_MONTHLY, unit: "시간" },
 };
 
+// 브랜드별 × 월별 목표 (출처: 2026년 목표 요약본.xlsx). 브랜드명은 대시보드 표기에 맞춰 정규화(g7커피/g7→G7커피).
+// KPI-01 키워드검색량 / KPI-03 주력제품 광고매출 / KPI-05 신규유입(채널 단위). 07은 BUDGET_MONTHLY로 별도 처리.
+const BRAND_MONTHLY_TARGETS: Record<string, Record<string, Record<string, number>>> = {
+  "01": {
+    "꿈비":         { "2026-07": 112006, "2026-08": 115360, "2026-09": 108502, "2026-10": 134426, "2026-11": 146292, "2026-12": 128229 },
+    "파미야":       { "2026-07": 4800,   "2026-08": 2105,   "2026-09": 1586,   "2026-10": 3873,   "2026-11": 1600,   "2026-12": 1600 },
+    "뉴어스":       { "2026-07": 316,    "2026-08": 231,    "2026-09": 130,    "2026-10": 350,    "2026-11": 435,    "2026-12": 435 },
+    "G7커피":       { "2026-07": 32981,  "2026-08": 33383,  "2026-09": 27735,  "2026-10": 31566,  "2026-11": 35189,  "2026-12": 36402 },
+    "오가닉그라운드": { "2026-07": 12279,  "2026-08": 10269,  "2026-09": 14434,  "2026-10": 12816,  "2026-11": 15236,  "2026-12": 17470 },
+    "바바디토":     { "2026-07": 7996,   "2026-08": 6709,   "2026-09": 13334,  "2026-10": 10269,  "2026-11": 9263,   "2026-12": 10621 },
+  },
+  "03": {
+    "꿈비":         { "2026-07": 178866457, "2026-08": 160721760, "2026-09": 183148975, "2026-10": 195032548, "2026-11": 226223882, "2026-12": 198291418 },
+    "오가닉그라운드": { "2026-07": 17894106,  "2026-08": 15948286,  "2026-09": 28823726,  "2026-10": 29651585,  "2026-11": 26666096,  "2026-12": 30577124 },
+    "바바디토":     { "2026-07": 9106296,   "2026-08": 9237860,   "2026-09": 17165096,  "2026-10": 16612616,  "2026-11": 13345129,  "2026-12": 15302415 },
+    "파미야":       { "2026-07": 16121462,  "2026-08": 5336048,   "2026-09": 4268838,   "2026-10": 4268838,   "2026-11": 4268838,   "2026-12": 4268838 },
+    "뉴어스":       { "2026-07": 2134419,   "2026-08": 2134419,   "2026-09": 2134419,   "2026-10": 2134419,   "2026-11": 2134419,   "2026-12": 2134419 },
+    "G7커피":       { "2026-07": 153971660, "2026-08": 159281027, "2026-09": 144180012, "2026-10": 153971660, "2026-11": 153971660, "2026-12": 159281027 },
+    "신선미가":     { "2026-07": 773727,    "2026-08": 800407,    "2026-09": 4482280,   "2026-10": 773727,    "2026-11": 773727,    "2026-12": 800407 },
+  },
+  "05": {
+    "꿈비 자사몰":        { "2026-07": 26111, "2026-08": 23463, "2026-09": 26737, "2026-10": 28471, "2026-11": 33025, "2026-12": 28947 },
+    "오가닉그라운드 자사몰": { "2026-07": 22143, "2026-08": 19735, "2026-09": 35667, "2026-10": 36692, "2026-11": 32998, "2026-12": 37837 },
+    "꿈비 스토어":        { "2026-07": 29350, "2026-08": 26373, "2026-09": 30053, "2026-10": 32003, "2026-11": 37121, "2026-12": 32538 },
+    "오가닉그라운드 스토어": { "2026-07": 11340, "2026-08": 10106, "2026-09": 18266, "2026-10": 18790, "2026-11": 16898, "2026-12": 19377 },
+  },
+};
+
+// 시트 세부항목의 브랜드명이 흔들릴 때 요약본 표기로 정규화
+function normalizeBrand(name: string): string {
+  const t = name.trim();
+  const low = t.toLowerCase().replace(/\s+/g, "");
+  if (low === "g7" || low === "g7커피" || low === "g7coffee") return "G7커피";
+  return t;
+}
+
+// G7커피: 추이는 표시하되 팀 KPI 합계·달성률·예산비중에서는 제외한다.
+// (한국지사가 대부분의 마케팅 비용을 집행 → 우리 활동으로 인한 변동이 적음)
+const EXCLUDED_FROM_TOTAL = new Set(["G7커피"]);
+function isExcludedBrand(name: string): boolean {
+  return EXCLUDED_FROM_TOTAL.has(normalizeBrand(name));
+}
+
+// 브랜드별 월목표를 G7 제외하고 합산해 KPI 전체 월목표를 구한다(목표·실적 기준 통일).
+function kpiMonthTargetExclG7(kpiId: string, month: string): number | null {
+  const map = BRAND_MONTHLY_TARGETS[kpiId];
+  if (!map) return null;
+  let sum = 0;
+  let has = false;
+  for (const [brand, byMonth] of Object.entries(map)) {
+    if (isExcludedBrand(brand)) continue;
+    const v = byMonth[month];
+    if (v !== undefined) { sum += v; has = true; }
+  }
+  return has ? sum : null;
+}
+
 function blankCategory(def: { id: string; title: string }): ReportCategory {
   return {
     id: def.id, title: def.title,
@@ -277,10 +334,23 @@ function rateStatus(rate: number): Status {
   return "bad";
 }
 
+// KPI의 월별 목표 맵을 G7 제외 기준으로 반환(브랜드 목표가 있으면 그 합, 없으면 기존 상수)
+function effectiveMonthlyMap(kpiId: string, fallback: Record<string, number>): Record<string, number> {
+  const map = BRAND_MONTHLY_TARGETS[kpiId];
+  if (!map) return fallback;
+  const out: Record<string, number> = {};
+  for (const month of Object.keys(fallback)) {
+    const v = kpiMonthTargetExclG7(kpiId, month);
+    out[month] = v ?? fallback[month];
+  }
+  return out;
+}
+
 function applyAutoCalc(cat: ReportCategory, dayCounts: Record<string, number>): ReportCategory {
   const cfg = AUTO_CALC_CONFIG[cat.id];
   if (!cfg || !hasMonthlyConfig(cfg.monthly, dayCounts)) return cat;
-  const targetNum = prorateMonthly(cfg.monthly, dayCounts);
+  const monthlyMap = effectiveMonthlyMap(cat.id, cfg.monthly);
+  const targetNum = prorateMonthly(monthlyMap, dayCounts);
   cat.target = `${targetNum.toLocaleString()}${cfg.unit}`;
   cat.autoCalculated = true;
   if (cat.actualNum !== null && cat.actualNum !== undefined && targetNum > 0) {
@@ -308,16 +378,18 @@ function applyBudgetCalc(cat: ReportCategory, dayCounts: Record<string, number>)
   });
   cat.budgetRows = rows;
   cat.autoCalculated = true;
-  const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
-  const totalRevenue = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
-  const totalCost = rows.reduce((s, r) => s + (r.cost ?? 0), 0);
+  // G7커피는 표에는 남기되 합계·비율에서는 제외 (한국지사 집행분이라 우리 활동과 무관)
+  const totalsRows = rows.filter((r) => !isExcludedBrand(r.brand));
+  const totalBudget = totalsRows.reduce((s, r) => s + r.budget, 0);
+  const totalRevenue = totalsRows.reduce((s, r) => s + (r.revenue ?? 0), 0);
+  const totalCost = totalsRows.reduce((s, r) => s + (r.cost ?? 0), 0);
   cat.target = "6.5% 이내";
-  cat.note = `총예산 ${totalBudget.toLocaleString()}원`;
+  cat.note = `총예산 ${totalBudget.toLocaleString()}원 (G7 제외)`;
   if (totalRevenue > 0) {
     const ratio = Math.round((totalCost / totalRevenue) * 1000) / 10;
     cat.rateNum = ratio;
     cat.rateLabel = `${ratio}%`;
-    cat.actual = `매출 ${totalRevenue.toLocaleString()}원 · 비용 ${totalCost.toLocaleString()}원`;
+    cat.actual = `매출 ${totalRevenue.toLocaleString()}원 · 비용 ${totalCost.toLocaleString()}원 (G7 제외)`;
     cat.status = ratio <= 6.5 ? "good" : ratio <= 8 ? "warn" : "bad";
   } else {
     cat.rateNum = null;
@@ -400,7 +472,8 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
     const cfg = AUTO_CALC_CONFIG[def.id];
     if (!cfg) continue; // 자동계산(숫자) 카테고리만 누적 대상 (04·07 제외)
 
-    const monthTarget = cfg.monthly[month] ?? null;
+    // 전체 월목표: 브랜드별 목표가 있는 KPI(01·03·05)는 G7 제외 합산, 그 외는 기존 상수
+    const monthTarget = kpiMonthTargetExclG7(def.id, month) ?? cfg.monthly[month] ?? null;
 
     let cumTarget = 0;
     let cumActual = 0;
@@ -418,27 +491,36 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
       const totalWeekDays = Object.values(dc).reduce((s, n) => s + n, 0);
       if (daysThisMonth === 0 || totalWeekDays === 0) continue; // 이 달에 안 걸친 주는 건너뜀
 
-      // 목표: 월목표를 이 달 걸친 날수만큼 환산해 누적
-      const monthOnly: Record<string, number> = { [month]: daysThisMonth };
-      cumTarget += prorateMonthly(cfg.monthly, monthOnly);
+      // 목표: 이 주가 이 달에 걸친 날수만큼 월목표(G7 제외)를 안분해 누적
+      const monthDaysRatio = totalDaysInMonth > 0 ? daysThisMonth / totalDaysInMonth : 0;
+      if (monthTarget !== null) cumTarget += monthTarget * monthDaysRatio;
 
-      // 방식 B(일할 배분): 그 주 실적 × (이 달 걸친 날수 / 주 전체 날수)
       const cat = r.categories.find((c) => c.id === def.id);
-      const a = numericActualOf(cat);
-      if (a !== null) {
-        cumActual += a * (daysThisMonth / totalWeekDays);
+
+      // 실적: 세부항목 브랜드 중실적 합산(G7 제외) 우선, 없으면 시트 실적숫자로 폴백
+      let brandActualSum = 0;
+      let brandActualHas = false;
+      (cat?.items ?? []).forEach((it) => {
+        if (!it.brand || isExcludedBrand(it.brand)) return;
+        const ba = toNumOrNull(it.midActual);
+        if (ba !== null) { brandActualSum += ba; brandActualHas = true; }
+      });
+      const weekActual = brandActualHas ? brandActualSum : numericActualOf(cat);
+      if (weekActual !== null) {
+        cumActual += brandActualHas ? weekActual : weekActual * (daysThisMonth / totalWeekDays);
         actualHasAny = true;
       }
 
-      // 브랜드별 누적 (세부항목 중목표·중실적)
+      // 브랜드별 누적 (세부항목 중목표·중실적) — G7 포함해 표에 표시(합계에선 별도 제외)
       (cat?.items ?? []).forEach((it) => {
         if (!it.brand) return;
-        const e = brandAgg.get(it.brand) ?? { target: 0, actual: 0, hasT: false, hasA: false };
+        const bkey = normalizeBrand(it.brand);
+        const e = brandAgg.get(bkey) ?? { target: 0, actual: 0, hasT: false, hasA: false };
         const bt = toNumOrNull(it.midTarget);
         const ba = toNumOrNull(it.midActual);
         if (bt !== null) { e.target += bt; e.hasT = true; }
         if (ba !== null) { e.actual += ba; e.hasA = true; }
-        brandAgg.set(it.brand, e);
+        brandAgg.set(bkey, e);
       });
 
       // 인사이트 수집: 결과요약(actual)·인사이트(note)·실행계획(alternative)
@@ -479,14 +561,26 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
       }
     }
 
-    const brands = Array.from(brandAgg.entries())
-      .map(([brand, e]) => ({
-        brand,
-        cumTarget: e.hasT ? Math.round(e.target) : null,
-        cumActual: e.hasA ? Math.round(e.actual) : null,
-        rate: e.hasT && e.target > 0 && e.hasA ? Math.round((e.actual / e.target) * 1000) / 10 : null,
-      }))
-      .sort((x, y) => (y.cumActual ?? -Infinity) - (x.cumActual ?? -Infinity));
+    // 브랜드별: 실적은 시트 중실적 누적, 목표는 요약본 월목표 기반(월 전체 + 경과일 안분)
+    const brandTargetMap = BRAND_MONTHLY_TARGETS[def.id] ?? {};
+    const elapsedRatio = totalDaysInMonth > 0 ? daysElapsed / totalDaysInMonth : 0;
+    const brandNames = new Set<string>([...Object.keys(brandTargetMap), ...brandAgg.keys()]);
+    const brands = Array.from(brandNames)
+      .map((brand) => {
+        const e = brandAgg.get(brand);
+        const monthT = brandTargetMap[brand]?.[month] ?? null;
+        const cumT = monthT !== null ? Math.round(monthT * elapsedRatio) : null;
+        const cumA = e?.hasA ? Math.round(e.actual) : null;
+        const rate = cumT !== null && cumT > 0 && cumA !== null ? Math.round((cumA / cumT) * 1000) / 10 : null;
+        return { brand, monthTarget: monthT, cumTarget: cumT, cumActual: cumA, rate, excluded: isExcludedBrand(brand) };
+      })
+      // 목표(월)도 실적도 없는 브랜드는 제외
+      .filter((b) => b.monthTarget !== null || b.cumActual !== null)
+      // 합계 제외 브랜드(G7)는 맨 아래로, 그 안에서 목표/실적 큰 순
+      .sort((x, y) => {
+        if (x.excluded !== y.excluded) return x.excluded ? 1 : -1;
+        return (y.monthTarget ?? y.cumActual ?? -Infinity) - (x.monthTarget ?? x.cumActual ?? -Infinity);
+      });
 
     catSummaries.push({
       id: def.id, title: def.title, unit: cfg.unit,
