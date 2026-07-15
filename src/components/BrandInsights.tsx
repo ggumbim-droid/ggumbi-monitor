@@ -1,0 +1,381 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
+import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, type BrandInsight } from "@/lib/brand-insights";
+
+const BRAND_COLORS = ["#f56b3d", "#10B981", "#45B7D1", "#8B5CF6", "#0EA5E9", "#EC4899", "#14B8A6", "#94A3B8"];
+type Row = Record<string, string | number>;
+
+interface KwBrand { name: string; keywords: string[] }
+interface KwGroups { [key: string]: { label: string; brands: KwBrand[] } }
+
+const STACK = [
+  { label: "주간", value: "1week" },
+  { label: "3개월", value: "3months" },
+];
+
+function stateBadge(state: string) {
+  if (state === "up") return <span className="text-emerald-700 bg-emerald-50 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">상승</span>;
+  if (state === "down") return <span className="text-rose-700 bg-rose-50 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">하락</span>;
+  return <span className="text-stone-500 bg-stone-100 text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">유지</span>;
+}
+function Delta({ v }: { v: string }) {
+  const n = parseFloat(v);
+  if (!n || isNaN(n)) return <span className="text-stone-400">{v || "0"}</span>;
+  const up = n > 0;
+  return <span className={up ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>{up ? "▲" : "▼"} {Math.abs(n)}</span>;
+}
+const rankStyle: Record<string, { cls: string; t: string }> = {
+  page1: { cls: "text-emerald-700 bg-emerald-50", t: "1P 노출" },
+  part: { cls: "text-amber-700 bg-amber-50", t: "부분 노출" },
+  none: { cls: "text-rose-700 bg-rose-50", t: "미노출" },
+};
+
+interface TooltipEntry { name: string; value: number; color: string; }
+function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 10px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)", minWidth: "140px" }}>
+      <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>{label}</p>
+      {payload.map((e) => (
+        <div key={e.name} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "1px 0" }}>
+          <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
+          <span style={{ fontSize: "12px", color: "#6b7280", flex: 1 }}>{e.name}</span>
+          <span style={{ fontSize: "12px", color: e.color }}>{typeof e.value === "number" ? e.value.toFixed(1) : e.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 브랜드에 매핑된 키워드 그룹들의 네이버 트렌드를 자동 조회해 표시
+function BrandTrend({ brandId }: { brandId: string }) {
+  const groups = BRAND_TREND_GROUPS[brandId] ?? [];
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [groupBrands, setGroupBrands] = useState<Record<string, KwBrand[]>>({});
+  const [charts, setCharts] = useState<Record<string, Record<string, Row[]>>>({}); // groupId -> period -> rows
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/keywords").then((r) => r.json()).then((data: unknown) => {
+      if (!alive || !data || typeof data !== "object") return;
+      const g = data as KwGroups;
+      const lab: Record<string, string> = {};
+      const gb: Record<string, KwBrand[]> = {};
+      groups.forEach((gid) => { if (g[gid]) { lab[gid] = g[gid].label; gb[gid] = g[gid].brands; } });
+      setLabels(lab); setGroupBrands(gb);
+    }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId]);
+
+  async function fetchAll() {
+    setLoading(true); setError(""); setLoaded(true);
+    try {
+      const result: Record<string, Record<string, Row[]>> = {};
+      for (const gid of groups) {
+        result[gid] = {};
+        await Promise.all(STACK.map(async (pp) => {
+          const res = await fetch("/api/trend", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ groupId: gid, period: pp.value }),
+          });
+          const data = await res.json();
+          if (res.ok) result[gid][pp.value] = (data.results ?? []) as Row[];
+        }));
+      }
+      setCharts(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (groups.length === 0) {
+    return <p className="text-xs text-stone-400">이 브랜드에 연결된 검색 트렌드 그룹이 없습니다.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-[11px] text-stone-400">
+          연결된 검색 그룹: {groups.map((g) => labels[g] || g).join(" · ")}
+        </p>
+        <button onClick={fetchAll} disabled={loading}
+          className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
+          {loading ? "조회 중..." : loaded ? "다시 조회" : "검색 트렌드 조회"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-rose-500">{error}</p>}
+      {!loaded && <p className="text-[11px] text-stone-400">※ 위 버튼을 누르면 네이버 검색 트렌드(주간·3개월)를 불러옵니다.</p>}
+
+      {groups.map((gid) => {
+        const brands = groupBrands[gid] ?? [];
+        const gCharts = charts[gid];
+        return (
+          <div key={gid} className="border border-stone-200 rounded-xl p-3 bg-white">
+            <div className="text-xs font-bold text-stone-700 mb-2">{labels[gid] || gid}</div>
+            {!gCharts ? (
+              <p className="text-[11px] text-stone-300">조회 대기 중</p>
+            ) : (
+              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                {STACK.map((pp) => {
+                  const rows = gCharts[pp.value];
+                  if (!rows || rows.length === 0) return null;
+                  return (
+                    <div key={pp.value}>
+                      <div className="text-[11px] font-semibold text-stone-500 mb-1">{pp.label} 추이</div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <LineChart data={rows}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                          <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                          <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
+                          <Tooltip content={<TrendTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          {brands.map((b, i) => (
+                            <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-xs font-bold text-kkumbi-700 mb-2 flex items-center gap-1.5">
+      <span className="w-1 h-3.5 bg-kkumbi-400 rounded-sm inline-block" />{children}
+    </div>
+  );
+}
+
+function BrandPanel({ brand }: { brand: BrandInsight }) {
+  return (
+    <div className="space-y-6">
+      <section>
+        <div className="flex items-baseline gap-2 mb-3">
+          <span className="text-[11px] font-bold text-white bg-amber-500 px-2 py-0.5 rounded-md">① 경쟁사 인사이트</span>
+          <span className="text-sm font-bold text-stone-800">검색 트렌드 · 주간 증감 · 특이사항</span>
+        </div>
+
+        <div className="mb-4">
+          <BrandTrend brandId={brand.id} />
+        </div>
+
+        <div className="space-y-3">
+          {brand.comp.map((block, bi) => (
+            <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
+              <div className="font-bold text-sm text-stone-800 mb-3">{block.cat} · 경쟁사 순위</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-stone-400 text-left">
+                    <th className="py-1 px-1.5 font-medium">브랜드</th>
+                    <th className="py-1 px-1.5 font-medium">7일평균</th>
+                    <th className="py-1 px-1.5 font-medium">증감</th>
+                    <th className="py-1 px-1.5 font-medium">최고점</th>
+                    <th className="py-1 px-1.5 font-medium">상태</th>
+                  </tr></thead>
+                  <tbody>
+                    {block.rows.map((r, i) => (
+                      <tr key={i} className="border-t border-stone-100">
+                        <td className={`py-1.5 px-1.5 ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
+                        <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
+                        <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
+                        <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
+                        <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {block.note && (
+                <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
+                  <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
+                  <p className="text-xs text-stone-600 leading-relaxed mt-1.5">{block.note}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-baseline gap-2 mb-3">
+          <span className="text-[11px] font-bold text-white bg-kkumbi-500 px-2 py-0.5 rounded-md">② 자사 인사이트</span>
+          <span className="text-sm font-bold text-stone-800">목표 달성 현황 · 채널 진단</span>
+        </div>
+        <div className="border border-stone-200 rounded-xl p-4 bg-white space-y-5">
+          <div>
+            <SubLabel>네이버 쇼핑검색 순위 · 1페이지 노출{brand.shopTitle ? ` · ${brand.shopTitle}` : ""}</SubLabel>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-stone-400 text-left border-b border-stone-200">
+                  <th className="py-1.5 px-2 font-medium">키워드</th>
+                  <th className="py-1.5 px-2 font-medium">월검색량</th>
+                  <th className="py-1.5 px-2 font-medium">블로그</th>
+                  <th className="py-1.5 px-2 font-medium">카페</th>
+                  <th className="py-1.5 px-2 font-medium">상태</th>
+                </tr></thead>
+                <tbody>
+                  {brand.shop.map((row, i) => {
+                    const st = rankStyle[row[4]] || rankStyle.none;
+                    return (
+                      <tr key={i} className="border-b border-stone-100">
+                        <td className="py-1.5 px-2 font-semibold text-stone-800">{row[0]}</td>
+                        <td className="py-1.5 px-2 text-stone-600">{row[1]}</td>
+                        <td className="py-1.5 px-2 text-stone-600">{row[2]}</td>
+                        <td className="py-1.5 px-2 text-stone-600">{row[3]}</td>
+                        <td className="py-1.5 px-2"><span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${st.cls}`}>{st.t}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {brand.rankNote && (
+              <div className="mt-2 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2">
+                <p className="text-xs text-stone-600 leading-relaxed">{brand.rankNote}</p>
+              </div>
+            )}
+          </div>
+
+          {brand.lastWork.length > 0 && (
+            <div>
+              <SubLabel>지난주 진행 업무 · 결과 · 달성률</SubLabel>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-stone-400 text-left border-b border-stone-200">
+                    <th className="py-1.5 px-2 font-medium min-w-[130px]">진행 업무</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[150px]">업무 결과</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[90px]">달성률</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[130px]">잘된 점</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[130px]">아쉬운 점</th>
+                  </tr></thead>
+                  <tbody>
+                    {brand.lastWork.map((r, i) => {
+                      const ach = parseFloat(r[2]);
+                      const hasAch = !isNaN(ach);
+                      const color = ach >= 80 ? "bg-emerald-500" : ach >= 40 ? "bg-amber-500" : "bg-rose-500";
+                      const txt = ach >= 80 ? "text-emerald-700" : ach >= 40 ? "text-amber-700" : "text-rose-700";
+                      return (
+                        <tr key={i} className="border-b border-stone-100 align-top">
+                          <td className="py-2 px-2 font-semibold text-stone-800 leading-snug">{r[0]}</td>
+                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[1]}</td>
+                          <td className="py-2 px-2">
+                            {hasAch ? (
+                              <div className="flex items-center gap-1.5 min-w-[80px]">
+                                <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${Math.min(100, ach)}%` }} /></div>
+                                <span className={`text-[11px] font-bold ${txt}`}>{ach}%</span>
+                              </div>
+                            ) : <span className="text-stone-400">—</span>}
+                          </td>
+                          <td className="py-2 px-2 text-emerald-700 leading-snug">{r[3]}</td>
+                          <td className="py-2 px-2 text-rose-700 leading-snug">{r[4]}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {brand.supporters && (
+            <div>
+              <SubLabel>서포터즈 · 인플루언서 관리현황</SubLabel>
+              <p className="text-xs text-stone-600 leading-relaxed">{brand.supporters}</p>
+            </div>
+          )}
+
+          {brand.improvement && (
+            <div>
+              <SubLabel>아쉬운 점 해결방안</SubLabel>
+              <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
+                <span className="text-[10px] font-bold text-kkumbi-700">✎ 시트 연동</span>
+                <p className="text-xs text-kkumbi-800 leading-relaxed mt-1 font-medium">{brand.improvement}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {brand.thisWeek.length > 0 && (
+        <section>
+          <div className="flex items-baseline gap-2 mb-3">
+            <span className="text-[11px] font-bold text-white bg-emerald-500 px-2 py-0.5 rounded-md">③ 금주 업무 · 목표</span>
+            <span className="text-sm font-bold text-stone-800">금주 액션 플랜</span>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            {brand.thisWeek.map((s, i) => (
+              <div key={i} className="border border-stone-200 border-l-[3px] border-l-emerald-500 rounded-r-lg p-3.5 bg-white">
+                <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">내용</div>
+                <div className="font-bold text-sm text-stone-800 mb-2.5">{s[0]}</div>
+                <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">목표</div>
+                <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md leading-snug mb-2.5">🎯 {s[1]}</div>
+                {s[2] && <>
+                  <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">세부내용</div>
+                  <p className="text-xs text-stone-500 leading-relaxed">{s[2]}</p>
+                </>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+export function BrandInsights() {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
+  const brand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
+
+  return (
+    <div className="mt-5 pt-4 border-t border-stone-200">
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between text-left group">
+        <div>
+          <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
+          <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
+        </div>
+        <span className="text-xs font-semibold text-stone-500 group-hover:text-kkumbi-600 border border-stone-200 rounded-full px-2.5 py-1 shrink-0">
+          {open ? "▲ 접기" : "▼ 펼치기"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-4">
+          <div className="grid gap-2 mb-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+            {BRAND_INSIGHTS.map((b) => {
+              const on = b.id === active;
+              return (
+                <button key={b.id} onClick={() => setActive(b.id)}
+                  className={`text-left rounded-xl px-3 py-2.5 border transition ${on ? "border-kkumbi-400 bg-kkumbi-50" : "border-stone-200 bg-white hover:border-kkumbi-300"}`}>
+                  <div className="text-[11px] text-stone-400 mb-0.5">{b.tag}</div>
+                  <div className={`text-[13px] font-bold leading-tight ${on ? "text-kkumbi-700" : "text-stone-800"}`}>{b.name}</div>
+                  <div className="text-[11px] font-bold text-kkumbi-600 mt-1.5">목표 {b.target}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
+          <BrandPanel brand={brand} />
+        </div>
+      )}
+    </div>
+  );
+}
