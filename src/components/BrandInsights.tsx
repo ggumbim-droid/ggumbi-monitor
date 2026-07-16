@@ -507,6 +507,37 @@ function mergeBrand(base: BrandInsight, sheet?: SheetBrandData): BrandInsight {
   return merged;
 }
 
+// 예시 데이터를 "7월 2주차"로 간주. 이 주차에만 예시 폴백을 허용한다.
+const EXAMPLE_WEEK = "7월2주차"; // 공백 무시 비교
+function isExampleWeek(week?: string): boolean {
+  if (!week) return false;
+  return week.replace(/\s+/g, "") === EXAMPLE_WEEK;
+}
+
+// 시트 데이터가 없을 때 다른 주차에서 쓸 빈 브랜드 데이터(예시 없이 공란)
+function emptyBrand(base: BrandInsight): BrandInsight {
+  return {
+    ...base,
+    comp: [],
+    rankNote: "", improvement: "",
+    supporters: "",
+    lastWork: [], thisWeek: [],
+    ig: { upload: "", follow: "", good: "", bad: "" },
+    igContents: [],
+  };
+}
+
+// 해당 브랜드의 시트 데이터가 실제로 채워졌는지
+function hasSheetData(sheet?: SheetBrandData): boolean {
+  if (!sheet) return false;
+  return Boolean(
+    (sheet.comp && sheet.comp.length > 0) || sheet.rankNote || sheet.improvement ||
+    (sheet.lastWork && sheet.lastWork.length > 0) || (sheet.thisWeek && sheet.thisWeek.length > 0) ||
+    (sheet.igContents && sheet.igContents.length > 0) ||
+    (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow))
+  );
+}
+
 export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
   const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
@@ -534,7 +565,12 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   }, [currentWeek]);
 
   const baseBrand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
-  const brand = mergeBrand(baseBrand, sheetData[active]);
+  const sheet = sheetData[active];
+  // 시트에 실데이터가 있으면 그것을 사용(예시 병합).
+  // 없으면: 7월 2주차만 예시 표시, 다른 주차는 공란.
+  const brand = hasSheetData(sheet)
+    ? mergeBrand(baseBrand, sheet)
+    : (isExampleWeek(currentWeek) ? baseBrand : emptyBrand(baseBrand));
 
   return (
     <div className="mt-5 pt-4 border-t border-stone-200">
@@ -563,7 +599,25 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
           })}
         </div>
         <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
-        <BrandPanel brand={brand} />
+        {!hasSheetData(sheet) && !isExampleWeek(currentWeek) ? (
+          <div className="border border-dashed border-stone-300 rounded-xl px-4 py-8 text-center">
+            <p className="text-sm text-stone-600 font-semibold">구글 시트에 데이터를 입력해주세요</p>
+            <p className="text-xs text-stone-500 mt-2 leading-relaxed">
+              <span className="font-semibold text-stone-600">{currentWeek || "선택한 주차"}</span> 데이터가 아직 없습니다.<br />
+              주간보고 구글시트의 <span className="font-semibold text-kkumbi-600">KPI1_브랜드인사이트</span> · <span className="font-semibold text-kkumbi-600">KPI1_인스타</span> 탭에<br />
+              <span className="font-semibold">주차</span> 칸을 <span className="font-semibold text-stone-600">&quot;{currentWeek || "해당 주차"}&quot;</span>로 입력하면 이 화면에 표시됩니다.
+            </p>
+            <div className="mt-3 inline-block text-left bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                · <span className="font-semibold">KPI1_브랜드인사이트</span>: 경쟁사코멘트 / 자사코멘트 / 지난주업무 / 금주업무<br />
+                · <span className="font-semibold">KPI1_인스타</span>: 요약 / 콘텐츠<br />
+                <span className="text-stone-400">(각 행의 &apos;구분&apos; 칸으로 종류를 선택)</span>
+              </p>
+            </div>
+          </div>
+        ) : (
+          <BrandPanel brand={brand} />
+        )}
       </div>
     </div>
   );
