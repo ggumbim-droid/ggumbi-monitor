@@ -342,11 +342,22 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
             <SubLabel>네이버 쇼핑검색 순위 · 1페이지 노출 (04 연동)</SubLabel>
             <RankingBlock brandId={brand.id} />
             {brand.rankNote && (
-              <div className="mt-2 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2">
-                <p className="text-xs text-stone-600 leading-relaxed">{brand.rankNote}</p>
+              <div className="mt-2 bg-sky-50 border-l-[3px] border-sky-400 rounded-r-lg px-3 py-2.5">
+                <span className="text-[10px] font-bold text-sky-700">🔍 1페이지 노출 코멘트</span>
+                <p className="text-xs text-stone-700 leading-relaxed mt-1">{brand.rankNote}</p>
               </div>
             )}
           </div>
+
+          {brand.improvement && (
+            <div>
+              <SubLabel>아쉬운 점 해결방안</SubLabel>
+              <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
+                <span className="text-[10px] font-bold text-kkumbi-700">💡 해결방안</span>
+                <p className="text-xs text-kkumbi-800 leading-relaxed mt-1 font-medium">{brand.improvement}</p>
+              </div>
+            </div>
+          )}
 
           {brand.lastWork.length > 0 && (
             <div>
@@ -427,23 +438,14 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                 </div>
               )}
               {brand.ig.good && (
-                <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
-                  <div className="text-[11px] font-bold text-kkumbi-700 mb-1">✎ 인사이트</div>
+                <div className="bg-teal-50 border-l-[3px] border-teal-400 rounded-r-lg px-3 py-2.5">
+                  <div className="text-[11px] font-bold text-teal-700 mb-1">📸 인스타 인사이트</div>
                   <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.good}</p>
                 </div>
               )}
             </div>
           )}
 
-          {brand.improvement && (
-            <div>
-              <SubLabel>아쉬운 점 해결방안</SubLabel>
-              <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
-                <span className="text-[10px] font-bold text-kkumbi-700">✎ 시트 연동</span>
-                <p className="text-xs text-kkumbi-800 leading-relaxed mt-1 font-medium">{brand.improvement}</p>
-              </div>
-            </div>
-          )}
         </div>
       </section>
 
