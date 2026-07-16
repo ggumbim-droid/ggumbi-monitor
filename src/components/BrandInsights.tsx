@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -539,12 +539,8 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
   const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
   const [live, setLive] = useState(false);
-  // 최초 렌더 시의 주차를 예시 주차로 고정 (기본 선택 = 최근 주차)
-  const exampleWeekRef = useRef<string | undefined>(undefined);
-  if (exampleWeekRef.current === undefined && currentWeek) {
-    exampleWeekRef.current = currentWeek;
-  }
-  const isExampleWeek = Boolean(currentWeek && exampleWeekRef.current === currentWeek);
+  // 예시 데이터는 7월 2주차에만 표시 (주차ID = 2026-07-05)
+  const isExampleWeek = currentWeek === "2026-07-05";
 
   useEffect(() => {
     let alive = true;
