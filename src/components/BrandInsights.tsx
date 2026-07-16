@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -507,12 +507,9 @@ function mergeBrand(base: BrandInsight, sheet?: SheetBrandData): BrandInsight {
   return merged;
 }
 
-// 예시 데이터를 "7월 2주차"로 간주. 이 주차에만 예시 폴백을 허용한다.
-const EXAMPLE_WEEK = "7월2주차"; // 공백 무시 비교
-function isExampleWeek(week?: string): boolean {
-  if (!week) return false;
-  return week.replace(/\s+/g, "") === EXAMPLE_WEEK;
-}
+// 대시보드 최초 로드 시의 주차(기본 선택 = 최근 주차)를 예시 주차로 간주.
+// 그 주차에만 예시 폴백을 허용하고, 사용자가 다른 주차로 바꾸면 공란 처리한다.
+// (특정 주차ID 값에 의존하지 않음)
 
 // 시트 데이터가 없을 때 다른 주차에서 쓸 빈 브랜드 데이터(예시 없이 공란)
 function emptyBrand(base: BrandInsight): BrandInsight {
@@ -542,6 +539,12 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
   const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
   const [live, setLive] = useState(false);
+  // 최초 렌더 시의 주차를 예시 주차로 고정 (기본 선택 = 최근 주차)
+  const exampleWeekRef = useRef<string | undefined>(undefined);
+  if (exampleWeekRef.current === undefined && currentWeek) {
+    exampleWeekRef.current = currentWeek;
+  }
+  const isExampleWeek = Boolean(currentWeek && exampleWeekRef.current === currentWeek);
 
   useEffect(() => {
     let alive = true;
@@ -567,10 +570,10 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const baseBrand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
   const sheet = sheetData[active];
   // 시트에 실데이터가 있으면 그것을 사용(예시 병합).
-  // 없으면: 7월 2주차만 예시 표시, 다른 주차는 공란.
+  // 없으면: 최초 로드 주차(기본 최근 주차)만 예시 표시, 다른 주차는 공란.
   const brand = hasSheetData(sheet)
     ? mergeBrand(baseBrand, sheet)
-    : (isExampleWeek(currentWeek) ? baseBrand : emptyBrand(baseBrand));
+    : (isExampleWeek ? baseBrand : emptyBrand(baseBrand));
 
   return (
     <div className="mt-5 pt-4 border-t border-stone-200">
@@ -599,7 +602,7 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
           })}
         </div>
         <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
-        {!hasSheetData(sheet) && !isExampleWeek(currentWeek) ? (
+        {!hasSheetData(sheet) && !isExampleWeek ? (
           <div className="border border-dashed border-stone-300 rounded-xl px-4 py-8 text-center">
             <p className="text-sm text-stone-600 font-semibold">구글 시트에 데이터를 입력해주세요</p>
             <p className="text-xs text-stone-500 mt-2 leading-relaxed">
