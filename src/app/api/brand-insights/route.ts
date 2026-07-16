@@ -97,10 +97,10 @@ function buildBrand(payload: Kpi1Payload, brandId: string, week: string): BrandD
   const igRows = rowsFor(payload.ig, brandId, week);
   const igSummary = igRows.filter((r) => s(r["구분"]) === "요약")[0] ?? {};
   const ig = {
-    upload: s(igSummary["콘텐츠명"]),
-    follow: s(igSummary["조회"]),
-    good: s(igSummary["도달"]),
-    bad: s(igSummary["팔로우"]),
+    upload: s(igSummary["콘텐츠명"]),  // 업로드수
+    follow: s(igSummary["조회"]),      // 팔로우증감
+    good: s(igSummary["도달"]),        // 인사이트 (잘된점/아쉬운점/해결방안 통합)
+    bad: "",
   };
   const igContents = igRows.filter((r) => s(r["구분"]) === "콘텐츠").map((r) => ({
     name: s(r["콘텐츠명"]), views: s(r["조회"]), reach: s(r["도달"]),
