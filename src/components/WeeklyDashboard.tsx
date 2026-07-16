@@ -369,7 +369,7 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                 </>
               )}
 
-              {c.id === "01" && <BrandInsights />}
+              {c.id === "01" && <BrandInsights currentWeek={currentWeek} />}
 
               {c.id === "07" && c.budgetRows && c.budgetRows.length > 0 && <BudgetTable rows={c.budgetRows} />}
 
