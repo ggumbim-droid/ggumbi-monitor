@@ -426,20 +426,10 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                   </table>
                 </div>
               )}
-              {(brand.ig.good || brand.ig.bad) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {brand.ig.good && (
-                    <div className="bg-emerald-50 rounded-lg px-3 py-2">
-                      <div className="text-[11px] font-bold text-emerald-700 mb-1">👍 잘된 점</div>
-                      <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.good}</p>
-                    </div>
-                  )}
-                  {brand.ig.bad && (
-                    <div className="bg-rose-50 rounded-lg px-3 py-2">
-                      <div className="text-[11px] font-bold text-rose-700 mb-1">👀 아쉬운 점</div>
-                      <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.bad}</p>
-                    </div>
-                  )}
+              {brand.ig.good && (
+                <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
+                  <div className="text-[11px] font-bold text-kkumbi-700 mb-1">✎ 인사이트</div>
+                  <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.good}</p>
                 </div>
               )}
             </div>
