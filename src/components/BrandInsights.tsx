@@ -542,8 +542,6 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
   const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
   const [live, setLive] = useState(false);
-  // 예시 데이터는 7월 2주차에만 표시 (주차ID = 2026-07-05)
-  const isExampleWeek = currentWeek === "2026-07-05";
 
   useEffect(() => {
     let alive = true;
@@ -569,11 +567,8 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
 
   const baseBrand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
   const sheet = sheetData[active];
-  // 시트에 실데이터가 있으면 그것을 사용(예시 병합).
-  // 없으면: 최초 로드 주차(기본 최근 주차)만 예시 표시, 다른 주차는 공란.
-  const brand = hasSheetData(sheet)
-    ? mergeBrand(baseBrand, sheet)
-    : (isExampleWeek ? baseBrand : emptyBrand(baseBrand));
+  // 시트에 실데이터가 있으면 표시, 없으면 안내 문구(아래 렌더에서 처리)
+  const brand = hasSheetData(sheet) ? mergeBrand(baseBrand, sheet) : emptyBrand(baseBrand);
 
   return (
     <div className="mt-5 pt-4 border-t border-stone-200">
@@ -602,7 +597,7 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
           })}
         </div>
         <div className="text-sm font-bold text-stone-800 mb-3">{brand.tag} · {brand.name}</div>
-        {!hasSheetData(sheet) && !isExampleWeek ? (
+        {!hasSheetData(sheet) ? (
           <div className="border border-dashed border-stone-300 rounded-xl px-4 py-8 text-center">
             <p className="text-sm text-stone-600 font-semibold">구글 시트에 데이터를 입력해주세요</p>
             <p className="text-xs text-stone-500 mt-2 leading-relaxed">
