@@ -32,9 +32,13 @@ function truthy(v: unknown): boolean {
   const t = s(v).toUpperCase();
   return t === "TRUE" || t === "Y" || t === "1" || t === "O";
 }
-// 주차 정규화: 공백 제거 후 비교 (예: "7월 2주차" == "7월2주차")
+// 주차 정규화: 날짜형(2026-07-12T15:00:00Z 등)이면 앞 10자(YYYY-MM-DD)만, 아니면 공백 제거
 function normWeek(v: unknown): string {
-  return s(v).replace(/\s+/g, "");
+  const raw = s(v);
+  // ISO 날짜/타임스탬프면 날짜 부분만 추출
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  return raw.replace(/\s+/g, "");
 }
 function rowsFor(arr: Record<string, unknown>[] | undefined, brandId: string, week: string): Record<string, unknown>[] {
   if (!Array.isArray(arr)) return [];
