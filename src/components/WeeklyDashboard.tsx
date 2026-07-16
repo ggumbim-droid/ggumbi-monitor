@@ -380,11 +380,11 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                   <details className="mt-3 group">
                     <summary className="text-xs font-bold text-stone-600 mb-1.5 cursor-pointer list-none flex items-center gap-1.5 select-none">
                       <span className="text-stone-400 group-open:rotate-90 transition-transform">▶</span>
-                      활동 · 원인 · 실행계획 {currentWeek && <span className="text-[10px] font-normal text-stone-400">· {selLabel} 기준</span>}
+                      인사이트 · 목표 · 실행계획 {currentWeek && <span className="text-[10px] font-normal text-stone-400">· {selLabel} 기준</span>}
                     </summary>
                     <div className="mt-2">
                     {shown.length === 0 ? (
-                      <p className="text-xs text-stone-400 border border-stone-200 rounded-lg px-3 py-2.5">선택한 주차에 등록된 원인·실행계획이 없습니다.</p>
+                      <p className="text-xs text-stone-400 border border-stone-200 rounded-lg px-3 py-2.5">선택한 주차에 등록된 인사이트·실행계획이 없습니다.</p>
                     ) : (
                       <div className="space-y-2">
                         {shown.map((w) => (
@@ -392,7 +392,7 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                             <p className="text-xs text-stone-700"><span className="text-stone-400 mr-2 font-semibold">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
                             {w.insight && (
                               <div>
-                                <p className="text-[10px] font-bold text-stone-400 mb-1">원인</p>
+                                <p className="text-[10px] font-bold text-stone-400 mb-1">인사이트</p>
                                 <Narrative text={w.insight} accent="insight" />
                               </div>
                             )}
@@ -411,12 +411,16 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                 );
               })()}
 
-              {!m && (c.note || c.alternative) && (
+              {c.id === "04" ? (
+                <div className="mt-1 bg-sky-50 border-l-[3px] border-sky-400 rounded-r-lg px-3 py-2.5">
+                  <p className="text-xs text-sky-800 leading-relaxed">🔍 1페이지 노출 상세 인사이트·실행계획은 <span className="font-bold">KPI 01 브랜드별 상세 인사이트</span>의 자사 인사이트 › 1페이지 노출 코멘트에서 확인하세요.</p>
+                </div>
+              ) : (!m && (c.note || c.alternative) && (
                 <div className="space-y-2 mt-1">
                   {c.note && <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-stone-500 mb-1">인사이트 (So What)</p><Narrative text={c.note} accent="insight" /></div>}
                   {c.alternative && <div className="bg-kkumbi-50 border border-kkumbi-100 rounded-lg px-3 py-2"><p className="text-[11px] font-bold text-kkumbi-600 mb-1">실행 계획 (Now What)</p><Narrative text={c.alternative} accent="action" /></div>}
                 </div>
-              )}
+              ))}
 
               {c.items.length > 0 && (
                 <details className="mt-3">
