@@ -350,15 +350,14 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
 
           {brand.lastWork.length > 0 && (
             <div>
-              <SubLabel>지난주 진행 업무 · 결과 · 달성률</SubLabel>
+              <SubLabel>지난주 진행 업무 · 진행률 · 결과</SubLabel>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead><tr className="text-stone-400 text-left border-b border-stone-200">
                     <th className="py-1.5 px-2 font-medium min-w-[130px]">진행 업무</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[150px]">업무 결과</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[90px]">달성률</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[130px]">잘된 점</th>
-                    <th className="py-1.5 px-2 font-medium min-w-[130px]">아쉬운 점</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[150px]">세부 내용</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[90px]">진행률</th>
+                    <th className="py-1.5 px-2 font-medium min-w-[180px]">결과 (잘된 점 · 아쉬운 점)</th>
                   </tr></thead>
                   <tbody>
                     {brand.lastWork.map((r, i) => {
@@ -369,7 +368,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                       return (
                         <tr key={i} className="border-b border-stone-100 align-top">
                           <td className="py-2 px-2 font-semibold text-stone-800 leading-snug">{r[0]}</td>
-                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[1]}</td>
+                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[1] || "—"}</td>
                           <td className="py-2 px-2">
                             {hasAch ? (
                               <div className="flex items-center gap-1.5 min-w-[80px]">
@@ -378,8 +377,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                               </div>
                             ) : <span className="text-stone-400">—</span>}
                           </td>
-                          <td className="py-2 px-2 text-emerald-700 leading-snug">{r[3]}</td>
-                          <td className="py-2 px-2 text-rose-700 leading-snug">{r[4]}</td>
+                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[3] || "—"}</td>
                         </tr>
                       );
                     })}
