@@ -525,13 +525,16 @@ function emptyBrand(base: BrandInsight): BrandInsight {
 }
 
 // 해당 브랜드의 시트 데이터가 실제로 채워졌는지
+// comp(경쟁사 순위)는 주차 무관하게 항상 오므로 제외 — 주차별 입력 데이터로만 판정
 function hasSheetData(sheet?: SheetBrandData): boolean {
   if (!sheet) return false;
   return Boolean(
-    (sheet.comp && sheet.comp.length > 0) || sheet.rankNote || sheet.improvement ||
+    sheet.rankNote || sheet.improvement ||
     (sheet.lastWork && sheet.lastWork.length > 0) || (sheet.thisWeek && sheet.thisWeek.length > 0) ||
     (sheet.igContents && sheet.igContents.length > 0) ||
-    (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow))
+    (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow)) ||
+    // 경쟁사 코멘트(comp[].comment)가 이 주차에 입력됐으면 데이터 있음으로 봄
+    (Array.isArray(sheet.comp) && sheet.comp.some((c) => c && typeof c === "object" && "comment" in c && (c as { comment?: string }).comment))
   );
 }
 
@@ -552,8 +555,9 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
         setSheetData(d.brands);
         // 시트에 실데이터가 하나라도 있으면 live 표시
         const anyData = Object.values(d.brands).some((b) =>
-          (b.comp && b.comp.length > 0) || b.rankNote || b.improvement ||
-          (b.lastWork && b.lastWork.length > 0) || (b.thisWeek && b.thisWeek.length > 0)
+          b.rankNote || b.improvement ||
+          (b.lastWork && b.lastWork.length > 0) || (b.thisWeek && b.thisWeek.length > 0) ||
+          (b.igContents && b.igContents.length > 0)
         );
         setLive(anyData);
       } else {
