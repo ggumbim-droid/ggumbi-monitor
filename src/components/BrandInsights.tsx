@@ -507,14 +507,15 @@ function mergeBrand(base: BrandInsight, sheet?: SheetBrandData): BrandInsight {
   return merged;
 }
 
-export function BrandInsights() {
+export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
   const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
   const [live, setLive] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/brand-insights").then((r) => r.json()).then((data: unknown) => {
+    const qs = currentWeek ? `?week=${encodeURIComponent(currentWeek)}` : "";
+    fetch(`/api/brand-insights${qs}`).then((r) => r.json()).then((data: unknown) => {
       if (!alive || !data || typeof data !== "object") return;
       const d = data as { brands?: Record<string, SheetBrandData> };
       if (d.brands && Object.keys(d.brands).length > 0) {
@@ -525,10 +526,12 @@ export function BrandInsights() {
           (b.lastWork && b.lastWork.length > 0) || (b.thisWeek && b.thisWeek.length > 0)
         );
         setLive(anyData);
+      } else {
+        setSheetData({}); setLive(false);
       }
     }).catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [currentWeek]);
 
   const baseBrand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
   const brand = mergeBrand(baseBrand, sheetData[active]);
