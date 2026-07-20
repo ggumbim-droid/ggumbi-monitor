@@ -20,6 +20,7 @@ interface IgContent { name: string; views: string; reach: string; follows: strin
 interface BrandData {
   comp: CompBlock[];
   rankNote: string; improvement: string;
+  selfRows: { status: string; solution: string }[];
   lastWork: string[][]; thisWeek: string[][];
   ig: { upload: string; follow: string; good: string; bad: string };
   igContents: IgContent[];
@@ -77,10 +78,14 @@ function buildBrand(payload: Kpi1Payload, brandId: string, week: string): BrandD
   }
   const comp = compOrder.map((c) => compMap.get(c)!);
 
-  // 자사코멘트(KPI1_자사): 순위관리코멘트, 해결방안
-  const selfRow = rowsFor(payload.self, brandId, week)[0] ?? {};
-  const rankNote = s(selfRow["순위관리코멘트"]);
-  const improvement = s(selfRow["해결방안"]);
+  // 자사(KPI1_자사): 현황/해결방안 여러 행 (1:1 매칭)
+  const selfRowsRaw = rowsFor(payload.self, brandId, week);
+  const selfRows = selfRowsRaw
+    .map((r) => ({ status: s(r["현황"]), solution: s(r["해결방안"]) }))
+    .filter((x) => x.status || x.solution);
+  // 하위호환: 기존 rankNote/improvement는 첫 행 값으로 채움
+  const rankNote = selfRows[0]?.status ?? "";
+  const improvement = selfRows[0]?.solution ?? "";
 
   // 업무(KPI1_업무): 구분=지난주/금주
   const workRows = rowsFor(payload.work, brandId, week);
@@ -107,7 +112,7 @@ function buildBrand(payload: Kpi1Payload, brandId: string, week: string): BrandD
     follows: s(r["팔로우"]), shares: s(r["공유"]), comments: s(r["댓글"]),
   }));
 
-  return { comp, rankNote, improvement, lastWork, thisWeek, ig, igContents };
+  return { comp, rankNote, improvement, selfRows, lastWork, thisWeek, ig, igContents };
 }
 
 export async function GET(request: Request) {
