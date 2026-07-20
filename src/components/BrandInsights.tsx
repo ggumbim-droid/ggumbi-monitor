@@ -282,6 +282,20 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
         <div className="space-y-3">
           {brand.comp.map((block, bi) => {
             const gid = groups[bi]; // comp 카테고리와 키워드 그룹을 순서로 매칭
+            // 그래프 브랜드 배열(색 순서와 동일) — 표 브랜드명을 여기서 찾아 같은 색 적용
+            const chartBrands = (gid && state.groupBrands[gid]) ? state.groupBrands[gid] : [];
+            const colorOf = (name: string): string | undefined => {
+              const idx = chartBrands.findIndex((cb) => cb.name === name);
+              return idx >= 0 ? BRAND_COLORS[idx % BRAND_COLORS.length] : undefined;
+            };
+            // 표를 7일평균 내림차순 정렬 (그래프 상위 순서와 맞춤)
+            const sortedRows = [...block.rows].sort((a, b) => {
+              const av = parseFloat(a.idx); const bv = parseFloat(b.idx);
+              if (isNaN(av) && isNaN(bv)) return 0;
+              if (isNaN(av)) return 1;
+              if (isNaN(bv)) return -1;
+              return bv - av;
+            });
             return (
               <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
                 {gid && (
@@ -300,9 +314,14 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                       <th className="py-1 px-1.5 font-medium">상태</th>
                     </tr></thead>
                     <tbody>
-                      {block.rows.map((r, i) => (
+                      {sortedRows.map((r, i) => {
+                        const c = colorOf(r.name);
+                        return (
                         <tr key={i} className="border-t border-stone-100">
-                          <td className={`py-1.5 px-1.5 whitespace-nowrap ${r.mine ? "font-bold text-kkumbi-700" : "font-medium text-stone-700"}`}>{r.mine && "● "}{r.name}</td>
+                          <td className="py-1.5 px-1.5 whitespace-nowrap font-bold" style={c ? { color: c } : undefined}>
+                            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={c ? { background: c } : { background: "#cbd5e1" }} />
+                            {r.name}
+                          </td>
                           <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.period || "—"}</td>
                           <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
                           <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
@@ -310,7 +329,8 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                           <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
                           <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -322,7 +342,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                 )}
                 {block.comment && (
                   <div className="mt-3 bg-amber-50 border-l-[3px] border-amber-400 rounded-r-lg px-3 py-2.5">
-                    <span className="text-[10px] font-bold text-amber-700">📝 경쟁사 동향 코멘트</span>
+                    <span className="text-[10px] font-bold text-amber-700">📝 경쟁사 동향 인사이트</span>
                     <p className="text-xs text-stone-700 leading-relaxed mt-1">{block.comment}</p>
                   </div>
                 )}
@@ -341,23 +361,38 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
           <div>
             <SubLabel>네이버 쇼핑검색 순위 · 1페이지 노출 (04 연동)</SubLabel>
             <RankingBlock brandId={brand.id} />
-            {brand.rankNote && (
-              <div className="mt-2 bg-sky-50 border-l-[3px] border-sky-400 rounded-r-lg px-3 py-2.5">
-                <span className="text-[10px] font-bold text-sky-700">🔍 1페이지 노출 코멘트</span>
-                <p className="text-xs text-stone-700 leading-relaxed mt-1">{brand.rankNote}</p>
-              </div>
-            )}
           </div>
 
-          {brand.improvement && (
-            <div>
-              <SubLabel>아쉬운 점 해결방안</SubLabel>
-              <div className="bg-kkumbi-50 border-l-[3px] border-kkumbi-400 rounded-r-lg px-3 py-2.5">
-                <span className="text-[10px] font-bold text-kkumbi-700">💡 해결방안</span>
-                <p className="text-xs text-kkumbi-800 leading-relaxed mt-1 font-medium">{brand.improvement}</p>
+          {(() => {
+            // selfRows(현황·해결방안 쌍)가 있으면 그것을, 없으면 기존 rankNote/improvement를 한 행으로
+            const pairs = (brand.selfRows && brand.selfRows.length > 0)
+              ? brand.selfRows
+              : ((brand.rankNote || brand.improvement) ? [{ status: brand.rankNote, solution: brand.improvement }] : []);
+            if (pairs.length === 0) return null;
+            return (
+              <div>
+                <SubLabel>1페이지 노출 현황 · 해결방안</SubLabel>
+                <div className="overflow-hidden border border-stone-200 rounded-xl">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left">
+                        <th className="w-1/2 py-2 px-3 font-bold text-sky-700 bg-sky-50 border-b border-stone-200">🔍 현황</th>
+                        <th className="w-1/2 py-2 px-3 font-bold text-kkumbi-700 bg-kkumbi-50 border-b border-l border-stone-200">💡 해결방안</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pairs.map((p, i) => (
+                        <tr key={i} className="align-top border-b border-stone-100 last:border-b-0">
+                          <td className="py-2.5 px-3 text-stone-700 leading-relaxed">{p.status || "—"}</td>
+                          <td className="py-2.5 px-3 text-stone-700 leading-relaxed border-l border-stone-100 bg-kkumbi-50/30">{p.solution || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {brand.lastWork.length > 0 && (
             <div>
@@ -478,6 +513,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
 interface SheetBrandData {
   comp?: BrandInsight["comp"];
   rankNote?: string; improvement?: string;
+  selfRows?: { status: string; solution: string }[];
   lastWork?: string[][]; thisWeek?: string[][];
   ig?: { upload: string; follow: string; good: string; bad: string };
   igContents?: { name: string; views: string; reach: string; follows: string; shares: string; comments: string }[];
@@ -490,6 +526,7 @@ function mergeBrand(base: BrandInsight, sheet?: SheetBrandData): BrandInsight {
   if (sheet.comp && sheet.comp.length > 0) merged.comp = sheet.comp;
   if (sheet.rankNote) merged.rankNote = sheet.rankNote;
   if (sheet.improvement) merged.improvement = sheet.improvement;
+  if (sheet.selfRows && sheet.selfRows.length > 0) merged.selfRows = sheet.selfRows;
   if (sheet.lastWork && sheet.lastWork.length > 0) merged.lastWork = sheet.lastWork;
   if (sheet.thisWeek && sheet.thisWeek.length > 0) merged.thisWeek = sheet.thisWeek;
   if (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow)) merged.ig = sheet.ig;
@@ -507,6 +544,7 @@ function emptyBrand(base: BrandInsight): BrandInsight {
     ...base,
     comp: [],
     rankNote: "", improvement: "",
+    selfRows: [],
     supporters: "",
     lastWork: [], thisWeek: [],
     ig: { upload: "", follow: "", good: "", bad: "" },
@@ -520,6 +558,7 @@ function hasSheetData(sheet?: SheetBrandData): boolean {
   if (!sheet) return false;
   return Boolean(
     sheet.rankNote || sheet.improvement ||
+    (sheet.selfRows && sheet.selfRows.length > 0) ||
     (sheet.lastWork && sheet.lastWork.length > 0) || (sheet.thisWeek && sheet.thisWeek.length > 0) ||
     (sheet.igContents && sheet.igContents.length > 0) ||
     (sheet.ig && (sheet.ig.upload || sheet.ig.good || sheet.ig.bad || sheet.ig.follow)) ||
