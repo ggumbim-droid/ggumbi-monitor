@@ -1,141 +1,134 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
-const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
+const NAVER_DATALAB_URL = "https://openapi.naver.com/v1/datalab/search";
+const KV_REST_API_URL = process.env.KV_REST_API_URL;
+const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
 
-// Apps Script(kpi1insight)가 내려주는 원본 — 4탭 + 경쟁사순위(자동)
-interface Kpi1Payload {
-  comp2?: Record<string, unknown>[];   // KPI1_경쟁사: 주차|브랜드ID|카테고리|코멘트
-  self?: Record<string, unknown>[];    // KPI1_자사: 주차|브랜드ID|순위관리코멘트|해결방안
-  work?: Record<string, unknown>[];    // KPI1_업무: 주차|브랜드ID|구분|진행업무|세부내용|목표|진행률|결과
-  ig?: Record<string, unknown>[];      // KPI1_인스타: 주차|브랜드ID|구분|콘텐츠명|조회|도달|팔로우|공유|댓글
-  comp?: Record<string, unknown>[];    // 경쟁사 순위(자동, 주차 없음)
-}
-
-// 화면(BrandInsights)이 기대하는 브랜드별 구조
-interface CompRow { name: string; mine: boolean; period: string; idx: string; delta: string; pkDate: string; pk: string; state: string; }
-interface CompBlock { cat: string; rows: CompRow[]; note: string; comment: string; }
-interface IgContent { name: string; views: string; reach: string; follows: string; shares: string; comments: string; }
-// 지난주업무: [진행업무, 세부내용, 진행률, 결과]  / 금주업무: [진행업무, 목표, 세부내용]
-interface BrandData {
-  comp: CompBlock[];
-  rankNote: string; improvement: string;
-  selfRows: { status: string; solution: string }[];
-  lastWork: string[][]; thisWeek: string[][];
-  ig: { upload: string; follow: string; good: string; bad: string };
-  igContents: IgContent[];
-}
-
-const BRAND_IDS = ["꿈비리코코", "봄봄슈슈비", "꿈비육아", "오가닉그라운드", "바바디토", "파미야"];
-
-function s(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  return String(v).trim();
-}
-function truthy(v: unknown): boolean {
-  const t = s(v).toUpperCase();
-  return t === "TRUE" || t === "Y" || t === "1" || t === "O";
-}
-// 주차 정규화: 날짜형이면 앞 10자(YYYY-MM-DD)만, 아니면 공백 제거
-function normWeek(v: unknown): string {
-  const raw = s(v);
-  const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (m) return m[1];
-  return raw.replace(/\s+/g, "");
-}
-function rowsFor(arr: Record<string, unknown>[] | undefined, brandId: string, week: string): Record<string, unknown>[] {
-  if (!Array.isArray(arr)) return [];
-  const wk = normWeek(week);
-  return arr.filter((r) => {
-    if (s(r["브랜드ID"]) !== brandId) return false;
-    if (!wk) return true;
-    return normWeek(r["주차"]) === wk;
+async function kvGet(key: string) {
+  const res = await fetch(`${KV_REST_API_URL}/get/${key}`, {
+    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
   });
+  const data = await res.json();
+  const raw = data.result ?? data.value ?? null;
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "object") return parsed;
+      if (typeof parsed === "string") return JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return raw;
 }
 
-function buildBrand(payload: Kpi1Payload, brandId: string, week: string): BrandData {
-  // 경쟁사 순위(자동, comp): 주차 없음 → 브랜드만 필터, 카테고리별 묶기
-  const compMap = new Map<string, CompBlock>();
-  const compOrder: string[] = [];
-  const compRows = Array.isArray(payload.comp) ? payload.comp.filter((r) => s(r["브랜드ID"]) === brandId) : [];
-  for (const r of compRows) {
-    const cat = s(r["카테고리"]);
-    if (!cat) continue;
-    if (!compMap.has(cat)) { compMap.set(cat, { cat, rows: [], note: "", comment: "" }); compOrder.push(cat); }
-    compMap.get(cat)!.rows.push({
-      name: s(r["이름"]), mine: truthy(r["자사여부"]),
-      period: s(r["기간"]), idx: s(r["7일평균"]), delta: s(r["증감"]),
-      pkDate: s(r["최고점날짜"]), pk: s(r["최고점"]), state: s(r["상태"]) || "flat",
-    });
+function getPeriodDates(period: string, customStart?: string, customEnd?: string): { startDate: string; endDate: string; timeUnit: string } {
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
+
+  if (period === "custom" && customStart && customEnd) {
+    const diffMs = new Date(customEnd).getTime() - new Date(customStart).getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    let timeUnit = "month";
+    if (diffDays <= 31) timeUnit = "date";
+    else if (diffDays <= 180) timeUnit = "week";
+    return { startDate: customStart, endDate: customEnd, timeUnit };
   }
-  // 경쟁사 코멘트(KPI1_경쟁사, 주차 반영): 카테고리별
-  for (const r of rowsFor(payload.comp2, brandId, week)) {
-    const cat = s(r["카테고리"]);
-    const comment = s(r["코멘트"]);
-    if (!cat || !comment) continue;
-    if (!compMap.has(cat)) { compMap.set(cat, { cat, rows: [], note: "", comment: "" }); compOrder.push(cat); }
-    compMap.get(cat)!.comment = comment;
+
+  const end = new Date();
+  const start = new Date();
+  let timeUnit = "date";
+
+  if (period === "lastweek") {
+    // 전주 월요일 ~ 전주 일요일 (조회일 기준 지난 완결 주)
+    const day = end.getDay(); // 0=일, 1=월 ... 6=토
+    const daysSinceMonday = (day + 6) % 7; // 이번주 월요일까지 며칠 지났나
+    const lastSunday = new Date(end);
+    lastSunday.setDate(end.getDate() - daysSinceMonday - 1); // 지난주 일요일
+    const lastMonday = new Date(lastSunday);
+    lastMonday.setDate(lastSunday.getDate() - 6); // 지난주 월요일
+    return { startDate: fmt(lastMonday), endDate: fmt(lastSunday), timeUnit: "date" };
+  } else if (period === "1week") {
+    start.setDate(end.getDate() - 7);
+    timeUnit = "date";
+  } else if (period === "3months") {
+    start.setMonth(end.getMonth() - 3);
+    timeUnit = "date";
+  } else if (period === "1year") {
+    start.setFullYear(end.getFullYear() - 1);
+    timeUnit = "month";
+  } else if (period === "3years") {
+    start.setFullYear(end.getFullYear() - 3);
+    timeUnit = "month";
   }
-  const comp = compOrder.map((c) => compMap.get(c)!);
 
-  // 자사(KPI1_자사): 현황/해결방안 여러 행 (1:1 매칭)
-  const selfRowsRaw = rowsFor(payload.self, brandId, week);
-  const selfRows = selfRowsRaw
-    .map((r) => ({ status: s(r["현황"]), solution: s(r["해결방안"]) }))
-    .filter((x) => x.status || x.solution);
-  // 하위호환: 기존 rankNote/improvement는 첫 행 값으로 채움
-  const rankNote = selfRows[0]?.status ?? "";
-  const improvement = selfRows[0]?.solution ?? "";
-
-  // 업무(KPI1_업무): 구분=지난주/금주
-  const workRows = rowsFor(payload.work, brandId, week);
-  // 지난주: [진행업무, 세부내용, 진행률, 결과]
-  const lastWork = workRows.filter((r) => s(r["구분"]) === "지난주").map((r) => [
-    s(r["진행업무"]), s(r["세부내용"]), s(r["진행률"]), s(r["결과"]),
-  ]);
-  // 금주: [진행업무, 목표, 세부내용]
-  const thisWeek = workRows.filter((r) => s(r["구분"]) === "금주").map((r) => [
-    s(r["진행업무"]), s(r["목표"]), s(r["세부내용"]),
-  ]);
-
-  // 인스타(KPI1_인스타): 구분=요약/콘텐츠
-  const igRows = rowsFor(payload.ig, brandId, week);
-  const igSummary = igRows.filter((r) => s(r["구분"]) === "요약")[0] ?? {};
-  const ig = {
-    upload: s(igSummary["콘텐츠명(요약시:업로드수)"]),  // 업로드수
-    follow: s(igSummary["조회(요약시:팔로우증감)"]),     // 팔로우증감
-    good: s(igSummary["도달(요약시:인사이트)"]),         // 인사이트
-    bad: "",
-  };
-  const igContents = igRows.filter((r) => s(r["구분"]) === "콘텐츠").map((r) => ({
-    name: s(r["콘텐츠명(요약시:업로드수)"]), views: s(r["조회(요약시:팔로우증감)"]), reach: s(r["도달(요약시:인사이트)"]),
-    follows: s(r["팔로우"]), shares: s(r["공유"]), comments: s(r["댓글"]),
-  }));
-
-  return { comp, rankNote, improvement, selfRows, lastWork, thisWeek, ig, igContents };
+  return { startDate: fmt(start), endDate: fmt(end), timeUnit };
 }
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const week = searchParams.get("week") || "";
-
-  if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) {
-    return NextResponse.json({ error: "구글시트 연동이 설정되지 않았습니다.", brands: {} }, { status: 200 });
-  }
+export async function POST(request: NextRequest) {
   try {
-    const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}&action=kpi1insight`;
-    const res = await fetch(url, { cache: "no-store" });
-    const payload = (await res.json()) as Kpi1Payload & { error?: string };
-    if (payload.error) {
-      return NextResponse.json({ error: `구글시트 오류: ${payload.error}`, brands: {} }, { status: 200 });
+    const { groupId, period, customStart, customEnd } = await request.json();
+
+    // Redis에서 키워드 그룹 가져오기
+    const stored = await kvGet("keyword_groups");
+    const KEYWORD_GROUPS = stored ?? {};
+
+    const group = KEYWORD_GROUPS[groupId];
+    if (!group) return NextResponse.json({ error: "그룹을 찾을 수 없습니다." }, { status: 400 });
+
+    const clientId = process.env.NAVER_CLIENT_ID?.trim();
+    const clientSecret = process.env.NAVER_CLIENT_SECRET?.trim();
+    if (!clientId || !clientSecret) {
+      return NextResponse.json({ error: "네이버 API 키가 설정되지 않았습니다." }, { status: 500 });
     }
-    const brands: Record<string, BrandData> = {};
-    for (const bid of BRAND_IDS) {
-      brands[bid] = buildBrand(payload, bid, week);
+
+    const { startDate, endDate, timeUnit } = getPeriodDates(period, customStart, customEnd);
+
+    const keywordGroups = group.brands.slice(0, 5).map((brand: { name: string; keywords: string[] }) => ({
+      groupName: brand.name,
+      keywords: brand.keywords.slice(0, 20),
+    }));
+
+    const body = { startDate, endDate, timeUnit, keywordGroups };
+
+    const res = await fetch(NAVER_DATALAB_URL, {
+      method: "POST",
+      headers: {
+        "X-Naver-Client-Id": clientId,
+        "X-Naver-Client-Secret": clientSecret,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return NextResponse.json({ error: data.errorMessage || "네이버 API 오류" }, { status: 502 });
     }
-    return NextResponse.json({ brands, week }, { status: 200 });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "조회 오류";
-    return NextResponse.json({ error: msg, brands: {} }, { status: 200 });
+
+    const periodMap: Record<string, Record<string, number>> = {};
+    for (const result of data.results ?? []) {
+      for (const point of result.data ?? []) {
+        if (!periodMap[point.period]) periodMap[point.period] = {};
+        periodMap[point.period][result.title] = point.ratio;
+      }
+    }
+
+    // 각 기간별 합계로 나눠서 비율 정규화 (합이 100이 되도록)
+    const results = Object.entries(periodMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([period, values]) => {
+        const total = Object.values(values).reduce((sum, v) => sum + v, 0);
+        const normalized: Record<string, number> = {};
+        for (const [brand, value] of Object.entries(values)) {
+          normalized[brand] = total > 0 ? Math.round((value / total) * 100 * 10) / 10 : 0;
+        }
+        return { period, ...normalized };
+      });
+
+    return NextResponse.json({ results });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "알 수 없는 오류";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
