@@ -658,7 +658,8 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const baseBrand = BRAND_INSIGHTS.find((b) => b.id === active) || BRAND_INSIGHTS[0];
   const sheet = sheetData[active];
   // 시트에 실데이터가 있으면 표시, 없으면 안내 문구(아래 렌더에서 처리)
-  const brand = hasSheetData(sheet) ? mergeBrand(baseBrand, sheet) : emptyBrand(baseBrand);
+  // 시트 데이터가 있으면 빈 값 위에 병합 (없는 필드는 예시로 채우지 않고 빈 칸 유지)
+  const brand = hasSheetData(sheet) ? mergeBrand(emptyBrand(baseBrand), sheet) : emptyBrand(baseBrand);
 
   return (
     <div className="mt-5 pt-4 border-t border-stone-200">
