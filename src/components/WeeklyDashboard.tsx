@@ -389,7 +389,7 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
                       <div className="space-y-2">
                         {shown.map((w) => (
                           <div key={w.week} className="border border-stone-200 rounded-lg px-3 py-2.5 space-y-2">
-                            <p className="text-xs text-stone-700"><span className="text-stone-400 mr-2 font-semibold">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
+                            <p className="text-xs text-stone-700 whitespace-pre-line"><span className="text-stone-400 mr-2 font-semibold">{shortLabel(w.label)}</span>{w.result || "(결과 미기재)"}</p>
                             {w.insight && (
                               <div>
                                 <p className="text-[10px] font-bold text-stone-400 mb-1">인사이트</p>
