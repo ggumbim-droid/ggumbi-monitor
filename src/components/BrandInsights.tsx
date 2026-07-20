@@ -21,7 +21,7 @@ interface RankRow {
 interface RankGroup { name: string; brand: string; rows: RankRow[]; }
 
 const STACK = [
-  { label: "주간(전주 월~일)", value: "lastweek" },
+  { label: "최근 3개월", value: "3months" },
   { label: "3년", value: "3years" },
 ];
 
@@ -63,6 +63,81 @@ interface TrendState {
   loaded: boolean;
 }
 
+// 개별 차트 슬롯 — 기본 기간(3개월/3년) 표시 + 날짜 달력으로 커스텀 기간 재조회
+function TrendSlot({ gid, defLabel, defPeriod, brands, initialRows }: {
+  gid: string; defLabel: string; defPeriod: string; brands: KwBrand[]; initialRows: Row[];
+}) {
+  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [custom, setCustom] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  // 상위에서 기본 데이터가 바뀌면(재조회 등) 커스텀이 아닐 때 갱신
+  useEffect(() => { if (!custom) setRows(initialRows); }, [initialRows, custom]);
+
+  async function query() {
+    if (!start || !end) { setErr("시작일과 종료일을 선택하세요."); return; }
+    if (start > end) { setErr("시작일이 종료일보다 늦습니다."); return; }
+    setLoading(true); setErr("");
+    try {
+      const res = await fetch("/api/trend", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId: gid, period: "custom", customStart: start, customEnd: end }),
+      });
+      const data = await res.json();
+      if (res.ok) { setRows((data.results ?? []) as Row[]); setCustom(true); }
+      else setErr(data.error || "조회 실패");
+    } catch { setErr("조회 중 오류"); }
+    finally { setLoading(false); }
+  }
+  function reset() { setCustom(false); setStart(""); setEnd(""); setErr(""); setRows(initialRows); }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <div className="text-[11px] font-semibold text-stone-500">
+          {custom ? `${start} ~ ${end}` : `${defLabel} 추이`}
+        </div>
+      </div>
+      <div className="flex items-center gap-1 mb-2 flex-wrap">
+        <input type="date" value={start} onChange={(e) => setStart(e.target.value)}
+          className="text-[10px] border border-stone-200 rounded px-1.5 py-1 text-stone-600" />
+        <span className="text-[10px] text-stone-400">~</span>
+        <input type="date" value={end} onChange={(e) => setEnd(e.target.value)}
+          className="text-[10px] border border-stone-200 rounded px-1.5 py-1 text-stone-600" />
+        <button onClick={query} disabled={loading}
+          className="text-[10px] font-semibold px-2 py-1 bg-kkumbi-500 text-white rounded hover:bg-kkumbi-600 disabled:opacity-50">
+          {loading ? "조회중" : "조회"}
+        </button>
+        {custom && (
+          <button onClick={reset} className="text-[10px] font-semibold px-2 py-1 bg-stone-100 text-stone-500 rounded hover:bg-stone-200">
+            기본
+          </button>
+        )}
+      </div>
+      {err && <p className="text-[10px] text-rose-500 mb-1">{err}</p>}
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-stone-300 py-8 text-center">데이터 없음</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+            <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
+            <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
+            <Tooltip content={<TrendTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+            {brands.map((b, i) => (
+              <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
+
 function GroupTrendChart({ gid, label, brands, gCharts }: {
   gid: string; label: string; brands: KwBrand[]; gCharts?: Record<string, Row[]>;
 }) {
@@ -77,21 +152,7 @@ function GroupTrendChart({ gid, label, brands, gCharts }: {
             const rows = gCharts[pp.value];
             if (!rows || rows.length === 0) return null;
             return (
-              <div key={pp.value}>
-                <div className="text-[11px] font-semibold text-stone-500 mb-1">{pp.label} 추이</div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={rows}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                    <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
-                    <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
-                    <Tooltip content={<TrendTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                    {brands.map((b, i) => (
-                      <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <TrendSlot key={pp.value} gid={gid} defLabel={pp.label} defPeriod={pp.value} brands={brands} initialRows={rows} />
             );
           })}
         </div>
@@ -277,7 +338,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
           </div>
         )}
         {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
-        {!state.loaded && groups.length > 0 && <p className="text-[11px] text-stone-400 mb-3">※ 위 버튼을 누르면 네이버 검색 트렌드(주간·3년)를 불러옵니다.</p>}
+        {!state.loaded && groups.length > 0 && <p className="text-[11px] text-stone-400 mb-3">※ 위 버튼을 누르면 네이버 검색 트렌드(3개월·3년)를 불러옵니다.</p>}
 
         <div className="space-y-3">
           {brand.comp.map((block, bi) => {
