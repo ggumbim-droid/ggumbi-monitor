@@ -10,6 +10,7 @@ export interface BrandInsight {
   comp: CompBlock[];
   shopTitle: string; shop: string[][];
   rankNote: string; improvement: string;
+  selfRows?: { status: string; solution: string }[];
   ig: IgInfo; igContents: IgContent[];
   supporters?: string; lastWork: string[][]; thisWeek: string[][];
 }
