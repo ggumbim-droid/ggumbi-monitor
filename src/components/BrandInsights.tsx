@@ -444,7 +444,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                     <tbody>
                       {pairs.map((p, i) => (
                         <tr key={i} className="align-top border-b border-stone-100 last:border-b-0">
-                          <td className="py-2.5 px-3 text-stone-700 leading-relaxed">{p.status || "—"}</td>
+                          <td className="py-2.5 px-3 text-stone-700 leading-relaxed whitespace-pre-line">{p.status || "—"}</td>
                           <td className="py-2.5 px-3 text-stone-700 leading-relaxed border-l border-stone-100 bg-kkumbi-50/30">{p.solution || "—"}</td>
                         </tr>
                       ))}
@@ -474,8 +474,8 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                       const txt = ach >= 80 ? "text-emerald-700" : ach >= 40 ? "text-amber-700" : "text-rose-700";
                       return (
                         <tr key={i} className="border-b border-stone-100 align-top">
-                          <td className="py-2 px-2 font-semibold text-stone-800 leading-snug">{r[0]}</td>
-                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[1] || "—"}</td>
+                          <td className="py-2 px-2 font-semibold text-stone-800 leading-snug whitespace-pre-line">{r[0]}</td>
+                          <td className="py-2 px-2 text-stone-600 leading-snug whitespace-pre-line">{r[1] || "—"}</td>
                           <td className="py-2 px-2">
                             {hasAch ? (
                               <div className="flex items-center gap-1.5 min-w-[80px]">
@@ -484,7 +484,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                               </div>
                             ) : <span className="text-stone-400">—</span>}
                           </td>
-                          <td className="py-2 px-2 text-stone-600 leading-snug">{r[3] || "—"}</td>
+                          <td className="py-2 px-2 text-stone-600 leading-snug whitespace-pre-line">{r[3] || "—"}</td>
                         </tr>
                       );
                     })}
@@ -536,7 +536,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
               {brand.ig.good && (
                 <div className="bg-teal-50 border-l-[3px] border-teal-400 rounded-r-lg px-3 py-2.5">
                   <div className="text-[11px] font-bold text-teal-700 mb-1">📸 인스타 인사이트</div>
-                  <p className="text-xs text-stone-700 leading-relaxed">{brand.ig.good}</p>
+                  <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-line">{brand.ig.good}</p>
                 </div>
               )}
             </div>
@@ -560,7 +560,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                 <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md leading-snug mb-2.5">🎯 {s[1]}</div>
                 {s[2] && <>
                   <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">세부내용</div>
-                  <p className="text-xs text-stone-500 leading-relaxed">{s[2]}</p>
+                  <p className="text-xs text-stone-500 leading-relaxed whitespace-pre-line">{s[2]}</p>
                 </>}
               </div>
             ))}
@@ -691,13 +691,13 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
         {!hasSheetData(sheet) ? (
           <div className="border border-dashed border-stone-300 rounded-xl px-4 py-8 text-center">
             <p className="text-sm text-stone-600 font-semibold">구글 시트에 데이터를 입력해주세요</p>
-            <p className="text-xs text-stone-500 mt-2 leading-relaxed">
+            <p className="text-xs text-stone-500 mt-2 leading-relaxed whitespace-pre-line">
               <span className="font-semibold text-stone-600">{currentWeek || "선택한 주차"}</span> 데이터가 아직 없습니다.<br />
               주간보고 구글시트의 <span className="font-semibold text-kkumbi-600">KPI1_브랜드인사이트</span> · <span className="font-semibold text-kkumbi-600">KPI1_인스타</span> 탭에<br />
               <span className="font-semibold">주차</span> 칸을 <span className="font-semibold text-stone-600">&quot;{currentWeek || "해당 주차"}&quot;</span>로 입력하면 이 화면에 표시됩니다.
             </p>
             <div className="mt-3 inline-block text-left bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
-              <p className="text-[11px] text-stone-500 leading-relaxed">
+              <p className="text-[11px] text-stone-500 leading-relaxed whitespace-pre-line">
                 · <span className="font-semibold">KPI1_브랜드인사이트</span>: 경쟁사코멘트 / 자사코멘트 / 지난주업무 / 금주업무<br />
                 · <span className="font-semibold">KPI1_인스타</span>: 요약 / 콘텐츠<br />
                 <span className="text-stone-400">(각 행의 &apos;구분&apos; 칸으로 종류를 선택)</span>
