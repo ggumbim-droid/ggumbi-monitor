@@ -398,13 +398,13 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                 {block.note && (
                   <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
                     <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
-                    <p className="text-xs text-stone-600 leading-relaxed mt-1.5">{block.note}</p>
+                    <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line mt-1.5">{block.note}</p>
                   </div>
                 )}
                 {block.comment && (
                   <div className="mt-3 bg-amber-50 border-l-[3px] border-amber-400 rounded-r-lg px-3 py-2.5">
                     <span className="text-[10px] font-bold text-amber-700">📝 경쟁사 동향 인사이트</span>
-                    <p className="text-xs text-stone-700 leading-relaxed mt-1">{block.comment}</p>
+                    <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-line mt-1">{block.comment}</p>
                   </div>
                 )}
               </div>
@@ -445,7 +445,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                       {pairs.map((p, i) => (
                         <tr key={i} className="align-top border-b border-stone-100 last:border-b-0">
                           <td className="py-2.5 px-3 text-stone-700 leading-relaxed whitespace-pre-line">{p.status || "—"}</td>
-                          <td className="py-2.5 px-3 text-stone-700 leading-relaxed border-l border-stone-100 bg-kkumbi-50/30">{p.solution || "—"}</td>
+                          <td className="py-2.5 px-3 text-stone-700 leading-relaxed whitespace-pre-line border-l border-stone-100 bg-kkumbi-50/30">{p.solution || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -557,7 +557,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                 <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">내용</div>
                 <div className="font-bold text-sm text-stone-800 mb-2.5">{s[0]}</div>
                 <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">목표</div>
-                <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md leading-snug mb-2.5">🎯 {s[1]}</div>
+                <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md leading-snug whitespace-pre-line mb-2.5">🎯 {s[1]}</div>
                 {s[2] && <>
                   <div className="text-[10px] font-bold text-stone-400 tracking-wide mb-1">세부내용</div>
                   <p className="text-xs text-stone-500 leading-relaxed whitespace-pre-line">{s[2]}</p>
