@@ -373,11 +373,11 @@ export function WeeklyDashboard({ monthly, report, currentWeek }: { monthly: Mon
 
               {c.id === "07" && c.budgetRows && c.budgetRows.length > 0 && <BudgetTable rows={c.budgetRows} />}
 
-              {m && m.weeklyInsights.length > 0 && (() => {
+              {m && m.weeklyInsights.length > 0 && c.id !== "01" && (() => {
                 const shown = currentWeek ? m.weeklyInsights.filter((w) => w.week === currentWeek) : m.weeklyInsights;
                 const selLabel = shown[0]?.label ? shortLabel(shown[0].label) : "선택 주차";
                 return (
-                  <details className="mt-3 group">
+                  <details className="mt-3 group" open={c.id !== "04"}>
                     <summary className="text-xs font-bold text-stone-600 mb-1.5 cursor-pointer list-none flex items-center gap-1.5 select-none">
                       <span className="text-stone-400 group-open:rotate-90 transition-transform">▶</span>
                       인사이트 · 목표 · 실행계획 {currentWeek && <span className="text-[10px] font-normal text-stone-400">· {selLabel} 기준</span>}
