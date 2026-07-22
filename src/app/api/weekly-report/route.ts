@@ -384,7 +384,10 @@ function applyBudgetCalc(cat: ReportCategory, dayCounts: Record<string, number>)
   const totalRevenue = totalsRows.reduce((s, r) => s + (r.revenue ?? 0), 0);
   const totalCost = totalsRows.reduce((s, r) => s + (r.cost ?? 0), 0);
   cat.target = "6.5% 이내";
-  cat.note = `총예산 ${totalBudget.toLocaleString()}원 (G7 제외)`;
+  // 인사이트: 시트(실적입력 07행 원인분석·인사이트)에 적은 내용이 있으면 그대로 사용,
+  // 비어 있을 때만 총예산 자동 문구로 대체
+  const autoBudgetNote = `총예산 ${totalBudget.toLocaleString()}원 (G7 제외)`;
+  cat.note = (cat.note && String(cat.note).trim()) ? cat.note : autoBudgetNote;
   if (totalRevenue > 0) {
     const ratio = Math.round((totalCost / totalRevenue) * 1000) / 10;
     cat.rateNum = ratio;
