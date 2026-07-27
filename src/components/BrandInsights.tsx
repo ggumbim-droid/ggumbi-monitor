@@ -143,7 +143,7 @@ function GroupTrendChart({ gid, label, brands, gCharts }: {
 }) {
   return (
     <div className="mb-2">
-      <div className="text-xs font-bold text-stone-700 mb-2">{label || gid} · 검색 트렌드</div>
+      <div className="text-xs font-bold text-stone-700 mb-2">{label || gid} · 검색 트렌드 <span className="text-[10px] font-normal text-rose-400">[조회그룹: {gid}]</span></div>
       {!gCharts ? (
         <p className="text-[11px] text-stone-300">검색 트렌드 조회 대기 중</p>
       ) : (
