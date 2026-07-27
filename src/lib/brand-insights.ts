@@ -27,6 +27,25 @@ export const BRAND_TREND_GROUPS: Record<string, string[]> = {
   "파미야": ["dog_coolmat", "cat_tower"],
 };
 
+// 경쟁사 시트 카테고리(제품) 이름 → 검색 트렌드 그룹 gid 매핑.
+// 카테고리와 그룹 gid의 이름 형식이 달라(예: "휴대용분유포트"↔"분유포트", "시공매트(1)"↔"시공매트(꿈비기준)"),
+// 순서(index)로 매칭하면 밀리므로 이 표로 정확히 연결한다. 매핑에 없는 카테고리는 트렌드 그래프 없이 순위표만 표시.
+export const CATEGORY_TO_TREND_GID: Record<string, string> = {
+  "폴더매트": "folder_mat",
+  "범퍼침대": "bumper_bed",
+  "시공매트(1)": "construction_mat_kkumbi",
+  "시공매트(2)": "construction_mat_bombom",
+  "젖병세척기": "bottle_washer",
+  "휴대용분유포트": "formula_pot",
+  "분유쉐이커": "formula_shaker",
+  "유모차쿨시트": "stroller_coolseat",
+  "아기띠커버": "baby_carrier_cover",
+  "오가닉그라운드": "organic_ground",
+  "바바디토": "babadito",
+  "강아지쿨매트": "dog_coolmat",
+  "고양이캣타워": "cat_tower",
+};
+
 // 브랜드 탭 ↔ 04 키워드 1페이지 노출(브랜드 모니터링 ranking)의 표 제목(group.name) 매핑
 // 자사 인사이트의 쇼핑검색 순위 표를 04 실시간 데이터로 끌어온다.
 export const BRAND_RANKING_GROUPS: Record<string, string[]> = {
