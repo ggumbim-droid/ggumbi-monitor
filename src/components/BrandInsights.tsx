@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, BRAND_RANKING_GROUPS, type BrandInsight } from "@/lib/brand-insights";
+import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, BRAND_RANKING_GROUPS, CATEGORY_TO_TREND_GID, type BrandInsight } from "@/lib/brand-insights";
 
 const BRAND_COLORS = ["#f56b3d", "#10B981", "#45B7D1", "#8B5CF6", "#0EA5E9", "#EC4899", "#14B8A6", "#94A3B8"];
 type Row = Record<string, string | number>;
@@ -342,7 +342,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
 
         <div className="space-y-3">
           {brand.comp.map((block, bi) => {
-            const gid = groups[bi]; // comp 카테고리와 키워드 그룹을 순서로 매칭
+            const gid = CATEGORY_TO_TREND_GID[block.cat]; // 카테고리 이름으로 그룹 매칭 (순서 아님 — 밀림 방지)
             // 그래프 브랜드 배열(색 순서와 동일) — 표 브랜드명을 여기서 찾아 같은 색 적용
             const chartBrands = (gid && state.groupBrands[gid]) ? state.groupBrands[gid] : [];
             const colorOf = (name: string): string | undefined => {
