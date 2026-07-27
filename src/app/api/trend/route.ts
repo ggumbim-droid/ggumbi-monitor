@@ -59,7 +59,7 @@ function getPeriodDates(period: string, customStart?: string, customEnd?: string
     timeUnit = "month";
   } else if (period === "3years") {
     start.setFullYear(end.getFullYear() - 3);
-    timeUnit = "month";
+    timeUnit = "week";
   }
 
   return { startDate: fmt(start), endDate: fmt(end), timeUnit };
