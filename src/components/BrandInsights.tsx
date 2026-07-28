@@ -38,11 +38,26 @@ function Delta({ v }: { v: string }) {
 }
 
 interface TooltipEntry { name: string; value: number; color: string; }
+
+// 날짜 포맷: "Mon Apr 01 2024 00:00:00 GMT+0900 (...)" → 짧게
+function fmtTickDate(v: string): string {
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v;
+  return `${d.getMonth() + 1}/${d.getDate()}`; // 4/1
+}
+function fmtFullDate(v: string): string {
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v;
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}.${m}.${day}`; // 2024.04.01
+}
+
 function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 10px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)", minWidth: "140px" }}>
-      <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>{label}</p>
+      <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>{fmtFullDate(label ?? "")}</p>
       {payload.map((e) => (
         <div key={e.name} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "1px 0" }}>
           <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
@@ -123,8 +138,8 @@ function TrendSlot({ cat, defLabel, brands, initialRows }: {
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-            <XAxis dataKey="period" tick={{ fontSize: 9, fill: "#94a3b8" }} />
-            <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
+            <XAxis dataKey="period" tickFormatter={fmtTickDate} tick={{ fontSize: 9, fill: "#94a3b8" }} minTickGap={30} />
+            <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} width={28} />
             <Tooltip content={<TrendTooltip />} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
             {brands.map((b, i) => (
