@@ -1,134 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const NAVER_DATALAB_URL = "https://openapi.naver.com/v1/datalab/search";
-const KV_REST_API_URL = process.env.KV_REST_API_URL;
-const KV_REST_API_TOKEN = process.env.KV_REST_API_TOKEN;
-
-async function kvGet(key: string) {
-  const res = await fetch(`${KV_REST_API_URL}/get/${key}`, {
-    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
-  });
-  const data = await res.json();
-  const raw = data.result ?? data.value ?? null;
-  if (!raw) return null;
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed === "object") return parsed;
-      if (typeof parsed === "string") return JSON.parse(parsed);
-    } catch {
-      return null;
-    }
-  }
-  return raw;
-}
-
-function getPeriodDates(period: string, customStart?: string, customEnd?: string): { startDate: string; endDate: string; timeUnit: string } {
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
-
-  if (period === "custom" && customStart && customEnd) {
-    const diffMs = new Date(customEnd).getTime() - new Date(customStart).getTime();
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    let timeUnit = "month";
-    if (diffDays <= 31) timeUnit = "date";
-    else if (diffDays <= 180) timeUnit = "week";
-    return { startDate: customStart, endDate: customEnd, timeUnit };
-  }
-
-  const end = new Date();
-  const start = new Date();
-  let timeUnit = "date";
-
-  if (period === "lastweek") {
-    // 전주 월요일 ~ 전주 일요일 (조회일 기준 지난 완결 주)
-    const day = end.getDay(); // 0=일, 1=월 ... 6=토
-    const daysSinceMonday = (day + 6) % 7; // 이번주 월요일까지 며칠 지났나
-    const lastSunday = new Date(end);
-    lastSunday.setDate(end.getDate() - daysSinceMonday - 1); // 지난주 일요일
-    const lastMonday = new Date(lastSunday);
-    lastMonday.setDate(lastSunday.getDate() - 6); // 지난주 월요일
-    return { startDate: fmt(lastMonday), endDate: fmt(lastSunday), timeUnit: "date" };
-  } else if (period === "1week") {
-    start.setDate(end.getDate() - 7);
-    timeUnit = "date";
-  } else if (period === "3months") {
-    start.setMonth(end.getMonth() - 3);
-    timeUnit = "date";
-  } else if (period === "1year") {
-    start.setFullYear(end.getFullYear() - 1);
-    timeUnit = "month";
-  } else if (period === "3years") {
-    start.setFullYear(end.getFullYear() - 3);
-    timeUnit = "week";
-  }
-
-  return { startDate: fmt(start), endDate: fmt(end), timeUnit };
-}
+// 검색 트렌드 데이터는 Apps Script 웹앱(경쟁사트랜드키워드 탭 기반)에서 가져온다.
+// 각 카테고리 탭(폴더매트, 오가닉그라운드 등)에 매주 자동 저장되는 트렌드 값을 읽어옴.
+const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
+const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
 
 export async function POST(request: NextRequest) {
   try {
     const { groupId, period, customStart, customEnd } = await request.json();
 
-    // Redis에서 키워드 그룹 가져오기
-    const stored = await kvGet("keyword_groups");
-    const KEYWORD_GROUPS = stored ?? {};
-
-    const group = KEYWORD_GROUPS[groupId];
-    if (!group) return NextResponse.json({ error: "그룹을 찾을 수 없습니다." }, { status: 400 });
-
-    const clientId = process.env.NAVER_CLIENT_ID?.trim();
-    const clientSecret = process.env.NAVER_CLIENT_SECRET?.trim();
-    if (!clientId || !clientSecret) {
-      return NextResponse.json({ error: "네이버 API 키가 설정되지 않았습니다." }, { status: 500 });
+    if (!groupId) {
+      return NextResponse.json({ error: "groupId(카테고리)가 필요합니다." }, { status: 400 });
+    }
+    if (!SHEET_WEBAPP_URL) {
+      return NextResponse.json({ error: "웹앱 URL이 설정되지 않았습니다." }, { status: 500 });
     }
 
-    const { startDate, endDate, timeUnit } = getPeriodDates(period, customStart, customEnd);
-
-    const keywordGroups = group.brands.slice(0, 5).map((brand: { name: string; keywords: string[] }) => ({
-      groupName: brand.name,
-      keywords: brand.keywords.slice(0, 20),
-    }));
-
-    const body = { startDate, endDate, timeUnit, keywordGroups };
-
-    const res = await fetch(NAVER_DATALAB_URL, {
-      method: "POST",
-      headers: {
-        "X-Naver-Client-Id": clientId,
-        "X-Naver-Client-Secret": clientSecret,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+    // Apps Script 웹앱 호출: ?type=chart&cat=<카테고리>&period=<기간>
+    const params = new URLSearchParams({
+      type: "chart",
+      cat: String(groupId),
+      period: String(period || "3months"),
     });
+    if (SHEET_WEBAPP_TOKEN) params.set("token", SHEET_WEBAPP_TOKEN);
+    if (period === "custom" && customStart) params.set("customStart", String(customStart));
+    if (period === "custom" && customEnd) params.set("customEnd", String(customEnd));
+
+    const url = `${SHEET_WEBAPP_URL}?${params.toString()}`;
+    const res = await fetch(url, { redirect: "follow" });
+    if (!res.ok) {
+      return NextResponse.json({ error: "트렌드 데이터 조회 실패" }, { status: 502 });
+    }
 
     const data = await res.json();
-    if (!res.ok) {
-      return NextResponse.json({ error: data.errorMessage || "네이버 API 오류" }, { status: 502 });
+    const chart = Array.isArray(data.chart) ? data.chart : [];
+    // cat으로 필터했으니 해당 카테고리 하나가 옴 (이름 매칭 우선, 없으면 첫 번째)
+    const match =
+      chart.find((c: { name: string }) => c.name === groupId) ?? chart[0] ?? null;
+
+    if (!match) {
+      return NextResponse.json({ results: [], brands: [] });
     }
 
-    const periodMap: Record<string, Record<string, number>> = {};
-    for (const result of data.results ?? []) {
-      for (const point of result.data ?? []) {
-        if (!periodMap[point.period]) periodMap[point.period] = {};
-        periodMap[point.period][result.title] = point.ratio;
-      }
-    }
-
-    // 각 기간별 합계로 나눠서 비율 정규화 (합이 100이 되도록)
-    const results = Object.entries(periodMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([period, values]) => {
-        const total = Object.values(values).reduce((sum, v) => sum + v, 0);
-        const normalized: Record<string, number> = {};
-        for (const [brand, value] of Object.entries(values)) {
-          normalized[brand] = total > 0 ? Math.round((value / total) * 100 * 10) / 10 : 0;
-        }
-        return { period, ...normalized };
-      });
-
-    return NextResponse.json({ results });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "알 수 없는 오류";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({
+      results: match.data ?? [],
+      brands: match.brands ?? [],
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "오류가 발생했습니다." },
+      { status: 500 }
+    );
   }
 }
