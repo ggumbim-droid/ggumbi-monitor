@@ -591,7 +591,28 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
       monthTarget, projectedActual, projectedRate, weeksCounted, weeklyInsights, weeklySeries, brands,
     });
   }
-
+// 07 예산: 모든 주차의 예산·매출·비용을 브랜드별로 누적 합산해 currentReport에 반영
+  const budgetCat = currentReport.categories.find((c) => c.id === "07");
+  if (budgetCat?.budgetRows) {
+    const acc = new Map<string, { budget: number; revenue: number; cost: number; hasR: boolean; hasC: boolean }>();
+    for (const r of reports) {
+      const bc = r.categories.find((c) => c.id === "07");
+      if (!bc?.budgetRows) continue;
+      for (const row of bc.budgetRows) {
+        const cur = acc.get(row.brand) ?? { budget: 0, revenue: 0, cost: 0, hasR: false, hasC: false };
+        cur.budget += row.budget ?? 0;
+        if (row.revenue != null) { cur.revenue += row.revenue; cur.hasR = true; }
+        if (row.cost != null) { cur.cost += row.cost; cur.hasC = true; }
+        acc.set(row.brand, cur);
+      }
+    }
+    budgetCat.budgetRows = budgetCat.budgetRows.map((row) => {
+      const a = acc.get(row.brand);
+      return a
+        ? { ...row, budget: a.budget, revenue: a.hasR ? a.revenue : row.revenue, cost: a.hasC ? a.cost : row.cost }
+        : row;
+    });
+  }
   return { month, daysElapsed, daysInMonth: totalDaysInMonth, categories: catSummaries };
 }
 
