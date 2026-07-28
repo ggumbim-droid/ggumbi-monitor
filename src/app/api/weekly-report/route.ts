@@ -707,8 +707,8 @@ function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): Wee
         return {
           brand,
           budget: prevRow?.budget ?? 0,
-          revenue: found ? toNumOrNull(found.달성매출) : (prevRow?.revenue ?? null),
-          cost: found ? toNumOrNull(found.사용비용) : (prevRow?.cost ?? null),
+revenue: found ? ((prevRow?.revenue ?? 0) + (toNumOrNull(found.달성매출) ?? 0)) : (prevRow?.revenue ?? null),
+          cost: found ? ((prevRow?.cost ?? 0) + (toNumOrNull(found.사용비용) ?? 0)) : (prevRow?.cost ?? null),
         };
       });
     }
