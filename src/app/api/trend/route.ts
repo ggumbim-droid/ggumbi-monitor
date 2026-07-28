@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 // 검색 트렌드 데이터는 Apps Script 웹앱(경쟁사트랜드키워드 탭 기반)에서 가져온다.
 // 각 카테고리 탭(폴더매트, 오가닉그라운드 등)에 매주 자동 저장되는 트렌드 값을 읽어옴.
-const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
-const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
+const TREND_WEBAPP_URL = process.env.GOOGLE_TREND_WEBAPP_URL;
+// 경쟁사트렌드분석 시트 웹앱(code.txt)은 token 검증 없이 type/cat/period만 사용
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     if (!groupId) {
       return NextResponse.json({ error: "groupId(카테고리)가 필요합니다." }, { status: 400 });
     }
-    if (!SHEET_WEBAPP_URL) {
+    if (!TREND_WEBAPP_URL) {
       return NextResponse.json({ error: "웹앱 URL이 설정되지 않았습니다." }, { status: 500 });
     }
 
@@ -22,11 +22,11 @@ export async function POST(request: NextRequest) {
       cat: String(groupId),
       period: String(period || "3months"),
     });
-    if (SHEET_WEBAPP_TOKEN) params.set("token", SHEET_WEBAPP_TOKEN);
+    
     if (period === "custom" && customStart) params.set("customStart", String(customStart));
     if (period === "custom" && customEnd) params.set("customEnd", String(customEnd));
 
-    const url = `${SHEET_WEBAPP_URL}?${params.toString()}`;
+    const url = `${TREND_WEBAPP_URL}?${params.toString()}`;
     const res = await fetch(url, { redirect: "follow" });
     if (!res.ok) {
       return NextResponse.json({ error: "트렌드 데이터 조회 실패" }, { status: 502 });
