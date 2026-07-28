@@ -57,15 +57,14 @@ function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: 
 // 브랜드에 매핑된 키워드 그룹들의 네이버 트렌드를 자동 조회.
 // onData로 조회 결과(그룹별 차트 데이터·라벨·브랜드)를 부모에 전달해 순위표와 핑퐁 배치한다.
 interface TrendState {
-  labels: Record<string, string>;
-  groupBrands: Record<string, KwBrand[]>;
+  brands: Record<string, string[]>;
   charts: Record<string, Record<string, Row[]>>;
   loaded: boolean;
 }
 
 // 개별 차트 슬롯 — 기본 기간(3개월/3년) 표시 + 날짜 달력으로 커스텀 기간 재조회
-function TrendSlot({ gid, defLabel, defPeriod, brands, initialRows }: {
-  gid: string; defLabel: string; defPeriod: string; brands: KwBrand[]; initialRows: Row[];
+function TrendSlot({ cat, defLabel, brands, initialRows }: {
+  cat: string; defLabel: string; brands: string[]; initialRows: Row[];
 }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [start, setStart] = useState("");
@@ -84,7 +83,7 @@ function TrendSlot({ gid, defLabel, defPeriod, brands, initialRows }: {
     try {
       const res = await fetch("/api/trend", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId: gid, period: "custom", customStart: start, customEnd: end }),
+        body: JSON.stringify({ groupId: cat, period: "custom", customStart: start, customEnd: end }),
       });
       const data = await res.json();
       if (res.ok) { setRows((data.results ?? []) as Row[]); setCustom(true); }
@@ -129,7 +128,7 @@ function TrendSlot({ gid, defLabel, defPeriod, brands, initialRows }: {
             <Tooltip content={<TrendTooltip />} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
             {brands.map((b, i) => (
-              <Line key={b.name} type="monotone" dataKey={b.name} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
+              <Line key={b} type="monotone" dataKey={b} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -138,12 +137,12 @@ function TrendSlot({ gid, defLabel, defPeriod, brands, initialRows }: {
   );
 }
 
-function GroupTrendChart({ gid, label, brands, gCharts }: {
-  gid: string; label: string; brands: KwBrand[]; gCharts?: Record<string, Row[]>;
+function GroupTrendChart({ cat, brands, gCharts }: {
+  cat: string; brands: string[]; gCharts?: Record<string, Row[]>;
 }) {
   return (
     <div className="mb-2">
-      <div className="text-xs font-bold text-stone-700 mb-2">{label || gid} · 검색 트렌드 <span className="text-[10px] font-normal text-rose-400">[조회그룹: {gid}]</span></div>
+      <div className="text-xs font-bold text-stone-700 mb-2">{cat} · 검색 트렌드</div>
       {!gCharts ? (
         <p className="text-[11px] text-stone-300">검색 트렌드 조회 대기 중</p>
       ) : (
@@ -152,7 +151,7 @@ function GroupTrendChart({ gid, label, brands, gCharts }: {
             const rows = gCharts[pp.value];
             if (!rows || rows.length === 0) return null;
             return (
-              <TrendSlot key={pp.value} gid={gid} defLabel={pp.label} defPeriod={pp.value} brands={brands} initialRows={rows} />
+              <TrendSlot key={pp.value} cat={cat} defLabel={pp.label} brands={brands} initialRows={rows} />
             );
           })}
         </div>
@@ -161,44 +160,38 @@ function GroupTrendChart({ gid, label, brands, gCharts }: {
   );
 }
 
-function useBrandTrend(brandId: string) {
-  const groups = BRAND_TREND_GROUPS[brandId] ?? [];
-  const [state, setState] = useState<TrendState>({ labels: {}, groupBrands: {}, charts: {}, loaded: false });
+function useBrandTrend(cats: string[]) {
+  const [state, setState] = useState<TrendState>({ brands: {}, charts: {}, loaded: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const catsKey = cats.join("|");
 
   useEffect(() => {
-    let alive = true;
-    setState({ labels: {}, groupBrands: {}, charts: {}, loaded: false });
+    setState({ brands: {}, charts: {}, loaded: false });
     setError("");
-    fetch("/api/keywords").then((r) => r.json()).then((data: unknown) => {
-      if (!alive || !data || typeof data !== "object") return;
-      const g = data as KwGroups;
-      const lab: Record<string, string> = {};
-      const gb: Record<string, KwBrand[]> = {};
-      groups.forEach((gid) => { if (g[gid]) { lab[gid] = g[gid].label; gb[gid] = g[gid].brands; } });
-      setState((s) => ({ ...s, labels: lab, groupBrands: gb }));
-    }).catch(() => {});
-    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId]);
+  }, [catsKey]);
 
   async function fetchAll() {
     setLoading(true); setError("");
     try {
-      const result: Record<string, Record<string, Row[]>> = {};
-      for (const gid of groups) {
-        result[gid] = {};
+      const charts: Record<string, Record<string, Row[]>> = {};
+      const brands: Record<string, string[]> = {};
+      for (const cat of cats) {
+        charts[cat] = {};
         await Promise.all(STACK.map(async (pp) => {
           const res = await fetch("/api/trend", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ groupId: gid, period: pp.value }),
+            body: JSON.stringify({ groupId: cat, period: pp.value }),
           });
           const data = await res.json();
-          if (res.ok) result[gid][pp.value] = (data.results ?? []) as Row[];
+          if (res.ok) {
+            charts[cat][pp.value] = (data.results ?? []) as Row[];
+            if (Array.isArray(data.brands) && data.brands.length) brands[cat] = data.brands as string[];
+          }
         }));
       }
-      setState((s) => ({ ...s, charts: result, loaded: true }));
+      setState({ brands, charts, loaded: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
     } finally {
@@ -206,7 +199,7 @@ function useBrandTrend(brandId: string) {
     }
   }
 
-  return { groups, state, loading, error, fetchAll };
+  return { state, loading, error, fetchAll };
 }
 
 function SubLabel({ children }: { children: React.ReactNode }) {
@@ -319,7 +312,8 @@ function RankingBlock({ brandId }: { brandId: string }) {
 }
 
 function BrandPanel({ brand }: { brand: BrandInsight }) {
-  const { groups, state, loading, error, fetchAll } = useBrandTrend(brand.id);
+  const cats = brand.comp.map((b) => b.cat);
+  const { state, loading, error, fetchAll } = useBrandTrend(cats);
   return (
     <div className="space-y-6">
       <section>
@@ -328,9 +322,9 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
           <span className="text-sm font-bold text-stone-800">검색 트렌드 · 주간 증감 · 특이사항</span>
         </div>
 
-        {groups.length > 0 && (
+        {cats.length > 0 && (
           <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-            <p className="text-[11px] text-stone-400">연결된 검색 그룹: {groups.map((g) => state.labels[g] || g).join(" · ")}</p>
+            <p className="text-[11px] text-stone-400">연결된 검색 그룹: {cats.join(" · ")}</p>
             <button onClick={fetchAll} disabled={loading}
               className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
               {loading ? "조회 중..." : state.loaded ? "다시 조회" : "검색 트렌드 조회"}
@@ -338,15 +332,15 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
           </div>
         )}
         {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
-        {!state.loaded && groups.length > 0 && <p className="text-[11px] text-stone-400 mb-3">※ 위 버튼을 누르면 네이버 검색 트렌드(3개월·3년)를 불러옵니다.</p>}
+        {!state.loaded && cats.length > 0 && <p className="text-[11px] text-stone-400 mb-3">※ 위 버튼을 누르면 네이버 검색 트렌드(3개월·3년)를 불러옵니다.</p>}
 
         <div className="space-y-3">
           {brand.comp.map((block, bi) => {
-            const gid = CATEGORY_TO_TREND_GID[block.cat]; // 카테고리 이름으로 그룹 매칭 (순서 아님 — 밀림 방지)
+            const cat = block.cat; // 카테고리 이름을 그대로 그룹 id로 사용 (시트 탭명과 일치)
             // 그래프 브랜드 배열(색 순서와 동일) — 표 브랜드명을 여기서 찾아 같은 색 적용
-            const chartBrands = (gid && state.groupBrands[gid]) ? state.groupBrands[gid] : [];
+            const chartBrands = state.brands[cat] ?? [];
             const colorOf = (name: string): string | undefined => {
-              const idx = chartBrands.findIndex((cb) => cb.name === name);
+              const idx = chartBrands.findIndex((cb) => cb === name);
               return idx >= 0 ? BRAND_COLORS[idx % BRAND_COLORS.length] : undefined;
             };
             // 표를 7일평균 내림차순 정렬 (그래프 상위 순서와 맞춤)
@@ -359,9 +353,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
             });
             return (
               <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
-                {gid && (
-                  <GroupTrendChart gid={gid} label={state.labels[gid] || gid} brands={state.groupBrands[gid] ?? []} gCharts={state.charts[gid]} />
-                )}
+                <GroupTrendChart cat={cat} brands={chartBrands} gCharts={state.charts[cat]} />
                 <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
