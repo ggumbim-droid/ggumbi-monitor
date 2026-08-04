@@ -157,7 +157,7 @@ function Narrative({ text, accent }: { text: string; accent: "insight" | "action
                 return (
                   <li key={li} className="ml-4 flex gap-1.5 text-[11px] text-stone-600 leading-relaxed">
                     <span className={`shrink-0 font-bold ${subColor}`}>{l.marker === "=>" ? "→" : `└ ${l.marker}`}</span>
-                    <span>{l.text}</span>
+                    <span className="whitespace-pre-line">{l.text}</span>
                   </li>
                 );
               }
@@ -168,7 +168,7 @@ function Narrative({ text, accent }: { text: string; accent: "insight" | "action
                   ) : (
                     <span className={`mt-1.5 shrink-0 w-1.5 h-1.5 rounded-full ${dotColor}`} />
                   )}
-                  <span>{l.text}</span>
+                 <span className="whitespace-pre-line">{l.text}</span>
                 </li>
               );
             })}
