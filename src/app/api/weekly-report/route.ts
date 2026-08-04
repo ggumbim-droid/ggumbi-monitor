@@ -686,14 +686,17 @@ function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): Wee
     itemsByCategory.set(id, arr);
   });
 
-  report.categories = report.categories.map((cat) => {
-    const perf = perfMap.get(cat.id);
-    if (perf && cat.id !== "07") {
-      if (perf.주간목표) cat.target = perf.주간목표;
-      if (perf.실적내용 !== undefined) cat.actual = perf.실적내용;
-      if (perf.실적숫자 !== undefined && perf.실적숫자 !== "") cat.actualNum = toNumOrNull(perf.실적숫자);
-      const parsedStatus = parseStatusLenient(perf.달성상태, STATUS_KO_LABEL);
-      if (parsedStatus) cat.status = parsedStatus;
+  const perf = perfMap.get(cat.id);
+    if (perf) {
+      // 07(예산 효율)은 목표·실적·상태를 예산 자동계산으로 채우므로 시트값으로 덮어쓰지 않는다.
+      // 단, 인사이트(비고)·실행계획(대안)은 다른 항목과 동일하게 시트에서 가져온다.
+      if (cat.id !== "07") {
+        if (perf.주간목표) cat.target = perf.주간목표;
+        if (perf.실적내용 !== undefined) cat.actual = perf.실적내용;
+        if (perf.실적숫자 !== undefined && perf.실적숫자 !== "") cat.actualNum = toNumOrNull(perf.실적숫자);
+        const parsedStatus = parseStatusLenient(perf.달성상태, STATUS_KO_LABEL);
+        if (parsedStatus) cat.status = parsedStatus;
+      }
       if (perf.비고 !== undefined) cat.note = perf.비고;
       if (perf.대안 !== undefined) cat.alternative = perf.대안;
     }
