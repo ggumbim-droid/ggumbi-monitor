@@ -428,6 +428,18 @@ function monthKeyOf(dateStr: string): string {
 }
 
 function numericActualOf(cat: ReportCategory | undefined): number | null {
+  // 주차가 여러 달에 걸칠 때, 날이 가장 많이 걸친 달로 귀속한다.
+// (예: 7/27~8/2 → 7월 5일 vs 8월 2일 → 7월). 동률이면 종료일이 속한 달.
+function monthKeyOfWeek(startDate: string, endDate: string): string {
+  if (!startDate || !endDate) return monthKeyOf(endDate || startDate);
+  const dc = getMonthDayCounts(startDate, endDate);
+  let bestMonth = "";
+  let bestDays = -1;
+  for (const [mk, days] of Object.entries(dc)) {
+    if (days > bestDays) { bestMonth = mk; bestDays = days; }
+  }
+  return bestMonth || monthKeyOf(endDate);
+}
   if (!cat) return null;
   if (cat.actualNum !== null && cat.actualNum !== undefined) return cat.actualNum;
   return null;
@@ -435,14 +447,14 @@ function numericActualOf(cat: ReportCategory | undefined): number | null {
 
 async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<MonthlySummary | null> {
   if (!currentReport.endDate) return null;
-  const month = monthKeyOf(currentReport.endDate);
+  const month = monthKeyOfWeek(currentReport.startDate, currentReport.endDate);
   if (!month) return null;
 
   // 이 달에 속하고, 현재 주차 종료일 이하인 주차들만 모음
   const allWeeks = await getWeekListFromSheet();
   const currentEnd = currentReport.endDate;
   const relevant = allWeeks
-    .filter((w) => w.endDate && monthKeyOf(w.endDate) === month && w.endDate <= currentEnd)
+    .filter((w) => w.endDate && monthKeyOfWeek(w.startDate, w.endDate) === month && w.endDate <= currentEnd)
     .sort((a, b) => a.endDate.localeCompare(b.endDate));
 
   // 현재 주차가 목록에 없을 수도 있으니 보강
