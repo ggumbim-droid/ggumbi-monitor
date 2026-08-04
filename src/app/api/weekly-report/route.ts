@@ -685,7 +685,7 @@ function applySheetData(report: WeeklyReportData, sheet: SheetWeekResponse): Wee
     arr.push(it);
     itemsByCategory.set(id, arr);
   });
-
+report.categories = report.categories.map((cat) => {
   const perf = perfMap.get(cat.id);
     if (perf) {
       // 07(예산 효율)은 목표·실적·상태를 예산 자동계산으로 채우므로 시트값으로 덮어쓰지 않는다.
