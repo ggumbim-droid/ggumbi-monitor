@@ -427,8 +427,7 @@ function monthKeyOf(dateStr: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function numericActualOf(cat: ReportCategory | undefined): number | null {
-  // 주차가 여러 달에 걸칠 때, 날이 가장 많이 걸친 달로 귀속한다.
+// 주차가 여러 달에 걸칠 때, 날이 가장 많이 걸친 달로 귀속한다.
 // (예: 7/27~8/2 → 7월 5일 vs 8월 2일 → 7월). 동률이면 종료일이 속한 달.
 function monthKeyOfWeek(startDate: string, endDate: string): string {
   if (!startDate || !endDate) return monthKeyOf(endDate || startDate);
@@ -440,6 +439,8 @@ function monthKeyOfWeek(startDate: string, endDate: string): string {
   }
   return bestMonth || monthKeyOf(endDate);
 }
+
+function numericActualOf(cat: ReportCategory | undefined): number | null {
   if (!cat) return null;
   if (cat.actualNum !== null && cat.actualNum !== undefined) return cat.actualNum;
   return null;
