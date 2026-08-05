@@ -108,13 +108,23 @@ function toNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** 웹앱에서 전체 카테고리의 일별 트렌드를 한 번에 가져옵니다 */
-export async function fetchTrendChart(): Promise<ChartCategory[]> {
+/**
+ * 웹앱에서 전체 카테고리의 트렌드를 한 번에 가져옵니다.
+ *
+ * period="3months" → 일별 (최근 3개월)
+ * period="3years"  → 주간 (최근 3년)
+ *
+ * 두 구간은 각각 따로 정규화된 값이라 섞어 저장하면 안 됩니다.
+ * 그래서 지표를 나눠서(trend_index / trend_index_weekly) 저장합니다.
+ */
+export async function fetchTrendChart(
+  period: "3months" | "3years" = "3months"
+): Promise<ChartCategory[]> {
   if (!TREND_WEBAPP_URL) {
     throw new Error("GOOGLE_TREND_WEBAPP_URL 환경변수가 설정되지 않았습니다.");
   }
   // cat 을 비우면 모든 카테고리 탭이 한 번에 돌아옵니다 (호출 1회로 끝)
-  const url = `${TREND_WEBAPP_URL}?type=chart&period=3months`;
+  const url = `${TREND_WEBAPP_URL}?type=chart&period=${period}`;
   const res = await fetch(url, { redirect: "follow", cache: "no-store" });
   if (!res.ok) {
     throw new Error(`트렌드 웹앱 응답 실패 (HTTP ${res.status})`);
@@ -130,7 +140,10 @@ export async function fetchTrendChart(): Promise<ChartCategory[]> {
  * 경쟁사 행       → 같은 형태에 meta.competitor 가 추가됨
  *   → "우리 카테고리 안에서 경쟁사가 어떻게 움직였나"를 같은 축에서 조회할 수 있습니다.
  */
-export function chartToFacts(chart: ChartCategory[]): TrendCollectResult {
+export function chartToFacts(
+  chart: ChartCategory[],
+  metric: string = METRICS.TREND_INDEX
+): TrendCollectResult {
   const dated: DailyFact[] = [];
   const categories: string[] = [];
   const skipped: string[] = [];
@@ -189,7 +202,7 @@ export function chartToFacts(chart: ChartCategory[]): TrendCollectResult {
           date,
           brand: brand as Brand,
           line,
-          metric: METRICS.TREND_INDEX,
+          metric,
           value,
           source: "trend_webapp",
           meta,
@@ -209,8 +222,18 @@ export function chartToFacts(chart: ChartCategory[]): TrendCollectResult {
   };
 }
 
-/** 수집 전체 실행 — 가져오기 + 변환 */
+/** 일별(3개월) 트렌드 수집 */
 export async function collectTrend(): Promise<TrendCollectResult> {
-  const chart = await fetchTrendChart();
-  return chartToFacts(chart);
+  const chart = await fetchTrendChart("3months");
+  return chartToFacts(chart, METRICS.TREND_INDEX);
+}
+
+/**
+ * 주간(3년) 트렌드 수집.
+ * 화면에서 "3년 추이"를 저장소에서 바로 읽기 위한 것으로,
+ * 일별 지표와 기준점이 달라 별도 지표로 저장합니다.
+ */
+export async function collectTrendWeekly(): Promise<TrendCollectResult> {
+  const chart = await fetchTrendChart("3years");
+  return chartToFacts(chart, METRICS.TREND_INDEX_WEEKLY);
 }
