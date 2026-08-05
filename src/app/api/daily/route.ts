@@ -6,6 +6,8 @@ import {
   putFacts,
   todayKST,
   toSeries,
+  toChartRows,
+  buildCatalog,
   type DailyFact,
 } from "@/lib/daily-store";
 import { isKvConfigured } from "@/lib/kv";
@@ -63,6 +65,38 @@ export async function GET(request: NextRequest) {
     const brand = searchParams.get("brand");
     const line = searchParams.get("line");
     const channel = searchParams.get("channel");
+    const view = searchParams.get("view");
+    const category = searchParams.get("category");
+
+    // 화면의 선택 버튼을 만들기 위한 목록 (카테고리 · 계열)
+    if (view === "catalog") {
+      const catalog = buildCatalog(facts);
+      const dates = [...new Set(facts.map((f) => f.date))].sort();
+      return NextResponse.json({
+        catalog,
+        firstDate: dates[0] ?? null,
+        lastDate: dates[dates.length - 1] ?? null,
+        dayCount: dates.length,
+      });
+    }
+
+    // 차트에 바로 꽂을 수 있는 행 배열
+    if (view === "chart" && metric) {
+      const { rows, series } = toChartRows(facts, {
+        metric,
+        category: category ?? undefined,
+        brand: (brand as never) ?? undefined,
+        line: line ?? undefined,
+      });
+      return NextResponse.json({
+        metric,
+        category: category ?? null,
+        rows,
+        series,
+        count: rows.length,
+        lastDate: rows.length ? rows[rows.length - 1].date : null,
+      });
+    }
 
     // 지표를 지정하면 차트에 바로 꽂을 수 있는 시계열로 변환해서 반환
     if (metric) {
