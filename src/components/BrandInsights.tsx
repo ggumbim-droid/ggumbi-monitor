@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -159,7 +159,7 @@ function GroupTrendChart({ cat, brands, gCharts }: {
     <div className="mb-2">
       <div className="text-xs font-bold text-stone-700 mb-2">{cat} · 검색 트렌드</div>
       {!gCharts ? (
-        <p className="text-[11px] text-stone-300">검색 트렌드 조회 대기 중</p>
+        <p className="text-[11px] text-stone-300">불러오는 중…</p>
       ) : (
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
           {STACK.map((pp) => {
@@ -181,13 +181,8 @@ function useBrandTrend(cats: string[]) {
   const [error, setError] = useState("");
   const catsKey = cats.join("|");
 
-  useEffect(() => {
-    setState({ brands: {}, charts: {}, loaded: false });
-    setError("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catsKey]);
-
-  async function fetchAll() {
+  const fetchAll = useCallback(async () => {
+    if (cats.length === 0) return;
     setLoading(true); setError("");
     try {
       const charts: Record<string, Record<string, Row[]>> = {};
@@ -212,7 +207,17 @@ function useBrandTrend(cats: string[]) {
     } finally {
       setLoading(false);
     }
-  }
+    // catsKey가 바뀔 때만 새로 만들면 충분합니다 (cats 배열은 매 렌더 새로 생성됨)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catsKey]);
+
+  // 브랜드를 선택하면 버튼을 누르지 않아도 바로 불러옵니다.
+  // (기존에는 "검색 트렌드 조회" 버튼을 눌러야만 그래프가 떴습니다)
+  useEffect(() => {
+    setState({ brands: {}, charts: {}, loaded: false });
+    setError("");
+    fetchAll();
+  }, [fetchAll]);
 
   return { state, loading, error, fetchAll };
 }
@@ -341,13 +346,13 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
           <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
             <p className="text-[11px] text-stone-400">연결된 검색 그룹: {cats.join(" · ")}</p>
             <button onClick={fetchAll} disabled={loading}
-              className="text-xs font-semibold px-3 py-1.5 bg-kkumbi-500 text-white rounded-lg hover:bg-kkumbi-600 disabled:opacity-50">
-              {loading ? "조회 중..." : state.loaded ? "다시 조회" : "검색 트렌드 조회"}
+              className="text-xs font-semibold px-3 py-1.5 bg-white text-kkumbi-600 border border-kkumbi-300 rounded-lg hover:bg-kkumbi-50 disabled:opacity-50">
+              {loading ? "불러오는 중..." : "새로고침"}
             </button>
           </div>
         )}
         {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
-        {!state.loaded && cats.length > 0 && <p className="text-[11px] text-stone-400 mb-3">※ 위 버튼을 누르면 네이버 검색 트렌드(3개월·3년)를 불러옵니다.</p>}
+        {loading && !state.loaded && cats.length > 0 && <p className="text-[11px] text-stone-400 mb-3">네이버 검색 트렌드(3개월·3년)를 불러오는 중입니다…</p>}
 
         <div className="space-y-3">
           {brand.comp.map((block, bi) => {
