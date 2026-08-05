@@ -174,12 +174,16 @@ export function chartToFacts(chart: ChartCategory[]): TrendCollectResult {
         const value = toNumber(entry[name]);
         if (value === null) continue;
 
-        // 이 카테고리의 자사 브랜드인지 판단
-        const asOwn = normalizeBrand(name);
-        const isOwn = asOwn === brand;
-
-        const meta: Record<string, string | number> = { category: catName };
-        if (!isOwn) meta.competitor = name;
+        // 시트의 계열(series) 이름은 카테고리에 따라 성격이 다릅니다.
+        //  · "폴더매트" 탭 → 계열이 경쟁사 브랜드 (꿈비 / 알집매트 / 크림하우스…)
+        //  · "매트" 탭     → 계열이 제품 유형 (폴더매트 / 롤매트 / 시공매트…)
+        // 둘을 "경쟁사"로 뭉뚱그리면 잘못된 꼬리표가 붙으므로
+        // 중립적으로 series 로 저장하고, 자사 브랜드로 인식되는 것만 own 표시를 답니다.
+        const meta: Record<string, string | number> = {
+          category: catName,
+          series: name,
+        };
+        if (normalizeBrand(name) === brand) meta.own = 1;
 
         dated.push({
           date,
