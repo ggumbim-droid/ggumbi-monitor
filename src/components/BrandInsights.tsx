@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, BRAND_RANKING_GROUPS, CATEGORY_TO_TREND_GID, type BrandInsight } from "@/lib/brand-insights";
+import { BRAND_INSIGHTS, BRAND_TREND_GROUPS, BRAND_RANKING_GROUPS, CATEGORY_TO_TREND_GID, type BrandInsight, type CompBlock, type CompRow } from "@/lib/brand-insights";
 
 const BRAND_COLORS = ["#f56b3d", "#10B981", "#45B7D1", "#8B5CF6", "#0EA5E9", "#EC4899", "#14B8A6", "#94A3B8"];
 type Row = Record<string, string | number>;
@@ -59,13 +59,13 @@ function fmtFullDate(v: string): string {
 // 숫자만으로는 크기를 가늠하기 어렵습니다.
 // 그래서 그날 1등을 100%로 놓은 비율을 함께 보여주고,
 // 그 지수가 어떤 키워드를 합쳐 나온 값인지도 아래에 붙입니다.
-function TrendTooltip({ active, payload, label, keywords }: {
+function TrendTooltip({ active, payload, label }: {
   active?: boolean; payload?: TooltipEntry[]; label?: string;
-  keywords?: Record<string, string[]>;
 }) {
   if (!active || !payload?.length) return null;
 
-  // 그날 값이 가장 큰 계열을 1등으로 보고 나머지를 환산
+  // 데이터랩 지수는 조회 구간마다 기준점이 달라지는 상대값이라
+  // 숫자만으로는 크기를 가늠하기 어렵습니다. 그날 1등을 100%로 놓고 환산해 함께 보여줍니다.
   const nums = payload
     .map((e) => (typeof e.value === "number" ? e.value : NaN))
     .filter((n) => !isNaN(n));
@@ -78,39 +78,53 @@ function TrendTooltip({ active, payload, label, keywords }: {
   });
 
   return (
-    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "9px 11px", boxShadow: "0 4px 10px -1px rgba(0,0,0,0.12)", minWidth: "230px", maxWidth: "340px" }}>
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "9px 11px", boxShadow: "0 4px 10px -1px rgba(0,0,0,0.12)", minWidth: "190px" }}>
       <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "5px" }}>{fmtFullDate(label ?? "")}</p>
       {sorted.map((e, i) => {
         const v = typeof e.value === "number" ? e.value : NaN;
         const share = !isNaN(v) && top > 0 ? Math.round((v / top) * 1000) / 10 : null;
         const isTop = i === 0 && share !== null;
-        const kws = keywords?.[e.name] ?? [];
         return (
-          <div key={e.name} style={{ padding: "2px 0" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
-              <span style={{ fontSize: "12px", color: "#374151", flex: 1 }}>
-                {e.name}{isTop && " 👑"}
-              </span>
-              <span style={{ fontSize: "12px", fontWeight: 700, color: e.color, minWidth: "44px", textAlign: "right" }}>
-                {share !== null ? `${share}%` : "—"}
-              </span>
-              <span style={{ fontSize: "11px", color: "#9ca3af", minWidth: "34px", textAlign: "right" }}>
-                {!isNaN(v) ? v.toFixed(1) : "—"}
-              </span>
-            </div>
-            {kws.length > 0 && (
-              <p style={{ fontSize: "10px", color: "#9ca3af", margin: "1px 0 3px 14px", lineHeight: 1.4 }}>
-                {kws.slice(0, 6).join(" · ")}
-                {kws.length > 6 && ` 외 ${kws.length - 6}개`}
-              </p>
-            )}
+          <div key={e.name} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "2px 0" }}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
+            <span style={{ fontSize: "12px", color: "#374151", flex: 1 }}>
+              {e.name}{isTop && " 👑"}
+            </span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: e.color, minWidth: "44px", textAlign: "right" }}>
+              {share !== null ? `${share}%` : "—"}
+            </span>
+            <span style={{ fontSize: "11px", color: "#9ca3af", minWidth: "34px", textAlign: "right" }}>
+              {!isNaN(v) ? v.toFixed(1) : "—"}
+            </span>
           </div>
         );
       })}
       <p style={{ fontSize: "10px", color: "#b0b7c3", marginTop: "5px", paddingTop: "4px", borderTop: "1px solid #f1f5f9" }}>
         % = 그날 1위 대비 · 오른쪽 흐린 숫자는 데이터랩 지수
       </p>
+    </div>
+  );
+}
+
+// 표의 브랜드명을 클릭하면 아래로 펼쳐지는 연관키워드 카드.
+// 그래프 지수가 어떤 키워드를 합쳐 나온 값인지 전체 목록으로 확인합니다.
+function KeywordCard({ brand, keywords, color }: {
+  brand: string; keywords: string[]; color?: string;
+}) {
+  return (
+    <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 my-1">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: color || "#cbd5e1" }} />
+        <span className="text-[11px] font-bold" style={color ? { color } : undefined}>{brand}</span>
+        <span className="text-[10px] text-stone-400">반영 키워드 {keywords.length}개</span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {keywords.map((k) => (
+          <span key={k} className="text-[10px] text-stone-600 bg-white border border-stone-200 rounded px-1.5 py-0.5">
+            {k}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -124,9 +138,8 @@ interface TrendState {
 }
 
 // 개별 차트 슬롯 — 기본 기간(3개월/3년) 표시 + 날짜 달력으로 커스텀 기간 재조회
-function TrendSlot({ cat, defLabel, brands, initialRows, keywords }: {
+function TrendSlot({ cat, defLabel, brands, initialRows }: {
   cat: string; defLabel: string; brands: string[]; initialRows: Row[];
-  keywords?: Record<string, string[]>;
 }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [start, setStart] = useState("");
@@ -200,7 +213,7 @@ function TrendSlot({ cat, defLabel, brands, initialRows, keywords }: {
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
             <XAxis dataKey="date" tickFormatter={fmtTickDate} tick={{ fontSize: 9, fill: "#94a3b8" }} minTickGap={30} />
             <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} width={28} />
-            <Tooltip content={<TrendTooltip keywords={keywords} />} />
+            <Tooltip content={<TrendTooltip />} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
             {lineKeys.map((b, i) => (
               <Line key={b} type="monotone" dataKey={b} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
@@ -212,9 +225,8 @@ function TrendSlot({ cat, defLabel, brands, initialRows, keywords }: {
   );
 }
 
-function GroupTrendChart({ cat, brands, gCharts, keywords }: {
+function GroupTrendChart({ cat, brands, gCharts }: {
   cat: string; brands: string[]; gCharts?: Record<string, Row[]>;
-  keywords?: Record<string, string[]>;
 }) {
   return (
     <div className="mb-2">
@@ -227,7 +239,7 @@ function GroupTrendChart({ cat, brands, gCharts, keywords }: {
             const rows = gCharts[pp.value];
             if (!rows || rows.length === 0) return null;
             return (
-              <TrendSlot key={pp.value} cat={cat} defLabel={pp.label} brands={brands} initialRows={rows} keywords={keywords} />
+              <TrendSlot key={pp.value} cat={cat} defLabel={pp.label} brands={brands} initialRows={rows} />
             );
           })}
         </div>
@@ -433,6 +445,94 @@ function useTrendKeywords() {
   return map;
 }
 
+
+// 카테고리 한 블록 — 그래프 + 경쟁사 순위표 + (브랜드 클릭 시) 연관키워드 카드
+function CompBlockCard({ cat, block, chartBrands, colorOf, sortedRows, gCharts, keywords }: {
+  cat: string;
+  block: CompBlock;
+  chartBrands: string[];
+  colorOf: (name: string) => string | undefined;
+  sortedRows: CompRow[];
+  gCharts?: Record<string, Row[]>;
+  keywords?: Record<string, string[]>;
+}) {
+  const [openBrand, setOpenBrand] = useState<string>("");
+
+  return (
+    <div className="border border-stone-200 rounded-xl p-4 bg-white">
+      <GroupTrendChart cat={cat} brands={chartBrands} gCharts={gCharts} />
+                <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-stone-400 text-left">
+                      <th className="py-1 px-1.5 font-medium">브랜드</th>
+                      <th className="py-1 px-1.5 font-medium">기간</th>
+                      <th className="py-1 px-1.5 font-medium">7일평균</th>
+                      <th className="py-1 px-1.5 font-medium">증감</th>
+                      <th className="py-1 px-1.5 font-medium">최고점</th>
+                      <th className="py-1 px-1.5 font-medium">최고점 날짜</th>
+                      <th className="py-1 px-1.5 font-medium">상태</th>
+                    </tr></thead>
+                    <tbody>
+                      {sortedRows.map((r, i) => {
+                        const c = colorOf(r.name);
+                        const kws = keywords?.[r.name] ?? [];
+                        const isOpen = openBrand === r.name;
+                        return (
+                        <React.Fragment key={i}>
+                        <tr className="border-t border-stone-100">
+                          <td className="py-1.5 px-1.5 whitespace-nowrap font-bold" style={c ? { color: c } : undefined}>
+                            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={c ? { background: c } : { background: "#cbd5e1" }} />
+                            {kws.length > 0 ? (
+                              <button
+                                onClick={() => setOpenBrand(isOpen ? "" : r.name)}
+                                className="hover:underline underline-offset-2"
+                                title="클릭하면 반영된 연관키워드를 모두 볼 수 있습니다"
+                              >
+                                {r.name}
+                                <span className="ml-1 text-[9px] font-normal text-stone-400">
+                                  {isOpen ? "▲" : "▼"} {kws.length}
+                                </span>
+                              </button>
+                            ) : r.name}
+                          </td>
+                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.period || "—"}</td>
+                          <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
+                          <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
+                          <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
+                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
+                          <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
+                        </tr>
+                        {isOpen && kws.length > 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-1.5 pb-1">
+                              <KeywordCard brand={r.name} keywords={kws} color={c} />
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {block.note && (
+                  <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
+                    <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
+                    <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line mt-1.5">{block.note}</p>
+                  </div>
+                )}
+                {block.comment && (
+                  <div className="mt-3 bg-amber-50 border-l-[3px] border-amber-400 rounded-r-lg px-3 py-2.5">
+                    <span className="text-[10px] font-bold text-amber-700">📝 경쟁사 동향 인사이트</span>
+                    <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-line mt-1">{block.comment}</p>
+                  </div>
+                )}
+
+    </div>
+  );
+}
+
 function BrandPanel({ brand }: { brand: BrandInsight }) {
   const cats = brand.comp.map((b) => b.cat);
   const { state, loading, error, fetchAll } = useBrandTrend(cats);
@@ -476,54 +576,16 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
             });
 
             return (
-              <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
-                <GroupTrendChart cat={cat} brands={chartBrands} gCharts={state.charts[cat]} keywords={keywordMap[cat]} />
-                <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead><tr className="text-stone-400 text-left">
-                      <th className="py-1 px-1.5 font-medium">브랜드</th>
-                      <th className="py-1 px-1.5 font-medium">기간</th>
-                      <th className="py-1 px-1.5 font-medium">7일평균</th>
-                      <th className="py-1 px-1.5 font-medium">증감</th>
-                      <th className="py-1 px-1.5 font-medium">최고점</th>
-                      <th className="py-1 px-1.5 font-medium">최고점 날짜</th>
-                      <th className="py-1 px-1.5 font-medium">상태</th>
-                    </tr></thead>
-                    <tbody>
-                      {sortedRows.map((r, i) => {
-                        const c = colorOf(r.name);
-                        return (
-                        <tr key={i} className="border-t border-stone-100">
-                          <td className="py-1.5 px-1.5 whitespace-nowrap font-bold" style={c ? { color: c } : undefined}>
-                            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={c ? { background: c } : { background: "#cbd5e1" }} />
-                            {r.name}
-                          </td>
-                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.period || "—"}</td>
-                          <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
-                          <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
-                          <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
-                          <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
-                          <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {block.note && (
-                  <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
-                    <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
-                    <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line mt-1.5">{block.note}</p>
-                  </div>
-                )}
-                {block.comment && (
-                  <div className="mt-3 bg-amber-50 border-l-[3px] border-amber-400 rounded-r-lg px-3 py-2.5">
-                    <span className="text-[10px] font-bold text-amber-700">📝 경쟁사 동향 인사이트</span>
-                    <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-line mt-1">{block.comment}</p>
-                  </div>
-                )}
-              </div>
+              <CompBlockCard
+                key={bi}
+                cat={cat}
+                block={block}
+                chartBrands={chartBrands}
+                colorOf={colorOf}
+                sortedRows={sortedRows}
+                gCharts={state.charts[cat]}
+                keywords={keywordMap[cat]}
+              />
             );
           })}
         </div>
