@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { putDatedFacts, todayKST, type DailyFact } from "@/lib/daily-store";
 import { isKvConfigured } from "@/lib/kv";
-import { collectTrend } from "@/lib/collect-trend";
+import { collectTrend, collectTrendWeekly } from "@/lib/collect-trend";
 
 // ══════════════════════════════════════════════════
 //  매일 자동 수집 (Vercel Cron 진입점)
@@ -93,6 +93,34 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // ── 수집기 ②: 검색 트렌드 (3년 주간) ──
+  // 주간보고의 "3년 추이" 그래프가 저장소에서 바로 읽을 수 있도록 함께 저장합니다.
+  // skipWeekly=1 로 건너뛸 수 있습니다 (시간 초과가 날 때).
+  if (searchParams.get("skipWeekly") !== "1") {
+    const started = Date.now();
+    try {
+      const r = await collectTrendWeekly();
+      allDated.push(...r.dated);
+      const notes: string[] = [`카테고리 ${r.categories.length}개`];
+      if (r.dateRange) notes.push(`${r.dateRange.from} ~ ${r.dateRange.to}`);
+      reports.push({
+        name: "검색 트렌드(3년 주간)",
+        ok: true,
+        collected: r.dated.length,
+        ms: Date.now() - started,
+        note: notes.join(" / "),
+      });
+    } catch (e) {
+      reports.push({
+        name: "검색 트렌드(3년 주간)",
+        ok: false,
+        collected: 0,
+        ms: Date.now() - started,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   if (dry) {
     const dates = [...new Set(allDated.map((f) => f.date))].sort();
     return NextResponse.json({
@@ -117,6 +145,14 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const result = await putDatedFacts(allDated, maxDays);
-  return NextResponse.json({ today: todayKST(), collectors: reports, result });
+  // 일별(최근 구간)과 주간(3년) 데이터는 날짜 분포가 달라 따로 저장합니다.
+  // 함께 넣으면 maxDays 자르기에서 주간 과거분이 통째로 날아갑니다.
+  const dailyFacts = allDated.filter((f) => f.metric !== "trend_index_weekly");
+  const weeklyFacts = allDated.filter((f) => f.metric === "trend_index_weekly");
+
+  const result = await putDatedFacts(dailyFacts, maxDays);
+  const weeklyResult = weeklyFacts.length
+    ? await putDatedFacts(weeklyFacts, Number(searchParams.get("weeklyDays") ?? 160))
+    : null;
+  return NextResponse.json({ today: todayKST(), collectors: reports, result, weeklyResult });
 }
