@@ -22,7 +22,8 @@ import { normalizeBrand, type Brand } from "@/lib/brands";
 /** 지표 종류. 새 지표를 추가할 때 여기에 등록합니다. */
 export const METRICS = {
   SEARCH_VOLUME: "search_volume", // 네이버 검색량
-  TREND_INDEX: "trend_index", // 검색 트렌드 지수 (0~100)
+  TREND_INDEX: "trend_index", // 검색 트렌드 지수 — 일별 (3개월 구간 기준)
+  TREND_INDEX_WEEKLY: "trend_index_weekly", // 검색 트렌드 지수 — 주간 (3년 구간 기준)
   SHOP_RANK: "shop_rank", // 쇼핑 노출 순위 (낮을수록 좋음)
   AD_SPEND: "ad_spend", // 광고 집행비
   AD_REVENUE: "ad_revenue", // 광고 매출
