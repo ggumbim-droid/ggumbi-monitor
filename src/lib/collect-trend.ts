@@ -46,6 +46,7 @@ export const CATEGORY_TO_LINE: Record<string, string> = {
   이유식포트: "꿈비육아",
   유모차쿨시트: "꿈비육아",
   아기띠커버: "꿈비육아",
+  쿨링커버: "꿈비육아",
 
   오가닉그라운드: "오가닉그라운드",
   "오가닉그라운드 시즌 제품": "오가닉그라운드",
@@ -55,6 +56,7 @@ export const CATEGORY_TO_LINE: Record<string, string> = {
 
   강아지쿨매트: "파미야",
   고양이캣타워: "파미야",
+  캣타워: "파미야",
 };
 
 interface ChartEntry {
@@ -76,10 +78,28 @@ export interface TrendCollectResult {
   skipped: string[];
   unmappedCategories: string[];
   dateRange: { from: string; to: string } | null;
+  /** 문제 추적용 — 웹앱이 실제로 보낸 첫 행 원본 */
+  rawSample: unknown;
 }
 
-function isDateString(v: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+/**
+ * period 값을 YYYY-MM-DD 로 정규화합니다.
+ *
+ * 시트의 period 열은 텍스트가 아니라 "날짜 값"으로 저장돼 있어,
+ * Apps Script가 String()으로 감싸면 아래처럼 긴 형태로 옵니다.
+ *   "Thu May 08 2026 00:00:00 GMT+0900 (Korean Standard Time)"
+ * 이미 "2026-05-08" 형태로 오는 경우도 있어 둘 다 받습니다.
+ */
+function toDateKey(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  // 한국 시간 기준 날짜로 맞춥니다 (UTC 변환 시 하루 밀리는 것 방지)
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().split("T")[0];
 }
 
 function toNumber(v: unknown): number | null {
@@ -117,6 +137,10 @@ export function chartToFacts(chart: ChartCategory[]): TrendCollectResult {
   const unmappedCategories: string[] = [];
   let minDate = "";
   let maxDate = "";
+  const rawSample =
+    chart[0] && Array.isArray(chart[0].data)
+      ? { name: chart[0].name, brands: chart[0].brands, firstRow: chart[0].data[0] }
+      : null;
 
   for (const cat of chart) {
     const catName = String(cat?.name ?? "").trim();
@@ -141,8 +165,8 @@ export function chartToFacts(chart: ChartCategory[]): TrendCollectResult {
     const brandNames = Array.isArray(cat.brands) ? cat.brands : [];
 
     for (const entry of cat.data) {
-      const date = String(entry?.period ?? "").trim();
-      if (!isDateString(date)) continue; // 주간 블록(예: 2026-05-04 주)이 섞여 들어오면 제외
+      const date = toDateKey(entry?.period);
+      if (!date) continue;
       if (!minDate || date < minDate) minDate = date;
       if (!maxDate || date > maxDate) maxDate = date;
 
@@ -177,6 +201,7 @@ export function chartToFacts(chart: ChartCategory[]): TrendCollectResult {
     skipped,
     unmappedCategories,
     dateRange: minDate && maxDate ? { from: minDate, to: maxDate } : null,
+    rawSample,
   };
 }
 
