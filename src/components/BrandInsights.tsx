@@ -144,7 +144,7 @@ function TrendSlot({ cat, defLabel, brands, initialRows, keywords }: {
   const lineKeys = brands.length > 0
     ? brands
     : (rows.length > 0
-        ? Object.keys(rows[0]).filter((k) => k !== "period")
+        ? Object.keys(rows[0]).filter((k) => k !== "date")
         : []);
 
   async function query() {
@@ -152,13 +152,17 @@ function TrendSlot({ cat, defLabel, brands, initialRows, keywords }: {
     if (start > end) { setErr("시작일이 종료일보다 늦습니다."); return; }
     setLoading(true); setErr("");
     try {
-      const res = await fetch("/api/trend", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId: cat, period: "custom", customStart: start, customEnd: end }),
+      const params = new URLSearchParams({
+        view: "chart", metric: "trend_index", category: cat,
+        start, end,
       });
+      const res = await fetch(`/api/daily?${params.toString()}`);
       const data = await res.json();
-      if (res.ok) { setRows((data.results ?? []) as Row[]); setCustom(true); }
-      else setErr(data.error || "조회 실패");
+      if (res.ok && !data.error) {
+        const got = (data.rows ?? []) as Row[];
+        if (got.length === 0) { setErr("해당 기간에 저장된 데이터가 없습니다."); }
+        else { setRows(got); setCustom(true); }
+      } else setErr(data.error || "조회 실패");
     } catch { setErr("조회 중 오류"); }
     finally { setLoading(false); }
   }
@@ -194,7 +198,7 @@ function TrendSlot({ cat, defLabel, brands, initialRows, keywords }: {
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-            <XAxis dataKey="period" tickFormatter={fmtTickDate} tick={{ fontSize: 9, fill: "#94a3b8" }} minTickGap={30} />
+            <XAxis dataKey="date" tickFormatter={fmtTickDate} tick={{ fontSize: 9, fill: "#94a3b8" }} minTickGap={30} />
             <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} width={28} />
             <Tooltip content={<TrendTooltip keywords={keywords} />} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
@@ -242,64 +246,60 @@ function useBrandTrend(cats: string[]) {
     if (cats.length === 0) return;
     setLoading(true); setError("");
 
-    // 요청 하나 — 실패하면 한 번만 다시 시도합니다.
-    // (시트를 매번 통째로 훑는 웹앱이라 몰아서 부르면 간헐적으로 응답이 늦습니다)
-    async function fetchOne(cat: string, period: string, retry = true): Promise<{ rows: Row[]; brands: string[] } | null> {
-      try {
-        const res = await fetch("/api/trend", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ groupId: cat, period }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || "조회 실패");
-        return {
-          rows: (data.results ?? []) as Row[],
-          brands: Array.isArray(data.brands) ? (data.brands as string[]) : [],
-        };
-      } catch {
-        if (retry) {
-          await new Promise((r) => setTimeout(r, 800));
-          return fetchOne(cat, period, false);
-        }
-        return null;
-      }
-    }
+    // ── 저장소에서 읽습니다 ──
+    // 예전에는 카테고리마다 시트 웹앱을 불렀는데, 웹앱이 요청마다 시트 18개를
+    // 전부 훑느라 느려서 자주 시간 초과가 났습니다.
+    // 지금은 매일 새벽 수집해 둔 값을 저장소에서 꺼내므로 한 번에 끝나고 즉시 뜹니다.
+    //   3개월 = 일별(trend_index) / 3년 = 주간(trend_index_weekly)
+    try {
+      const charts: Record<string, Record<string, Row[]>> = {};
+      const brands: Record<string, string[]> = {};
 
-    const charts: Record<string, Record<string, Row[]>> = {};
-    const brands: Record<string, string[]> = {};
-    let okCount = 0;
-    let failCount = 0;
+      const results = await Promise.all(
+        cats.flatMap((cat) =>
+          STACK.map(async (pp) => {
+            const params = new URLSearchParams({
+              view: "chart",
+              metric: pp.value === "3years" ? "trend_index_weekly" : "trend_index",
+              category: cat,
+              days: pp.value === "3years" ? "1100" : "120",
+            });
+            const res = await fetch(`/api/daily?${params.toString()}`);
+            const data = await res.json();
+            return {
+              cat,
+              period: pp.value,
+              ok: res.ok && !data.error,
+              rows: (data.rows ?? []) as Row[],
+              series: (data.series ?? []) as string[],
+            };
+          })
+        )
+      );
 
-    // 동시에 몰지 않고 하나씩 부릅니다. 대신 받는 즉시 화면에 반영해
-    // 전부 끝나기를 기다리지 않고 먼저 온 그래프부터 보이게 합니다.
-    for (const cat of cats) {
-      for (const pp of STACK) {
-        const r = await fetchOne(cat, pp.value);
-        if (!r) { failCount++; continue; }
+      let okCount = 0;
+      for (const r of results) {
+        if (!r.ok || r.rows.length === 0) continue;
         okCount++;
-        if (!charts[cat]) charts[cat] = {};
-        charts[cat][pp.value] = r.rows;
-        if (r.brands.length) brands[cat] = r.brands;
-        setState({
-          brands: { ...brands },
-          charts: JSON.parse(JSON.stringify(charts)) as typeof charts,
-          loaded: true,
-        });
+        if (!charts[r.cat]) charts[r.cat] = {};
+        charts[r.cat][r.period] = r.rows;
+        if (r.series.length) brands[r.cat] = r.series;
       }
-    }
 
-    if (okCount === 0) {
-      setError("검색 트렌드를 불러오지 못했습니다. 새로고침 버튼을 눌러 다시 시도해주세요.");
-    } else if (failCount > 0) {
-      setError(`일부 그래프를 불러오지 못했습니다 (${failCount}건). 새로고침으로 다시 시도할 수 있습니다.`);
+      setState({ brands, charts, loaded: true });
+      if (okCount === 0) {
+        setError("저장된 트렌드 데이터가 없습니다. 자동 수집이 한 번 돌고 나면 표시됩니다.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "불러오는 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
     // catsKey가 바뀔 때만 새로 만들면 충분합니다 (cats 배열은 매 렌더 새로 생성됨)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catsKey]);
 
   // 브랜드를 선택하면 버튼을 누르지 않아도 바로 불러옵니다.
-  // (기존에는 "검색 트렌드 조회" 버튼을 눌러야만 그래프가 떴습니다)
   useEffect(() => {
     setState({ brands: {}, charts: {}, loaded: false });
     setError("");
@@ -418,9 +418,25 @@ function RankingBlock({ brandId }: { brandId: string }) {
   );
 }
 
+// 그래프 지수가 어떤 키워드를 합쳐 나온 값인지 보여주기 위한 목록.
+// 거의 바뀌지 않는 값이라 저장소에 담아두고 한 번만 읽습니다.
+function useTrendKeywords() {
+  const [map, setMap] = useState<Record<string, Record<string, string[]>>>({});
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/trend-keywords")
+      .then((r) => r.json())
+      .then((d) => { if (alive && d?.keywords) setMap(d.keywords); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return map;
+}
+
 function BrandPanel({ brand }: { brand: BrandInsight }) {
   const cats = brand.comp.map((b) => b.cat);
   const { state, loading, error, fetchAll } = useBrandTrend(cats);
+  const keywordMap = useTrendKeywords();
   return (
     <div className="space-y-6">
       <section>
@@ -461,7 +477,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
 
             return (
               <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
-                <GroupTrendChart cat={cat} brands={chartBrands} gCharts={state.charts[cat]} />
+                <GroupTrendChart cat={cat} brands={chartBrands} gCharts={state.charts[cat]} keywords={keywordMap[cat]} />
                 <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
