@@ -197,6 +197,70 @@ export async function putFacts(
   return result;
 }
 
+export interface MultiWriteResult {
+  ok: boolean;
+  days: number;
+  written: number;
+  replaced: number;
+  rejected: string[];
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * 여러 날짜의 데이터를 한 번에 저장합니다 (과거 데이터 채우기용).
+ * 날짜별로 묶어서 하루씩 저장하므로, 이미 있는 날짜는 부분 갱신됩니다.
+ *
+ * maxDays 를 넘기면 최근 날짜부터 그만큼만 저장합니다.
+ * → 함수 실행 시간 제한(60초)에 걸리지 않도록 나눠서 돌릴 때 씁니다.
+ */
+export async function putDatedFacts(
+  facts: DailyFact[],
+  maxDays?: number
+): Promise<MultiWriteResult> {
+  const byDate = new Map<string, Omit<DailyFact, "date">[]>();
+  for (const f of facts) {
+    if (!isValidDate(f.date)) continue;
+    const { date: _d, ...rest } = f;
+    const arr = byDate.get(f.date) ?? [];
+    arr.push(rest);
+    byDate.set(f.date, arr);
+  }
+
+  let dates = [...byDate.keys()].sort();
+  if (maxDays && dates.length > maxDays) {
+    dates = dates.slice(-maxDays); // 최근 날짜 우선
+  }
+
+  const out: MultiWriteResult = {
+    ok: true,
+    days: 0,
+    written: 0,
+    replaced: 0,
+    rejected: [],
+    from: dates[0] ?? null,
+    to: dates[dates.length - 1] ?? null,
+  };
+
+  for (const date of dates) {
+    const r = await putFacts(date, byDate.get(date) ?? []);
+    if (!r.ok) {
+      out.ok = false;
+      out.rejected.push(`${date} 저장 실패`);
+      continue;
+    }
+    out.days++;
+    out.written += r.written;
+    out.replaced += r.replaced;
+    // 거부 사유는 종류별로 한 번만 모읍니다 (같은 메시지가 90일치 반복되지 않도록)
+    for (const msg of r.rejected) {
+      if (!out.rejected.includes(msg)) out.rejected.push(msg);
+    }
+  }
+
+  return out;
+}
+
 // ── 집계 ─────────────────────────────────────────
 
 export interface SeriesPoint {
