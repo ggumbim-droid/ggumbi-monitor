@@ -10,6 +10,7 @@ import { ChannelTabs } from "@/components/ChannelTabs";
 import { LoginRequiredSection } from "@/components/LoginRequiredSection";
 import { InsightsPanel } from "@/components/InsightsPanel";
 import { WeeklyReport } from "@/components/WeeklyReport";
+import { DailyMonitor } from "@/components/DailyMonitor";
 import { buildNotionReport } from "@/lib/report";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from "recharts";
 import type { ChannelId, MonitorDateRange, MonitorResult, SortOrder } from "@/types/monitor";
@@ -51,11 +52,15 @@ const CHANNEL_LABELS: Record<ChannelId, string> = {
 
 const COMING_SOON: ChannelId[] = ["meta_ads", "smartstore_reviews"];
 
+// 화면이 실제로 존재하는 메뉴만 남깁니다.
+// 02·03·05·06·07·08은 클릭해도 빈 화면이었고, 그 내용은 전체 요약·주간보고에서
+// 이미 한눈에 보이므로 제거했습니다. KPI 번호도 화면 구조와 맞지 않아 뗐습니다.
 const SIDEBAR_MENUS = [
   { id: "dashboard", label: "전체 요약", icon: "📊", children: [] },
   { id: "weekly_report", label: "주간보고", icon: "🗒️", children: [] },
+  { id: "daily_monitor", label: "일일 모니터", icon: "📈", children: [] },
   {
-    id: "kpi_keyword", label: "01. 키워드 검색량", icon: "🔍",
+    id: "kpi_keyword", label: "검색 · 트렌드", icon: "🔍",
     children: [
       { id: "brand_trend", label: "경쟁사 트렌드" },
       { id: "keyword_trend", label: "네이버 트렌드 조회" },
@@ -64,13 +69,7 @@ const SIDEBAR_MENUS = [
       { id: "monitor_shopping", label: "쇼핑 모니터링" },
     ],
   },
-  { id: "kpi_performance", label: "02. 퍼포먼스 매출", icon: "💰", children: [] },
-  { id: "kpi_ads", label: "03. 주력제품 광고매출", icon: "📦", children: [] },
-  { id: "kpi_exposure", label: "04. 키워드 1페이지 노출", icon: "🏆", children: [] },
-  { id: "kpi_newuser", label: "05. 신규유입", icon: "👥", children: [] },
-  { id: "kpi_synergy", label: "06. 계열사 시너지", icon: "🤝", children: [] },
-  { id: "kpi_budget", label: "07. 예산 효율", icon: "💡", children: [] },
-  { id: "kpi_ai", label: "08. AI 업무 절감", icon: "🤖", children: [] },
+  { id: "kpi_exposure", label: "키워드 1페이지 노출", icon: "🏆", children: [] },
 ];
 
 function getToday() { return new Date().toISOString().split("T")[0]; }
@@ -497,6 +496,9 @@ export default function HomePage() {
 
           {/* 주간보고 */}
           {activeMenu === "weekly_report" && <WeeklyReport />}
+
+          {/* 일일 모니터 — 저장소에서 읽어 클릭 없이 표시 */}
+          {activeMenu === "daily_monitor" && <DailyMonitor />}
 
           {/* 경쟁사 트렌드 대시보드 */}
           {activeMenu === "brand_trend" && (
