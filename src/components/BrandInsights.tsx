@@ -371,6 +371,16 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
               if (isNaN(bv)) return -1;
               return bv - av;
             });
+            // ── 1등 대비 비율 ──
+            // 데이터랩 지수(7일평균)는 조회 구간마다 기준점이 달라지는 상대값이라
+            // 숫자 하나만으로는 의미를 읽기 어렵습니다.
+            // 카테고리 안 1등을 100%로 놓고 환산하면 구간이 바뀌어도 비율은 유지됩니다.
+            const topIdx = sortedRows.length > 0 ? parseFloat(sortedRows[0].idx) : NaN;
+            const shareOf = (v: string): number | null => {
+              const n = parseFloat(v);
+              if (isNaN(n) || isNaN(topIdx) || topIdx <= 0) return null;
+              return Math.round((n / topIdx) * 1000) / 10;
+            };
             return (
               <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
                 <GroupTrendChart cat={cat} brands={chartBrands} gCharts={state.charts[cat]} />
@@ -379,8 +389,9 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                   <table className="w-full text-xs">
                     <thead><tr className="text-stone-400 text-left">
                       <th className="py-1 px-1.5 font-medium">브랜드</th>
-                      <th className="py-1 px-1.5 font-medium">기간</th>
+                      <th className="py-1 px-1.5 font-semibold text-stone-600">1등 대비</th>
                       <th className="py-1 px-1.5 font-medium">7일평균</th>
+                      <th className="py-1 px-1.5 font-medium">기간</th>
                       <th className="py-1 px-1.5 font-medium">증감</th>
                       <th className="py-1 px-1.5 font-medium">최고점</th>
                       <th className="py-1 px-1.5 font-medium">최고점 날짜</th>
@@ -395,8 +406,20 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                             <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={c ? { background: c } : { background: "#cbd5e1" }} />
                             {r.name}
                           </td>
+                          <td className="py-1.5 px-1.5 whitespace-nowrap">
+                            {(() => {
+                              const sh = shareOf(r.idx);
+                              if (sh === null) return <span className="text-stone-300">—</span>;
+                              const isTop = i === 0;
+                              return (
+                                <span className={isTop ? "font-extrabold text-amber-600" : "font-bold text-stone-800"}>
+                                  {sh}%{isTop && <span className="ml-1">👑</span>}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td className="py-1.5 px-1.5 text-stone-400">{r.idx}</td>
                           <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.period || "—"}</td>
-                          <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
                           <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
                           <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
                           <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
@@ -407,6 +430,11 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                     </tbody>
                   </table>
                 </div>
+                <p className="text-[10px] text-stone-400 mt-1.5 leading-relaxed">
+                  1등 대비 = 이 카테고리 1위 브랜드를 100%로 본 상대 비율.
+                  7일평균은 네이버 데이터랩 상대지수로, 조회 기간이 달라지면 값도 달라집니다.
+                  카테고리가 다르면 비율끼리도 직접 비교하지 마세요.
+                </p>
                 {block.note && (
                   <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
                     <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
