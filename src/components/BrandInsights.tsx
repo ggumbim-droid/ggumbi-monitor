@@ -215,8 +215,8 @@ function GroupTrendChart({ cat, brands, gCharts, keywords }: {
   return (
     <div className="mb-2">
       <div className="text-xs font-bold text-stone-700 mb-2">{cat} · 검색 트렌드</div>
-      {!gCharts ? (
-        <p className="text-[11px] text-stone-300">불러오는 중…</p>
+      {!gCharts || Object.keys(gCharts).length === 0 ? (
+        <p className="text-[11px] text-stone-300 py-6 text-center">불러오는 중…</p>
       ) : (
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
           {STACK.map((pp) => {
@@ -241,29 +241,59 @@ function useBrandTrend(cats: string[]) {
   const fetchAll = useCallback(async () => {
     if (cats.length === 0) return;
     setLoading(true); setError("");
-    try {
-      const charts: Record<string, Record<string, Row[]>> = {};
-      const brands: Record<string, string[]> = {};
-      for (const cat of cats) {
-        charts[cat] = {};
-        await Promise.all(STACK.map(async (pp) => {
-          const res = await fetch("/api/trend", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ groupId: cat, period: pp.value }),
-          });
-          const data = await res.json();
-          if (res.ok) {
-            charts[cat][pp.value] = (data.results ?? []) as Row[];
-            if (Array.isArray(data.brands) && data.brands.length) brands[cat] = data.brands as string[];
-          }
-        }));
+
+    // 요청 하나 — 실패하면 한 번만 다시 시도합니다.
+    // (시트를 매번 통째로 훑는 웹앱이라 몰아서 부르면 간헐적으로 응답이 늦습니다)
+    async function fetchOne(cat: string, period: string, retry = true): Promise<{ rows: Row[]; brands: string[] } | null> {
+      try {
+        const res = await fetch("/api/trend", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ groupId: cat, period }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "조회 실패");
+        return {
+          rows: (data.results ?? []) as Row[],
+          brands: Array.isArray(data.brands) ? (data.brands as string[]) : [],
+        };
+      } catch {
+        if (retry) {
+          await new Promise((r) => setTimeout(r, 800));
+          return fetchOne(cat, period, false);
+        }
+        return null;
       }
-      setState({ brands, charts, loaded: true });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "조회 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
     }
+
+    const charts: Record<string, Record<string, Row[]>> = {};
+    const brands: Record<string, string[]> = {};
+    let okCount = 0;
+    let failCount = 0;
+
+    // 동시에 몰지 않고 하나씩 부릅니다. 대신 받는 즉시 화면에 반영해
+    // 전부 끝나기를 기다리지 않고 먼저 온 그래프부터 보이게 합니다.
+    for (const cat of cats) {
+      for (const pp of STACK) {
+        const r = await fetchOne(cat, pp.value);
+        if (!r) { failCount++; continue; }
+        okCount++;
+        if (!charts[cat]) charts[cat] = {};
+        charts[cat][pp.value] = r.rows;
+        if (r.brands.length) brands[cat] = r.brands;
+        setState({
+          brands: { ...brands },
+          charts: JSON.parse(JSON.stringify(charts)) as typeof charts,
+          loaded: true,
+        });
+      }
+    }
+
+    if (okCount === 0) {
+      setError("검색 트렌드를 불러오지 못했습니다. 새로고침 버튼을 눌러 다시 시도해주세요.");
+    } else if (failCount > 0) {
+      setError(`일부 그래프를 불러오지 못했습니다 (${failCount}건). 새로고침으로 다시 시도할 수 있습니다.`);
+    }
+    setLoading(false);
     // catsKey가 바뀔 때만 새로 만들면 충분합니다 (cats 배열은 매 렌더 새로 생성됨)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catsKey]);
