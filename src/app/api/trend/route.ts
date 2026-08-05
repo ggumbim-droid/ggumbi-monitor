@@ -5,6 +5,10 @@ import { NextRequest, NextResponse } from "next/server";
 const TREND_WEBAPP_URL = process.env.GOOGLE_TREND_WEBAPP_URL;
 // 경쟁사트렌드분석 시트 웹앱(code.txt)은 token 검증 없이 type/cat/period만 사용
 
+// Apps Script 웹앱이 요청마다 시트 18개를 전부 훑기 때문에 응답이 느립니다.
+// Vercel 기본 상한(10초)에 걸려 조용히 실패하는 일이 있어 상한을 올립니다.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const { groupId, period, customStart, customEnd } = await request.json();
