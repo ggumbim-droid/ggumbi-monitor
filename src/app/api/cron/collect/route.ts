@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { putDatedFacts, todayKST, type DailyFact } from "@/lib/daily-store";
+import { putDatedFacts, todayKST, getIndex, type DailyFact } from "@/lib/daily-store";
 import { isKvConfigured } from "@/lib/kv";
 import { collectTrend, collectTrendWeekly } from "@/lib/collect-trend";
 
@@ -151,8 +151,29 @@ export async function GET(request: NextRequest) {
   const weeklyFacts = allDated.filter((f) => f.metric === "trend_index_weekly");
 
   const result = await putDatedFacts(dailyFacts, maxDays);
-  const weeklyResult = weeklyFacts.length
-    ? await putDatedFacts(weeklyFacts, Number(searchParams.get("weeklyDays") ?? 160))
-    : null;
-  return NextResponse.json({ today: todayKST(), collectors: reports, result, weeklyResult });
+
+  // ── 3년 주간은 156주라 한 번에 다 저장하면 시간 제한에 걸립니다 ──
+  // 그래서 아직 저장되지 않은 주차만 골라, 남은 시간만큼만 채우고 다음 실행에 넘깁니다.
+  // 매일 새벽 크론이 반복되면 며칠 안에 3년치가 전부 채워집니다.
+  let weeklyResult: Awaited<ReturnType<typeof putDatedFacts>> | null = null;
+  let weeklyRemaining = 0;
+
+  if (weeklyFacts.length) {
+    const already = new Set(await getIndex());
+    const allWeekDates = [...new Set(weeklyFacts.map((f) => f.date))].sort();
+
+    // 이미 저장된 날짜는 건너뛰고, 없는 것부터(최근 순) 채웁니다
+    const missing = allWeekDates.filter((d) => !already.has(d)).reverse();
+    const budget = Number(searchParams.get("weeklyDays") ?? 25);
+    const targets = new Set(missing.slice(0, budget));
+    weeklyRemaining = Math.max(missing.length - targets.size, 0);
+
+    // 채울 게 없으면 최신 주차만 갱신해 최근 값을 최신 상태로 유지합니다
+    const pick = targets.size > 0
+      ? weeklyFacts.filter((f) => targets.has(f.date))
+      : weeklyFacts.filter((f) => f.date >= allWeekDates[allWeekDates.length - 4]);
+
+    weeklyResult = await putDatedFacts(pick, budget);
+  }
+  return NextResponse.json({ today: todayKST(), collectors: reports, result, weeklyResult, weeklyRemaining });
 }
