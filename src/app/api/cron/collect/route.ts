@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
 
   const reports: CollectorReport[] = [];
   const allDated: DailyFact[] = [];
+  let trendRaw: unknown = null;
 
   // ── 수집기 ①: 검색 트렌드 ──
   {
@@ -66,6 +67,7 @@ export async function GET(request: NextRequest) {
     try {
       const r = await collectTrend();
       allDated.push(...r.dated);
+      trendRaw = r.rawSample;
       const notes: string[] = [];
       notes.push(`카테고리 ${r.categories.length}개`);
       if (r.dateRange) notes.push(`${r.dateRange.from} ~ ${r.dateRange.to}`);
@@ -102,6 +104,7 @@ export async function GET(request: NextRequest) {
       firstDate: dates[0] ?? null,
       lastDate: dates[dates.length - 1] ?? null,
       sample: allDated.slice(0, 5),
+      rawSample: trendRaw,
     });
   }
 
