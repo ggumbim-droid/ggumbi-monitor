@@ -53,18 +53,64 @@ function fmtFullDate(v: string): string {
   return `${d.getFullYear()}.${m}.${day}`; // 2024.04.01
 }
 
-function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) {
+// 그래프 위에 마우스를 올렸을 때 뜨는 말풍선.
+//
+// 데이터랩 지수(예: 41.2)는 조회 구간 안 최고점을 100으로 놓은 상대값이라
+// 숫자만으로는 크기를 가늠하기 어렵습니다.
+// 그래서 그날 1등을 100%로 놓은 비율을 함께 보여주고,
+// 그 지수가 어떤 키워드를 합쳐 나온 값인지도 아래에 붙입니다.
+function TrendTooltip({ active, payload, label, keywords }: {
+  active?: boolean; payload?: TooltipEntry[]; label?: string;
+  keywords?: Record<string, string[]>;
+}) {
   if (!active || !payload?.length) return null;
+
+  // 그날 값이 가장 큰 계열을 1등으로 보고 나머지를 환산
+  const nums = payload
+    .map((e) => (typeof e.value === "number" ? e.value : NaN))
+    .filter((n) => !isNaN(n));
+  const top = nums.length ? Math.max(...nums) : 0;
+
+  const sorted = [...payload].sort((a, b) => {
+    const av = typeof a.value === "number" ? a.value : -1;
+    const bv = typeof b.value === "number" ? b.value : -1;
+    return bv - av;
+  });
+
   return (
-    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 10px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)", minWidth: "140px" }}>
-      <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>{fmtFullDate(label ?? "")}</p>
-      {payload.map((e) => (
-        <div key={e.name} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "1px 0" }}>
-          <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
-          <span style={{ fontSize: "12px", color: "#6b7280", flex: 1 }}>{e.name}</span>
-          <span style={{ fontSize: "12px", color: e.color }}>{typeof e.value === "number" ? e.value.toFixed(1) : e.value}</span>
-        </div>
-      ))}
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "9px 11px", boxShadow: "0 4px 10px -1px rgba(0,0,0,0.12)", minWidth: "230px", maxWidth: "340px" }}>
+      <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "5px" }}>{fmtFullDate(label ?? "")}</p>
+      {sorted.map((e, i) => {
+        const v = typeof e.value === "number" ? e.value : NaN;
+        const share = !isNaN(v) && top > 0 ? Math.round((v / top) * 1000) / 10 : null;
+        const isTop = i === 0 && share !== null;
+        const kws = keywords?.[e.name] ?? [];
+        return (
+          <div key={e.name} style={{ padding: "2px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: e.color, flexShrink: 0 }} />
+              <span style={{ fontSize: "12px", color: "#374151", flex: 1 }}>
+                {e.name}{isTop && " 👑"}
+              </span>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: e.color, minWidth: "44px", textAlign: "right" }}>
+                {share !== null ? `${share}%` : "—"}
+              </span>
+              <span style={{ fontSize: "11px", color: "#9ca3af", minWidth: "34px", textAlign: "right" }}>
+                {!isNaN(v) ? v.toFixed(1) : "—"}
+              </span>
+            </div>
+            {kws.length > 0 && (
+              <p style={{ fontSize: "10px", color: "#9ca3af", margin: "1px 0 3px 14px", lineHeight: 1.4 }}>
+                {kws.slice(0, 6).join(" · ")}
+                {kws.length > 6 && ` 외 ${kws.length - 6}개`}
+              </p>
+            )}
+          </div>
+        );
+      })}
+      <p style={{ fontSize: "10px", color: "#b0b7c3", marginTop: "5px", paddingTop: "4px", borderTop: "1px solid #f1f5f9" }}>
+        % = 그날 1위 대비 · 오른쪽 흐린 숫자는 데이터랩 지수
+      </p>
     </div>
   );
 }
@@ -78,8 +124,9 @@ interface TrendState {
 }
 
 // 개별 차트 슬롯 — 기본 기간(3개월/3년) 표시 + 날짜 달력으로 커스텀 기간 재조회
-function TrendSlot({ cat, defLabel, brands, initialRows }: {
+function TrendSlot({ cat, defLabel, brands, initialRows, keywords }: {
   cat: string; defLabel: string; brands: string[]; initialRows: Row[];
+  keywords?: Record<string, string[]>;
 }) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [start, setStart] = useState("");
@@ -90,6 +137,15 @@ function TrendSlot({ cat, defLabel, brands, initialRows }: {
 
   // 상위에서 기본 데이터가 바뀌면(재조회 등) 커스텀이 아닐 때 갱신
   useEffect(() => { if (!custom) setRows(initialRows); }, [initialRows, custom]);
+
+  // 선을 그릴 계열 목록.
+  // 웹앱이 brands 배열을 못 보내주는 경우가 있어(응답 지연·부분 실패 등)
+  // 그때는 데이터 행의 키에서 직접 뽑습니다. 이게 없으면 축만 남고 선이 사라집니다.
+  const lineKeys = brands.length > 0
+    ? brands
+    : (rows.length > 0
+        ? Object.keys(rows[0]).filter((k) => k !== "period")
+        : []);
 
   async function query() {
     if (!start || !end) { setErr("시작일과 종료일을 선택하세요."); return; }
@@ -140,9 +196,9 @@ function TrendSlot({ cat, defLabel, brands, initialRows }: {
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
             <XAxis dataKey="period" tickFormatter={fmtTickDate} tick={{ fontSize: 9, fill: "#94a3b8" }} minTickGap={30} />
             <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} width={28} />
-            <Tooltip content={<TrendTooltip />} />
+            <Tooltip content={<TrendTooltip keywords={keywords} />} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
-            {brands.map((b, i) => (
+            {lineKeys.map((b, i) => (
               <Line key={b} type="monotone" dataKey={b} stroke={BRAND_COLORS[i % BRAND_COLORS.length]} strokeWidth={2} dot={false} />
             ))}
           </LineChart>
@@ -152,8 +208,9 @@ function TrendSlot({ cat, defLabel, brands, initialRows }: {
   );
 }
 
-function GroupTrendChart({ cat, brands, gCharts }: {
+function GroupTrendChart({ cat, brands, gCharts, keywords }: {
   cat: string; brands: string[]; gCharts?: Record<string, Row[]>;
+  keywords?: Record<string, string[]>;
 }) {
   return (
     <div className="mb-2">
@@ -166,7 +223,7 @@ function GroupTrendChart({ cat, brands, gCharts }: {
             const rows = gCharts[pp.value];
             if (!rows || rows.length === 0) return null;
             return (
-              <TrendSlot key={pp.value} cat={cat} defLabel={pp.label} brands={brands} initialRows={rows} />
+              <TrendSlot key={pp.value} cat={cat} defLabel={pp.label} brands={brands} initialRows={rows} keywords={keywords} />
             );
           })}
         </div>
@@ -371,16 +428,7 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
               if (isNaN(bv)) return -1;
               return bv - av;
             });
-            // ── 1등 대비 비율 ──
-            // 데이터랩 지수(7일평균)는 조회 구간마다 기준점이 달라지는 상대값이라
-            // 숫자 하나만으로는 의미를 읽기 어렵습니다.
-            // 카테고리 안 1등을 100%로 놓고 환산하면 구간이 바뀌어도 비율은 유지됩니다.
-            const topIdx = sortedRows.length > 0 ? parseFloat(sortedRows[0].idx) : NaN;
-            const shareOf = (v: string): number | null => {
-              const n = parseFloat(v);
-              if (isNaN(n) || isNaN(topIdx) || topIdx <= 0) return null;
-              return Math.round((n / topIdx) * 1000) / 10;
-            };
+
             return (
               <div key={bi} className="border border-stone-200 rounded-xl p-4 bg-white">
                 <GroupTrendChart cat={cat} brands={chartBrands} gCharts={state.charts[cat]} />
@@ -389,9 +437,8 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                   <table className="w-full text-xs">
                     <thead><tr className="text-stone-400 text-left">
                       <th className="py-1 px-1.5 font-medium">브랜드</th>
-                      <th className="py-1 px-1.5 font-semibold text-stone-600">1등 대비</th>
-                      <th className="py-1 px-1.5 font-medium">7일평균</th>
                       <th className="py-1 px-1.5 font-medium">기간</th>
+                      <th className="py-1 px-1.5 font-medium">7일평균</th>
                       <th className="py-1 px-1.5 font-medium">증감</th>
                       <th className="py-1 px-1.5 font-medium">최고점</th>
                       <th className="py-1 px-1.5 font-medium">최고점 날짜</th>
@@ -406,20 +453,8 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                             <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={c ? { background: c } : { background: "#cbd5e1" }} />
                             {r.name}
                           </td>
-                          <td className="py-1.5 px-1.5 whitespace-nowrap">
-                            {(() => {
-                              const sh = shareOf(r.idx);
-                              if (sh === null) return <span className="text-stone-300">—</span>;
-                              const isTop = i === 0;
-                              return (
-                                <span className={isTop ? "font-extrabold text-amber-600" : "font-bold text-stone-800"}>
-                                  {sh}%{isTop && <span className="ml-1">👑</span>}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="py-1.5 px-1.5 text-stone-400">{r.idx}</td>
                           <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.period || "—"}</td>
+                          <td className="py-1.5 px-1.5 text-stone-800">{r.idx}</td>
                           <td className="py-1.5 px-1.5"><Delta v={r.delta} /></td>
                           <td className="py-1.5 px-1.5 text-stone-500">{r.pk && !isNaN(parseFloat(r.pk)) ? r.pk : "—"}</td>
                           <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
@@ -430,11 +465,6 @@ function BrandPanel({ brand }: { brand: BrandInsight }) {
                     </tbody>
                   </table>
                 </div>
-                <p className="text-[10px] text-stone-400 mt-1.5 leading-relaxed">
-                  1등 대비 = 이 카테고리 1위 브랜드를 100%로 본 상대 비율.
-                  7일평균은 네이버 데이터랩 상대지수로, 조회 기간이 달라지면 값도 달라집니다.
-                  카테고리가 다르면 비율끼리도 직접 비교하지 마세요.
-                </p>
                 {block.note && (
                   <div className="mt-3 bg-stone-50 border border-dashed border-stone-300 rounded-lg px-3 py-2.5">
                     <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full">✎ 시트 연동</span>
