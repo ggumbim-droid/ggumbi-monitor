@@ -261,6 +261,77 @@ export async function putDatedFacts(
   return out;
 }
 
+/** 카테고리·계열 목록 뽑기 — 화면의 선택 버튼을 만들 때 씁니다 */
+export interface CatalogEntry {
+  category: string;
+  line: string;
+  brand: Brand;
+  series: string[];
+}
+
+export function buildCatalog(facts: DailyFact[]): CatalogEntry[] {
+  const map = new Map<string, CatalogEntry & { seriesSet: Set<string> }>();
+  for (const f of facts) {
+    const category = String(f.meta?.category ?? "");
+    if (!category) continue;
+    const key = category;
+    let entry = map.get(key);
+    if (!entry) {
+      entry = {
+        category,
+        line: f.line ?? "",
+        brand: f.brand,
+        series: [],
+        seriesSet: new Set<string>(),
+      };
+      map.set(key, entry);
+    }
+    const series = String(f.meta?.series ?? "");
+    if (series) entry.seriesSet.add(series);
+  }
+  return [...map.values()]
+    .map(({ seriesSet, ...rest }) => ({ ...rest, series: [...seriesSet].sort() }))
+    .sort((a, b) => a.line.localeCompare(b.line) || a.category.localeCompare(b.category));
+}
+
+/**
+ * 차트에 바로 꽂을 수 있는 행 배열로 변환합니다.
+ * 반환 예: [{ date: "2026-07-01", 꿈비: 14.2, 알집매트: 3.1 }, ...]
+ */
+export interface ChartRow {
+  date: string;
+  [series: string]: string | number | null;
+}
+
+export function toChartRows(
+  facts: DailyFact[],
+  opts: { metric: string; category?: string; brand?: Brand; line?: string }
+): { rows: ChartRow[]; series: string[] } {
+  const byDate = new Map<string, Record<string, number>>();
+  const seriesSet = new Set<string>();
+
+  for (const f of facts) {
+    if (f.metric !== opts.metric) continue;
+    if (opts.category && String(f.meta?.category ?? "") !== opts.category) continue;
+    if (opts.brand && f.brand !== opts.brand) continue;
+    if (opts.line && f.line !== opts.line) continue;
+    if (f.value === null) continue;
+
+    // 계열 이름이 없으면 브랜드 이름을 계열로 씁니다 (매출처럼 계열 구분이 없는 지표용)
+    const name = String(f.meta?.series ?? f.brand);
+    seriesSet.add(name);
+    const row = byDate.get(f.date) ?? {};
+    row[name] = (row[name] ?? 0) + f.value;
+    byDate.set(f.date, row);
+  }
+
+  const rows: ChartRow[] = [...byDate.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, vals]) => ({ date, ...vals }));
+
+  return { rows, series: [...seriesSet].sort() };
+}
+
 // ── 집계 ─────────────────────────────────────────
 
 export interface SeriesPoint {
