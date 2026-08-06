@@ -3,6 +3,28 @@ import type { ChannelId, ChannelItem, ChannelResult, MonitorDateRange, SortOrder
 const NAVER_SHOPPING_ENDPOINT = "https://openapi.naver.com/v1/search/shop.json";
 const RANKING_DISPLAY = 30;
 
+// ══════════════════════════════════════════════════
+//  네이버 쇼핑 검색 오픈API 종료 (2026-08 확인)
+//
+//  openapi.naver.com/v1/search/shop.json 이 404(SE05)를 돌려줍니다.
+//  같은 자격증명으로 블로그 검색은 정상 응답하므로 권한 문제가 아니라
+//  엔드포인트 자체가 종료된 것입니다.
+//
+//  ▶ 이 플래그를 켜 두는 이유
+//    예전에는 호출이 실패해도 빈 배열을 돌려줘서, 화면에는
+//    "자사 브랜드 30위권 밖 · SEO 점검 필요" 카드가 떴습니다.
+//    실제로 순위가 없는 것과 API가 죽은 것이 구분되지 않았고,
+//    그 상태로 순위 이력까지 저장되고 있었습니다.
+//
+//  ▶ 대체 데이터 확보 후 되살리려면
+//    SHOP_SEARCH_AVAILABLE 를 true 로 바꾸고
+//    fetchNaverShopping 의 엔드포인트를 새 소스로 교체하면 됩니다.
+// ══════════════════════════════════════════════════
+const SHOP_SEARCH_AVAILABLE = false;
+
+const SHOP_API_NOTICE =
+  "네이버 쇼핑 검색 오픈API가 종료되어 순위 자동 조회가 불가합니다. 네이버쇼핑에서 직접 검색해 확인해 주세요.";
+
 const KKUMBI_BRANDS = ["꿈비", "리코코", "미미루", "뉴어스", "파미야", "소브", "오가닉그라운드", "바바디토", "봄봄매트", "슈슈비", "ggumbi", "GGUMBI"];
 
 function getNaverCredentials(): { clientId: string; clientSecret: string } {
@@ -143,6 +165,22 @@ export async function searchNaverRanking(
   _sortOrder: SortOrder,
   _period: MonitorDateRange
 ): Promise<ChannelResult> {
+  // 쇼핑 검색 API가 종료된 동안에는 조회를 시도하지 않습니다.
+  // 빈 결과를 "순위 없음"으로 오해하거나 이력에 쌓는 것을 막기 위함입니다.
+  if (!SHOP_SEARCH_AVAILABLE) {
+    return {
+      channel: "naver_ranking",
+      publicItems: [],
+      loginRequired: keywords.map((keyword) => ({
+        channel: "naver_ranking" as ChannelId,
+        source: "네이버쇼핑 순위",
+        title: `[${keyword}] 자동 조회 제공 중단`,
+        reason: SHOP_API_NOTICE,
+        link: `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`,
+      })),
+    };
+  }
+
   const history = await getRankingHistory();
   const publicItems: ChannelItem[] = [];
 
