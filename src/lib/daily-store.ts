@@ -99,7 +99,20 @@ export async function getRange(
   end: string
 ): Promise<DailyFact[]> {
   const dates = dateRange(start, end);
-  const keys = dates.map(DAY_KEY);
+
+  // 데이터가 실제로 존재하는 날짜만 조회합니다.
+  // 3년 차트는 주간 값이라 1100일 중 약 157일에만 값이 있는데,
+  // 예전에는 나머지 900여 일도 빈 응답을 받으러 다녀왔습니다.
+  let target = dates;
+  const idx = await getIndex();
+  if (idx.length > 0) {
+    const have = new Set(idx);
+    const filtered = dates.filter((d) => have.has(d));
+    // 색인이 비정상이면(예: 아직 안 쌓임) 기존처럼 전 구간을 봅니다.
+    if (filtered.length > 0) target = filtered;
+  }
+
+  const keys = target.map(DAY_KEY);
   const map = await kvGetMany<DailyFact[]>(keys);
   const out: DailyFact[] = [];
   for (const key of keys) {
