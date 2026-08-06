@@ -12,6 +12,12 @@ import {
 } from "@/lib/daily-store";
 import { isKvConfigured } from "@/lib/kv";
 
+// 저장소 값은 새벽 수집 때 하루 한 번만 바뀝니다.
+// 같은 차트를 다시 열 때 KV를 또 훑지 않도록 응답을 캐시합니다.
+export const maxDuration = 60;
+export const preferredRegion = ["icn1"];
+const CDN_CACHE = "public, s-maxage=1800, stale-while-revalidate=86400";
+
 // ══════════════════════════════════════════════════
 //  일단위 데이터 조회 / 적재 API
 //
@@ -88,14 +94,17 @@ export async function GET(request: NextRequest) {
         brand: (brand as never) ?? undefined,
         line: line ?? undefined,
       });
-      return NextResponse.json({
-        metric,
-        category: category ?? null,
-        rows,
-        series,
-        count: rows.length,
-        lastDate: rows.length ? rows[rows.length - 1].date : null,
-      });
+      return NextResponse.json(
+        {
+          metric,
+          category: category ?? null,
+          rows,
+          series,
+          count: rows.length,
+          lastDate: rows.length ? rows[rows.length - 1].date : null,
+        },
+        { headers: { "Cache-Control": CDN_CACHE } }
+      );
     }
 
     // 지표를 지정하면 차트에 바로 꽂을 수 있는 시계열로 변환해서 반환
