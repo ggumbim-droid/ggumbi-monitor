@@ -962,6 +962,59 @@ function hasSheetData(sheet?: SheetBrandData): boolean {
   );
 }
 
+
+// 시트에서 키워드를 고친 뒤 그 자리에서 반영하는 버튼.
+// 키워드 목록과 그래프 숫자를 함께 갱신합니다 —
+// 목록만 바꾸면 화면과 실제 수치가 어긋나기 때문입니다.
+function SheetRefreshButton() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState(false);
+
+  async function run() {
+    if (busy) return;
+    if (!confirm("구글시트의 키워드를 다시 읽어 그래프를 갱신합니다.\n20초 정도 걸립니다. 진행할까요?")) return;
+
+    setBusy(true); setMsg("시트를 읽고 네이버에 다시 묻는 중… (약 20초)"); setErr(false);
+    try {
+      const res = await fetch("/api/trend-refresh", { method: "POST" });
+      const d = await res.json();
+      if (!d.ok) {
+        setErr(true);
+        setMsg(d.error || "갱신에 실패했습니다.");
+        return;
+      }
+      const bits = [`카테고리 ${d.categories}개 갱신`];
+      if (d.failed?.length) bits.push(`실패 ${d.failed.length}개`);
+      if (d.remaining?.length) bits.push(`남음 ${d.remaining.length}개`);
+      setMsg(`${bits.join(" · ")} — 화면을 새로고침하면 반영됩니다.`);
+    } catch {
+      setErr(true);
+      setMsg("갱신 중 오류가 발생했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={run} disabled={busy}
+        title="구글시트에서 키워드를 고친 뒤 눌러주세요"
+        className="text-[10px] font-semibold px-2 py-1 border border-stone-200 rounded-full text-stone-500 hover:border-kkumbi-300 hover:text-kkumbi-600 disabled:opacity-50 transition-colors whitespace-nowrap">
+        {busy ? "갱신 중…" : "↻ 시트에서 다시 불러오기"}
+      </button>
+      {msg && (
+        <div className={`absolute right-0 top-full mt-1 z-10 w-64 text-[10px] rounded-lg border px-2 py-1.5 leading-relaxed ${err ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-stone-50 border-stone-200 text-stone-600"}`}>
+          {msg}
+          {!busy && (
+            <button onClick={() => setMsg("")} className="ml-1 text-stone-400 hover:text-stone-600 font-bold">×</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
   const [active, setActive] = useState(BRAND_INSIGHTS[0].id);
   const [sheetData, setSheetData] = useState<Record<string, SheetBrandData>>({});
@@ -1002,9 +1055,12 @@ export function BrandInsights({ currentWeek }: { currentWeek?: string }) {
           <h3 className="text-sm font-bold text-stone-800">브랜드별 상세 인사이트</h3>
           <p className="text-[11px] text-stone-400 mt-0.5">브랜드별 검색 트렌드 · 경쟁사 순위 · 쇼핑순위 · 업무 · 금주 액션</p>
         </div>
-        <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${live ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}>
-          {live ? "● 시트 연동" : "○ 예시 데이터"}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <SheetRefreshButton />
+          <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${live ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}>
+            {live ? "● 시트 연동" : "○ 예시 데이터"}
+          </span>
+        </div>
       </div>
 
       <div>
