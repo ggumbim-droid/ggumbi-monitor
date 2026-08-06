@@ -61,6 +61,7 @@ export const CATEGORY_TO_LINE: Record<string, string> = {
   바바디토: "바바디토",
 
   강아지쿨매트: "파미야",
+  쿨매트: "파미야",
   고양이캣타워: "파미야",
   캣타워: "파미야",
 };
@@ -327,7 +328,7 @@ export async function fetchTrendChartDirect(
   const timings: { cat: string; ms: number; rows: number }[] = [];
   const done = new Set<string>();
 
-  const results = await pooled(cats, 3, async (cat) => {
+  const results = await pooled(cats, 2, async (cat) => {
     if (Date.now() - startedAt > budgetMs) return null; // 예산 초과 — 시작하지 않음
 
     const byBrand = map[cat] ?? {};
@@ -348,7 +349,27 @@ export async function fetchTrendChartDirect(
 
     const t0 = Date.now();
     try {
-      const { rows, series } = await fetchDatalab({ startDate, endDate, timeUnit, groups });
+      // 데이터랩은 짧은 시간에 여러 번 부르면 일부 응답을 늦춥니다.
+      // 단독으로는 1.5초면 끝나는 조회가 동시 호출 중에는 12초를 넘기기도 해서,
+      // 한 번 실패하면 잠깐 쉬었다가 다시 시도합니다. 대개 두 번째에 성공합니다.
+      let rows: Awaited<ReturnType<typeof fetchDatalab>>["rows"] = [];
+      let series: string[] = [];
+      let lastErr: unknown = null;
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+        try {
+          const got = await fetchDatalab({ startDate, endDate, timeUnit, groups });
+          rows = got.rows;
+          series = got.series;
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (lastErr) throw lastErr;
+
       timings.push({ cat, ms: Date.now() - t0, rows: rows.length });
       done.add(cat);
       if (rows.length === 0) return null;
