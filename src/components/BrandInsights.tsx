@@ -129,6 +129,152 @@ function KeywordCard({ brand, keywords, color }: {
   );
 }
 
+// ── 연관키워드 편집 (미리보기) ─────────────────────────
+// 그래프를 보다가 "이 키워드는 빼고 저걸 넣자"는 피드백을 받으면
+// 그 자리에서 고쳐 데이터랩을 다시 조회해 결과를 확인합니다.
+//
+// 중요: 저장소(KV)에 있는 값은 시트의 예전 키워드로 계산된 것이라
+// 키워드만 바꾸고 저장된 수치를 쓰면 맞지 않는 그래프가 나옵니다.
+// 그래서 미리보기는 반드시 /api/trend-preview로 새로 조회합니다.
+//
+// 여기서 고친 내용은 시트에 저장되지 않습니다. 화면을 벗어나면 사라집니다.
+const MAX_GROUPS = 5;
+const MAX_KEYWORDS = 20;
+
+function KeywordEditor({ cat, baseKeywords, colorOf, onPreview, onReset, previewing, busy, err }: {
+  cat: string;
+  baseKeywords: Record<string, string[]>;
+  colorOf: (name: string) => string | undefined;
+  onPreview: (groups: { groupName: string; keywords: string[] }[]) => void;
+  onReset: () => void;
+  previewing: boolean;
+  busy: boolean;
+  err: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string[]>>({});
+  const [input, setInput] = useState<Record<string, string>>({});
+
+  // 시트에서 온 원본이 바뀌면 편집본을 초기화합니다.
+  useEffect(() => {
+    setDraft(JSON.parse(JSON.stringify(baseKeywords ?? {})));
+    setInput({});
+  }, [baseKeywords]);
+
+  const brandNames = Object.keys(draft);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(baseKeywords ?? {});
+  const overGroups = brandNames.filter((b) => draft[b]?.length > 0).length > MAX_GROUPS;
+
+  function removeKw(brand: string, kw: string) {
+    setDraft((p) => ({ ...p, [brand]: (p[brand] ?? []).filter((k) => k !== kw) }));
+  }
+  function addKw(brand: string) {
+    const raw = (input[brand] ?? "").trim();
+    if (!raw) return;
+    // 쉼표로 여러 개를 한 번에 넣을 수 있게 합니다.
+    const adds = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    setDraft((p) => {
+      const cur = p[brand] ?? [];
+      const merged = Array.from(new Set([...cur, ...adds]));
+      return { ...p, [brand]: merged.slice(0, MAX_KEYWORDS) };
+    });
+    setInput((p) => ({ ...p, [brand]: "" }));
+  }
+  function restore() {
+    setDraft(JSON.parse(JSON.stringify(baseKeywords ?? {})));
+    setInput({});
+    onReset();
+  }
+
+  if (!baseKeywords || brandNames.length === 0) return null;
+
+  return (
+    <div className="mt-1 mb-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="text-[10px] text-stone-400 hover:text-kkumbi-600 transition-colors"
+      >
+        {open ? "▾" : "▸"} 반영된 키워드 {previewing ? "· 미리보기 중" : ""}
+      </button>
+
+      {previewing && (
+        <div className="mt-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+          아래 그래프는 <b>임시 조회 결과</b>입니다. 시트에 저장되지 않았습니다.
+        </div>
+      )}
+
+      {open && (
+        <div className="mt-2 border border-stone-200 rounded-lg p-3 bg-stone-50 space-y-2.5">
+          {brandNames.map((brand) => {
+            const kws = draft[brand] ?? [];
+            const c = colorOf(brand);
+            const full = kws.length >= MAX_KEYWORDS;
+            return (
+              <div key={brand}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: c || "#cbd5e1" }} />
+                  <span className="text-[11px] font-bold" style={c ? { color: c } : undefined}>{brand}</span>
+                  <span className={`text-[10px] ${full ? "text-rose-500 font-semibold" : "text-stone-400"}`}>
+                    {kws.length}/{MAX_KEYWORDS}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-1">
+                  {kws.map((k) => (
+                    <span key={k} className="group text-[10px] text-stone-600 bg-white border border-stone-200 rounded px-1.5 py-0.5 flex items-center gap-1">
+                      {k}
+                      <button onClick={() => removeKw(brand, k)}
+                        className="text-stone-300 hover:text-rose-500 font-bold leading-none" title="삭제">×</button>
+                    </span>
+                  ))}
+                  {kws.length === 0 && <span className="text-[10px] text-stone-300">키워드 없음 — 조회에서 제외됩니다</span>}
+                </div>
+                <div className="flex gap-1">
+                  <input
+                    value={input[brand] ?? ""}
+                    onChange={(e) => setInput((p) => ({ ...p, [brand]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") addKw(brand); }}
+                    placeholder={full ? "상한 도달" : "키워드 추가 (쉼표로 여러 개)"}
+                    disabled={full}
+                    className="flex-1 text-[10px] border border-stone-200 rounded px-1.5 py-1 text-stone-600 disabled:bg-stone-100"
+                  />
+                  <button onClick={() => addKw(brand)} disabled={full}
+                    className="text-[10px] px-2 py-1 border border-stone-200 rounded text-stone-500 hover:border-kkumbi-300 disabled:opacity-40">
+                    추가
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {overGroups && (
+            <p className="text-[10px] text-rose-600">
+              브랜드가 {MAX_GROUPS}개를 넘습니다. 네이버가 한 번에 {MAX_GROUPS}개까지만 비교할 수 있어 조회가 거절됩니다.
+            </p>
+          )}
+          {err && <p className="text-[10px] text-rose-600">{err}</p>}
+
+          <div className="flex gap-1.5 pt-1">
+            <button
+              onClick={() => onPreview(brandNames.map((b) => ({ groupName: b, keywords: draft[b] ?? [] })))}
+              disabled={busy || overGroups || !dirty}
+              className="text-[10px] font-semibold px-2.5 py-1 bg-kkumbi-500 text-white rounded hover:bg-kkumbi-600 disabled:opacity-40"
+            >
+              {busy ? "조회 중…" : "미리보기"}
+            </button>
+            <button onClick={restore} disabled={busy || (!dirty && !previewing)}
+              className="text-[10px] px-2.5 py-1 border border-stone-200 rounded text-stone-500 hover:border-stone-300 disabled:opacity-40">
+              원래대로
+            </button>
+            <span className="text-[10px] text-stone-400 self-center">
+              {dirty ? "변경됨 · 시트 미반영" : "시트와 동일"}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 브랜드에 매핑된 키워드 그룹들의 네이버 트렌드를 자동 조회.
 // onData로 조회 결과(그룹별 차트 데이터·라벨·브랜드)를 부모에 전달해 순위표와 핑퐁 배치한다.
 interface TrendState {
@@ -458,9 +604,74 @@ function CompBlockCard({ cat, block, chartBrands, colorOf, sortedRows, gCharts, 
 }) {
   const [openBrand, setOpenBrand] = useState<string>("");
 
+  // 미리보기 상태 — 편집한 키워드로 새로 조회한 결과를 담습니다.
+  // null이면 저장소에서 온 원래 그래프를 그대로 씁니다.
+  const [preview, setPreview] = useState<Record<string, Row[]> | null>(null);
+  const [previewBrands, setPreviewBrands] = useState<string[]>([]);
+  const [pvBusy, setPvBusy] = useState(false);
+  const [pvErr, setPvErr] = useState("");
+
+  const runPreview = useCallback(
+    async (groups: { groupName: string; keywords: string[] }[]) => {
+      const usable = groups.filter((g) => g.keywords.length > 0);
+      if (usable.length === 0) { setPvErr("키워드가 하나도 없습니다."); return; }
+      setPvBusy(true); setPvErr("");
+      try {
+        // 3개월·3년 두 그래프를 함께 갱신합니다.
+        // 하나만 바꾸면 같은 화면에서 기준이 다른 두 그래프가 섞입니다.
+        const res = await Promise.all(
+          STACK.map(async (pp) => {
+            const r = await fetch("/api/trend-preview", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ period: pp.value, groups: usable }),
+            });
+            const d = await r.json();
+            return { period: pp.value, rows: (d.rows ?? []) as Row[], series: (d.series ?? []) as string[], error: d.error as string | undefined };
+          })
+        );
+        const failed = res.find((r) => r.error);
+        if (failed) { setPvErr(failed.error!); return; }
+
+        const next: Record<string, Row[]> = {};
+        let series: string[] = [];
+        for (const r of res) {
+          if (r.rows.length > 0) next[r.period] = r.rows;
+          if (r.series.length > series.length) series = r.series;
+        }
+        if (Object.keys(next).length === 0) { setPvErr("조회 결과가 비어 있습니다."); return; }
+        setPreview(next);
+        setPreviewBrands(series);
+      } catch {
+        setPvErr("조회 중 오류가 발생했습니다.");
+      } finally {
+        setPvBusy(false);
+      }
+    },
+    []
+  );
+
+  function clearPreview() { setPreview(null); setPreviewBrands([]); setPvErr(""); }
+
   return (
     <div className="border border-stone-200 rounded-xl p-4 bg-white">
-      <GroupTrendChart cat={cat} brands={chartBrands} gCharts={gCharts} />
+      <GroupTrendChart
+        cat={cat}
+        brands={preview ? previewBrands : chartBrands}
+        gCharts={preview ?? gCharts}
+      />
+      {keywords && (
+        <KeywordEditor
+          cat={cat}
+          baseKeywords={keywords}
+          colorOf={colorOf}
+          onPreview={runPreview}
+          onReset={clearPreview}
+          previewing={preview !== null}
+          busy={pvBusy}
+          err={pvErr}
+        />
+      )}
                 <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
