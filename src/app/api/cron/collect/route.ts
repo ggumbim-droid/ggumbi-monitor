@@ -71,7 +71,8 @@ export async function GET(request: NextRequest) {
   let trendRaw: unknown = null;
 
   // ── 수집기 ①: 검색 트렌드 ──
-  {
+  // weekly=1 이면 3년치만 돌리므로 여기는 건너뜁니다.
+  if (searchParams.get("weekly") !== "1") {
     const started = Date.now();
     try {
       const r = await collectTrend(slice);
@@ -108,15 +109,21 @@ export async function GET(request: NextRequest) {
   }
 
   // ── 수집기 ②: 검색 트렌드 (3년 주간) ──
-  // 주간보고의 "3년 추이" 그래프가 저장소에서 바로 읽을 수 있도록 함께 저장합니다.
-  // skipWeekly=1 로 건너뛸 수 있습니다 (시간 초과가 날 때).
-  if (searchParams.get("skipWeekly") !== "1") {
+  // 주간보고의 "3년 추이" 그래프용 데이터입니다.
+  // 3년(주간) 데이터는 매일 갱신할 이유가 없고, 3개월과 같이 돌리면
+  // 60초 상한을 넘깁니다. 그래서 기본은 건너뛰고 필요할 때만 돌립니다.
+  //   ?weekly=1        3년치만 돌림 (3개월 건너뜀)
+  //   ?skipWeekly=0    둘 다 (시간이 모자라면 남은 건 다음 실행으로)
+  const weeklyOnly = searchParams.get("weekly") === "1";
+  const runWeekly = weeklyOnly || searchParams.get("skipWeekly") === "0";
+  if (runWeekly) {
     const started = Date.now();
     try {
-      const r = await collectTrendWeekly({ ...slice, budgetMs: 15_000 });
+      const r = await collectTrendWeekly({ ...slice, budgetMs: 35_000 });
       allDated.push(...r.dated);
       const notes: string[] = [`카테고리 ${r.categories.length}개`];
       if (r.dateRange) notes.push(`${r.dateRange.from} ~ ${r.dateRange.to}`);
+      if (r.remaining?.length) notes.push(`남음 ${r.remaining.length}개: ${r.remaining.join(", ")}`);
       reports.push({
         name: "검색 트렌드(3년 주간)",
         ok: true,
