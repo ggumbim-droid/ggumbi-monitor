@@ -86,6 +86,10 @@ export interface TrendCollectResult {
   dateRange: { from: string; to: string } | null;
   /** 문제 추적용 — 웹앱이 실제로 보낸 첫 행 원본 */
   rawSample: unknown;
+  /** 카테고리별 소요 시간 (직접 수집일 때만) */
+  timings?: { cat: string; ms: number; rows: number }[];
+  /** 시간이 모자라 남긴 카테고리 */
+  remaining?: string[];
 }
 
 /**
@@ -285,6 +289,10 @@ export interface DirectFetchReport {
   truncated: string[];
   /** 조회에 실패한 카테고리 */
   failed: { cat: string; error: string }[];
+  /** 카테고리별 소요 시간(ms) — 어디가 느린지 찾기 위한 것 */
+  timings: { cat: string; ms: number; rows: number }[];
+  /** 시간이 모자라 이번에 처리하지 못한 카테고리 */
+  remaining: string[];
 }
 
 /**
@@ -294,19 +302,34 @@ export interface DirectFetchReport {
  * 데이터랩 일일 한도(1,000회) 안에서 여유가 큽니다.
  */
 export async function fetchTrendChartDirect(
-  period: "3months" | "3years" = "3months"
+  period: "3months" | "3years" = "3months",
+  opts: { limit?: number; offset?: number; budgetMs?: number } = {}
 ): Promise<DirectFetchReport> {
   const map = await fetchKeywordMap();
-  const cats = Object.keys(map);
+  let cats = Object.keys(map);
   if (cats.length === 0) {
     throw new Error("시트에서 연관키워드를 읽지 못했습니다.");
   }
 
+  // offset/limit으로 잘라서 나눠 처리할 수 있습니다.
+  const offset = opts.offset ?? 0;
+  const all = cats;
+  cats = cats.slice(offset, opts.limit ? offset + opts.limit : undefined);
+
+  // 남은 시간을 넘기면 더 시작하지 않고 중단합니다.
+  // 통째로 실패해 아무것도 저장 못 하는 것보다, 일부라도 확실히 쌓는 게 낫습니다.
+  const budgetMs = opts.budgetMs ?? 40_000;
+  const startedAt = Date.now();
+
   const { startDate, endDate, timeUnit } = resolvePeriodRange(period);
   const truncated: string[] = [];
   const failed: { cat: string; error: string }[] = [];
+  const timings: { cat: string; ms: number; rows: number }[] = [];
+  const done = new Set<string>();
 
-  const results = await pooled(cats, 4, async (cat) => {
+  const results = await pooled(cats, 3, async (cat) => {
+    if (Date.now() - startedAt > budgetMs) return null; // 예산 초과 — 시작하지 않음
+
     const byBrand = map[cat] ?? {};
     let groups = Object.entries(byBrand)
       .map(([groupName, keywords]) => ({
@@ -315,19 +338,20 @@ export async function fetchTrendChartDirect(
       }))
       .filter((g) => g.keywords.length > 0);
 
-    if (groups.length === 0) return null;
+    if (groups.length === 0) { done.add(cat); return null; }
 
     // 데이터랩은 한 번에 5개 그룹까지만 비교합니다.
-    // 넘치면 조용히 실패하지 않도록 잘라내고 보고합니다.
     if (groups.length > MAX_GROUPS) {
       truncated.push(`${cat}(${groups.length}→${MAX_GROUPS})`);
       groups = groups.slice(0, MAX_GROUPS);
     }
 
+    const t0 = Date.now();
     try {
       const { rows, series } = await fetchDatalab({ startDate, endDate, timeUnit, groups });
+      timings.push({ cat, ms: Date.now() - t0, rows: rows.length });
+      done.add(cat);
       if (rows.length === 0) return null;
-      // chartToFacts가 기대하는 형태로 맞춥니다 (date → period)
       return {
         name: cat,
         brands: series,
@@ -337,7 +361,9 @@ export async function fetchTrendChartDirect(
         }),
       } as ChartCategory;
     } catch (e) {
+      timings.push({ cat, ms: Date.now() - t0, rows: -1 });
       failed.push({ cat, error: e instanceof Error ? e.message : String(e) });
+      done.add(cat);
       return null;
     }
   });
@@ -346,12 +372,16 @@ export async function fetchTrendChartDirect(
     chart: results.filter((r): r is ChartCategory => r !== null),
     truncated,
     failed,
+    timings: timings.sort((a, b) => b.ms - a.ms),
+    remaining: all.filter((c) => !done.has(c)),
   };
 }
 
 /** 일별(3개월) 트렌드 수집 */
-export async function collectTrend(): Promise<TrendCollectResult> {
-  return collectWith("3months", METRICS.TREND_INDEX);
+export async function collectTrend(
+  opts: { limit?: number; offset?: number; budgetMs?: number } = {}
+): Promise<TrendCollectResult> {
+  return collectWith("3months", METRICS.TREND_INDEX, opts);
 }
 
 /**
@@ -360,16 +390,19 @@ export async function collectTrend(): Promise<TrendCollectResult> {
  */
 async function collectWith(
   period: "3months" | "3years",
-  metric: string
+  metric: string,
+  opts: { limit?: number; offset?: number; budgetMs?: number } = {}
 ): Promise<TrendCollectResult> {
   try {
-    const r = await fetchTrendChartDirect(period);
+    const r = await fetchTrendChartDirect(period, opts);
     if (r.chart.length > 0) {
       const out = chartToFacts(r.chart, metric);
       if (r.truncated.length) out.unmappedCategories.push(`5개 초과로 잘림: ${r.truncated.join(", ")}`);
       if (r.failed.length) {
         out.skipped.push(...r.failed.map((f) => `${f.cat}(${f.error})`));
       }
+      out.timings = r.timings;
+      out.remaining = r.remaining;
       return out;
     }
   } catch (e) {
@@ -385,6 +418,8 @@ async function collectWith(
  * 화면에서 "3년 추이"를 저장소에서 바로 읽기 위한 것으로,
  * 일별 지표와 기준점이 달라 별도 지표로 저장합니다.
  */
-export async function collectTrendWeekly(): Promise<TrendCollectResult> {
-  return collectWith("3years", METRICS.TREND_INDEX_WEEKLY);
+export async function collectTrendWeekly(
+  opts: { limit?: number; offset?: number; budgetMs?: number } = {}
+): Promise<TrendCollectResult> {
+  return collectWith("3years", METRICS.TREND_INDEX_WEEKLY, opts);
 }
