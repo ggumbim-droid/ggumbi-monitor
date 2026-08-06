@@ -1,81 +1,70 @@
-// app/api/naver/keyword-volume/route.ts
+// app/api/naver/shop-rank/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
 
-const BASE_URL = 'https://api.searchad.naver.com';
-const URI = '/keywordstool';
-const METHOD = 'GET';
+interface NaverShopItem {
+  title: string;
+  mallName: string;
+  lprice: string;
+  link: string;
+  category1: string;
+  category2: string;
+  category3: string;
+  category4: string;
+}
 
-function buildSignature(timestamp: string, method: string, uri: string, secretKey: string) {
-  const message = `${timestamp}.${method}.${uri}`;
-  return crypto.createHmac('sha256', secretKey).update(message).digest('base64');
+function cleanTitle(title: string) {
+  return title.replace(/<\/?b>/g, '').replace(/&amp;/g, '&');
 }
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const keyword = searchParams.get('keyword');
+  const query = searchParams.get('query');
+  const count = searchParams.get('count') || '20';
 
-  if (!keyword) {
-    return NextResponse.json({ error: 'keyword is required' }, { status: 400 });
+  if (!query) {
+    return NextResponse.json({ error: 'query is required' }, { status: 400 });
   }
 
-  const apiKey = process.env.NAVER_AD_API_KEY;
-  const secretKey = process.env.NAVER_AD_SECRET_KEY;
-  const customerId = process.env.NAVER_AD_CUSTOMER_ID;
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const clientSecret = process.env.NAVER_CLIENT_SECRET;
 
-  if (!apiKey || !secretKey || !customerId) {
-    return NextResponse.json(
-      { error: 'NAVER_AD_API_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID not configured' },
-      { status: 500 }
-    );
+  if (!clientId || !clientSecret) {
+    return NextResponse.json({ error: 'NAVER_CLIENT_ID / NAVER_CLIENT_SECRET not configured' }, { status: 500 });
   }
-
-  const timestamp = Date.now().toString();
-  const signature = buildSignature(timestamp, METHOD, URI, secretKey);
-  const hintKeywords = keyword.replace(/\s/g, '');
 
   try {
-    const res = await fetch(`${BASE_URL}${URI}?hintKeywords=${encodeURIComponent(hintKeywords)}&showDetail=1`, {
-      method: METHOD,
+    const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}&display=${count}&sort=sim`;
+    const res = await fetch(url, {
       headers: {
-        'X-Timestamp': timestamp,
-        'X-API-KEY': apiKey,
-        'X-Customer': customerId,
-        'X-Signature': signature,
+        'X-Naver-Client-Id': clientId,
+        'X-Naver-Client-Secret': clientSecret,
       },
       cache: 'no-store',
     });
 
     if (!res.ok) {
       const text = await res.text();
-      return NextResponse.json({ error: `naver ad api error: ${res.status}`, detail: text }, { status: 502 });
+      return NextResponse.json({ error: `naver api error: ${res.status}`, detail: text }, { status: 502 });
     }
 
-    const data = await res.json();
-    const list = data.keywordList || [];
-    const match = list.find((k: any) => String(k.relKeyword).replace(/\s/g, '') === hintKeywords) || list[0];
+    const data: { items?: NaverShopItem[]; total?: number } = await res.json();
+    const rawItems = data.items || [];
 
-    if (!match) {
-      return NextResponse.json({ keyword, monthlyTotal: null, note: 'no data found' });
-    }
+    const titles: string[] = rawItems.map((item) => cleanTitle(item.title));
 
-    const toNum = (v: any) => {
-      if (typeof v === 'number') return v;
-      const n = parseInt(String(v).replace(/[^0-9]/g, ''), 10);
-      return isNaN(n) ? 0 : n;
-    };
+    const items = rawItems.map((item) => ({
+      title: cleanTitle(item.title),
+      mallName: item.mallName,
+      lprice: item.lprice,
+      link: item.link,
+      category1: item.category1,
+      category2: item.category2,
+      category3: item.category3,
+      category4: item.category4,
+    }));
 
-    const pc = toNum(match.monthlyPcQcCnt);
-    const mobile = toNum(match.monthlyMobileQcCnt);
-
-    return NextResponse.json({
-      keyword,
-      relKeyword: match.relKeyword,
-      monthlyPc: pc,
-      monthlyMobile: mobile,
-      monthlyTotal: pc + mobile,
-    });
-  } catch (e: any) {
+    return NextResponse.json({ query, titles, items, total: data.total });
+  } catch (e) {
     return NextResponse.json({ error: 'fetch failed', detail: String(e) }, { status: 500 });
   }
 }
