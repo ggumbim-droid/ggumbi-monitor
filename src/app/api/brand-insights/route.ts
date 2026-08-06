@@ -3,6 +3,20 @@ import { NextResponse } from "next/server";
 const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
 const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
 
+// ── 성능 설정 ─────────────────────────────────────────
+// 이 라우트가 화면 전체에서 가장 느립니다(실측 9.2초).
+// Apps Script(kpi1insight) 응답을 기다리는 시간이 그대로 대기 시간이 됩니다.
+export const maxDuration = 60;
+export const preferredRegion = ["icn1"];
+
+// 중요: 아래 웹앱 호출 URL에는 week가 들어가지 않습니다.
+// 주차 필터링은 받아온 뒤 buildBrand에서 로컬로 하므로,
+// 어느 주차를 보든 원본 요청은 완전히 동일합니다.
+// → 한 번만 받아두면 모든 주차가 그 값을 재사용합니다.
+const SHEET_TTL = 300;
+const CDN_CACHE = "public, s-maxage=300, stale-while-revalidate=1800";
+// ──────────────────────────────────────────────────────
+
 // Apps Script(kpi1insight)가 내려주는 원본 — 4탭 + 경쟁사순위(자동)
 interface Kpi1Payload {
   comp2?: Record<string, unknown>[];   // KPI1_경쟁사: 주차|브랜드ID|카테고리|코멘트
@@ -118,22 +132,28 @@ function buildBrand(payload: Kpi1Payload, brandId: string, week: string): BrandD
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const week = searchParams.get("week") || "";
+  // 시트를 방금 고쳤을 때 즉시 반영하려면 ?fresh=1
+  const fresh = searchParams.get("fresh") === "1";
 
   if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) {
     return NextResponse.json({ error: "구글시트 연동이 설정되지 않았습니다.", brands: {} }, { status: 200 });
   }
   try {
     const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}&action=kpi1insight`;
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, fresh ? { cache: "no-store" } : { next: { revalidate: SHEET_TTL } });
     const payload = (await res.json()) as Kpi1Payload & { error?: string };
     if (payload.error) {
+      // 오류 응답은 캐시하지 않습니다 — 시트를 고쳐도 5분간 오류가 남으면 곤란합니다.
       return NextResponse.json({ error: `구글시트 오류: ${payload.error}`, brands: {} }, { status: 200 });
     }
     const brands: Record<string, BrandData> = {};
     for (const bid of BRAND_IDS) {
       brands[bid] = buildBrand(payload, bid, week);
     }
-    return NextResponse.json({ brands, week }, { status: 200 });
+    return NextResponse.json(
+      { brands, week },
+      { status: 200, headers: { "Cache-Control": fresh ? "no-store" : CDN_CACHE } }
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "조회 오류";
     return NextResponse.json({ error: msg, brands: {} }, { status: 200 });
