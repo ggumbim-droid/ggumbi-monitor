@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { putDatedFacts, todayKST, getIndex, type DailyFact } from "@/lib/daily-store";
-import { isKvConfigured } from "@/lib/kv";
+import { isKvConfigured, kvGet, kvSet } from "@/lib/kv";
 import { collectTrend, collectTrendWeekly } from "@/lib/collect-trend";
 
 // ══════════════════════════════════════════════════
@@ -192,22 +192,61 @@ export async function GET(request: NextRequest) {
   let weeklyResult: Awaited<ReturnType<typeof putDatedFacts>> | null = null;
   let weeklyRemaining = 0;
 
+  let refillDone = false;
+  let refillCursor = 0;
+
   if (weeklyFacts.length) {
-    const already = new Set(await getIndex());
     const allWeekDates = [...new Set(weeklyFacts.map((f) => f.date))].sort();
-
-    // 이미 저장된 날짜는 건너뛰고, 없는 것부터(최근 순) 채웁니다
-    const missing = allWeekDates.filter((d) => !already.has(d)).reverse();
     const budget = Number(searchParams.get("weeklyDays") ?? 25);
-    const targets = new Set(missing.slice(0, budget));
-    weeklyRemaining = Math.max(missing.length - targets.size, 0);
 
-    // 채울 게 없으면 최신 주차만 갱신해 최근 값을 최신 상태로 유지합니다
-    const pick = targets.size > 0
-      ? weeklyFacts.filter((f) => targets.has(f.date))
-      : weeklyFacts.filter((f) => f.date >= allWeekDates[allWeekDates.length - 4]);
+    // ── refill=1 : 이미 저장된 값을 새 데이터로 덮어씁니다 ──
+    // 기본 로직은 "없는 날짜만 채우기"라, 예전 경로로 저장된 3년치가
+    // 이미 전부 존재하면 아무것도 갱신되지 않습니다.
+    // 어디까지 덮었는지는 저장소에 기록해 다음 실행이 이어받습니다.
+    if (searchParams.get("refill") === "1") {
+      const CURSOR_KEY = "trend_weekly_refill_cursor";
+      const saved = await kvGet<number>(CURSOR_KEY);
+      const from = typeof saved === "number" && saved > 0 ? saved : 0;
 
-    weeklyResult = await putDatedFacts(pick, budget);
+      const slice = allWeekDates.slice(from, from + budget);
+      if (slice.length === 0) {
+        // 한 바퀴 다 돌았습니다 — 커서를 되돌려 다음에 다시 시작할 수 있게 합니다.
+        await kvSet(CURSOR_KEY, 0);
+        refillDone = true;
+        weeklyRemaining = 0;
+      } else {
+        const targets = new Set(slice);
+        const pick = weeklyFacts.filter((f) => targets.has(f.date));
+        weeklyResult = await putDatedFacts(pick, budget);
+        refillCursor = from + slice.length;
+        await kvSet(CURSOR_KEY, refillCursor);
+        weeklyRemaining = Math.max(allWeekDates.length - refillCursor, 0);
+        refillDone = weeklyRemaining === 0;
+      }
+    } else {
+      const already = new Set(await getIndex());
+
+      // 이미 저장된 날짜는 건너뛰고, 없는 것부터(최근 순) 채웁니다
+      const missing = allWeekDates.filter((d) => !already.has(d)).reverse();
+      const targets = new Set(missing.slice(0, budget));
+      weeklyRemaining = Math.max(missing.length - targets.size, 0);
+
+      // 채울 게 없으면 최신 주차만 갱신해 최근 값을 최신 상태로 유지합니다
+      const pick = targets.size > 0
+        ? weeklyFacts.filter((f) => targets.has(f.date))
+        : weeklyFacts.filter((f) => f.date >= allWeekDates[allWeekDates.length - 4]);
+
+      weeklyResult = await putDatedFacts(pick, budget);
+    }
   }
-  return NextResponse.json({ today: todayKST(), collectors: reports, result, weeklyResult, weeklyRemaining });
+  return NextResponse.json({
+    today: todayKST(),
+    collectors: reports,
+    result,
+    weeklyResult,
+    weeklyRemaining,
+    ...(searchParams.get("refill") === "1"
+      ? { refillCursor, refillDone, refillNote: refillDone ? "3년치 덮어쓰기 완료" : "이어서 한 번 더 실행하세요" }
+      : {}),
+  });
 }
