@@ -3,6 +3,25 @@ import { NextRequest, NextResponse } from "next/server";
 const SHEET_WEBAPP_URL = process.env.GOOGLE_SHEET_WEBAPP_URL;
 const SHEET_WEBAPP_TOKEN = process.env.GOOGLE_SHEET_WEBAPP_TOKEN;
 
+// ── 성능 설정 ─────────────────────────────────────────
+// Apps Script 웹앱 응답이 느려서 Vercel 기본 상한(10초)에 걸리면
+// "불러오는 중..." 상태로 멈춘 것처럼 보입니다. 상한을 올립니다.
+export const maxDuration = 60;
+// 사용자가 국내에 있으므로 서울 리전에서 실행 (왕복 지연 대폭 감소)
+export const preferredRegion = ["icn1"];
+
+// 시트 데이터는 주 1회 갱신되므로 5분 캐시로 충분합니다.
+// Vercel Data Cache에 저장돼 인스턴스가 바뀌어도 재사용됩니다.
+const SHEET_TTL = 300;
+
+/** fresh=1 이면 캐시를 건너뛰고 시트를 새로 읽습니다. */
+function fetchOpts(fresh: boolean): RequestInit {
+  return fresh
+    ? { cache: "no-store" }
+    : { next: { revalidate: SHEET_TTL } };
+}
+// ──────────────────────────────────────────────────────
+
 type Status = "good" | "warn" | "bad" | "unk";
 
 interface ReportItem {
@@ -446,13 +465,18 @@ function numericActualOf(cat: ReportCategory | undefined): number | null {
   return null;
 }
 
-async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<MonthlySummary | null> {
+async function buildMonthlySummary(
+  currentReport: WeeklyReportData,
+  weekList?: WeekListEntry[],
+  fresh = false
+): Promise<MonthlySummary | null> {
   if (!currentReport.endDate) return null;
   const month = monthKeyOfWeek(currentReport.startDate, currentReport.endDate);
   if (!month) return null;
 
-  // 이 달에 속하고, 현재 주차 종료일 이하인 주차들만 모음
-  const allWeeks = await getWeekListFromSheet();
+  // 주차 목록은 GET에서 이미 읽었으므로 그대로 재사용합니다.
+  // (예전에는 여기서 시트를 한 번 더 호출해 왕복이 통째로 낭비됐습니다.)
+  const allWeeks = weekList ?? (await getWeekListFromSheet(fresh));
   const currentEnd = currentReport.endDate;
   const relevant = allWeeks
     .filter((w) => w.endDate && monthKeyOfWeek(w.startDate, w.endDate) === month && w.endDate <= currentEnd)
@@ -469,7 +493,7 @@ async function buildMonthlySummary(currentReport: WeeklyReportData): Promise<Mon
     relevant.map((w) =>
       w.week === currentReport.week
         ? Promise.resolve(currentReport)
-        : sheetReadReport(w.week)
+        : sheetReadReport(w.week, fresh)
     )
   );
 
@@ -659,12 +683,12 @@ function parseStatusLenient(v: unknown, koMap: Record<Status, string>): Status |
   return found ? found[0] : null;
 }
 
-async function sheetFetchWeek(week: string): Promise<SheetWeekResponse> {
+async function sheetFetchWeek(week: string, fresh = false): Promise<SheetWeekResponse> {
   if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) {
     throw new Error("구글시트 연동이 설정되지 않았습니다. (Vercel 환경변수 확인 필요)");
   }
   const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}&week=${encodeURIComponent(week)}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, fetchOpts(fresh));
   const data = await res.json();
   if (data.error) throw new Error(`구글시트 오류: ${data.error}`);
   return {
@@ -757,10 +781,10 @@ revenue: found ? ((prevRow?.revenue ?? 0) + (toNumOrNull(found.달성매출) ?? 
 }
 
 // ── 시트에서 한 주차를 읽어 대시보드용 리포트로 변환 (읽기 전용의 핵심) ──
-async function sheetReadReport(week: string): Promise<WeeklyReportData> {
+async function sheetReadReport(week: string, fresh = false): Promise<WeeklyReportData> {
   let report = fillMissingCategories(blankReport(week));
   try {
-    const sheetData = await sheetFetchWeek(week);
+    const sheetData = await sheetFetchWeek(week, fresh);
     report = applySheetData(report, sheetData);
   } catch (e) {
     console.error("구글시트 읽기 실패:", e);
@@ -778,11 +802,11 @@ async function sheetReadReport(week: string): Promise<WeeklyReportData> {
 }
 
 // ── 시트(주차정보 탭)에서 주차 목록을 읽음. 주차ID = 종료일(일요일) ──
-async function getWeekListFromSheet(): Promise<WeekListEntry[]> {
+async function getWeekListFromSheet(fresh = false): Promise<WeekListEntry[]> {
   if (!SHEET_WEBAPP_URL || !SHEET_WEBAPP_TOKEN) return [];
   try {
     const url = `${SHEET_WEBAPP_URL}?token=${encodeURIComponent(SHEET_WEBAPP_TOKEN)}&action=weeks`;
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, fetchOpts(fresh));
     const data = await res.json();
     if (!Array.isArray(data.weeks)) return [];
     return (data.weeks as { week?: string; label?: string }[])
@@ -803,11 +827,17 @@ async function getWeekListFromSheet(): Promise<WeekListEntry[]> {
 // ══════════════════════════════════════════════════════
 
 
+// 브라우저·Vercel CDN 캐시 정책
+// s-maxage: CDN이 5분간 그대로 응답 / stale-while-revalidate: 30분간은
+// 만료된 응답을 즉시 내주고 뒤에서 조용히 갱신 → 두 번째 사용자부터 체감 즉시.
+const CDN_CACHE = "public, s-maxage=300, stale-while-revalidate=1800";
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const fresh = searchParams.get("fresh") === "1";
 
-    const weeks = await getWeekListFromSheet();
+    const weeks = await getWeekListFromSheet(fresh);
     let week = searchParams.get("week") || "";
     if (!week) week = weeks.length ? weeks[weeks.length - 1].week : "";
 
@@ -816,10 +846,14 @@ export async function GET(request: NextRequest) {
     }
 
     // 구글시트에서 직접 읽어옴 (원본은 시트 한 곳)
-    const report = await sheetReadReport(week);
-    const monthly = await buildMonthlySummary(report);
+    const report = await sheetReadReport(week, fresh);
+    // 주차 목록을 넘겨 중복 호출 제거
+    const monthly = await buildMonthlySummary(report, weeks, fresh);
 
-    return NextResponse.json({ week, report, weeks, teamNames: DEFAULT_TEAM_NAMES, monthly });
+    return NextResponse.json(
+      { week, report, weeks, teamNames: DEFAULT_TEAM_NAMES, monthly },
+      { headers: { "Cache-Control": fresh ? "no-store" : CDN_CACHE } }
+    );
   } catch {
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
