@@ -71,6 +71,12 @@ interface Candidate {
   reason: string;
 }
 
+interface RelatedCandidate {
+  keyword: string;
+  monthlyTotal: number;
+  compIdx: string | null;
+}
+
 const EMPTY_FORM = {
   brand: BRANDS[0],
   category: "",
@@ -93,6 +99,16 @@ export default function WonbuPage() {
   const [kwRows, setKwRows] = useState<Keyword[]>([{ term: "", volume: "", source: "manual" }]);
   const [lookingUp, setLookingUp] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // 연관 키워드 후보 — 네이버가 키워드 하나당 수백~천 개를 돌려주는데,
+  // 그중 상당수는 카테고리가 아예 다릅니다(예: "층간소음매트" → "쿨매트", "풋살장").
+  // 검색량순으로 보여주되 담당자가 체크한 것만 사전에 담도록 합니다.
+  const [relOpen, setRelOpen] = useState(false);
+  const [relBusy, setRelBusy] = useState(false);
+  const [relSeed, setRelSeed] = useState("");
+  const [relMsg, setRelMsg] = useState("");
+  const [relCands, setRelCands] = useState<RelatedCandidate[]>([]);
+  const [relPicked, setRelPicked] = useState<Set<string>>(new Set());
 
   const [guideOpen, setGuideOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -171,6 +187,68 @@ export default function WonbuPage() {
     },
     []
   );
+
+  // ---------- 연관 키워드 ----------
+  async function fetchRelated() {
+    const seed = relSeed.trim();
+    if (!seed) {
+      setRelMsg("기준이 될 키워드를 입력해주세요.");
+      return;
+    }
+    setRelBusy(true);
+    setRelMsg("네이버 검색광고에서 연관 키워드를 불러오는 중...");
+    setRelCands([]);
+    setRelPicked(new Set());
+    try {
+      const res = await fetch(
+        `/api/naver/keyword-volume?keyword=${encodeURIComponent(seed)}&related=40`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setRelMsg(
+          data.error === undefined
+            ? "불러오지 못했습니다."
+            : `${data.error} — 검색광고 API 키가 등록되어 있는지 확인해주세요.`
+        );
+        return;
+      }
+      const already = new Set(kwRows.map((r) => r.term.replace(/\s/g, "")));
+      const list: RelatedCandidate[] = (data.related ?? []).filter(
+        (r: RelatedCandidate) => !already.has(r.keyword.replace(/\s/g, ""))
+      );
+      setRelCands(list);
+      setRelMsg(
+        list.length
+          ? `${data.relatedCount ?? 0}개 중 검색량 상위 ${list.length}개입니다. 우리 카테고리에 맞는 것만 체크하세요.`
+          : "가져올 연관 키워드가 없습니다."
+      );
+    } catch {
+      setRelMsg("불러오는 중 오류가 발생했습니다.");
+    } finally {
+      setRelBusy(false);
+    }
+  }
+
+  function applyRelated() {
+    const picked = relCands.filter((c) => relPicked.has(c.keyword));
+    if (picked.length === 0) return;
+    setKwRows((rows) => {
+      // 아직 아무것도 입력하지 않은 빈 줄은 치우고 이어 붙입니다.
+      const kept = rows.filter((r) => r.term.trim());
+      return [
+        ...kept,
+        ...picked.map((c) => ({
+          term: c.keyword,
+          volume: String(c.monthlyTotal),
+          source: "auto" as const,
+        })),
+      ];
+    });
+    setRelCands([]);
+    setRelPicked(new Set());
+    setRelOpen(false);
+    setRelMsg("");
+  }
 
   // ---------- form ----------
   function startEdit(entry: Entry) {
@@ -587,13 +665,85 @@ export default function WonbuPage() {
                   </div>
                 ))}
               </div>
-              <button
-                className="btn-add-kw"
-                type="button"
-                onClick={() => setKwRows((rows) => [...rows, { term: "", volume: "", source: "manual" }])}
-              >
-                + 키워드 추가
-              </button>
+              <div className="kw-actions">
+                <button
+                  className="btn-add-kw"
+                  type="button"
+                  onClick={() => setKwRows((rows) => [...rows, { term: "", volume: "", source: "manual" }])}
+                >
+                  + 키워드 추가
+                </button>
+                <button
+                  className="btn-add-kw alt"
+                  type="button"
+                  onClick={() => {
+                    setRelOpen((v) => !v);
+                    if (!relSeed) setRelSeed(kwRows.find((r) => r.term.trim())?.term ?? "");
+                  }}
+                >
+                  ⌕ 연관 키워드 불러오기
+                </button>
+              </div>
+
+              {relOpen && (
+                <div className="rel-box">
+                  <div className="rel-head">
+                    <input
+                      type="text"
+                      value={relSeed}
+                      onChange={(e) => setRelSeed(e.target.value)}
+                      placeholder="기준 키워드 (예: 층간소음매트)"
+                      onKeyDown={(e) => { if (e.key === "Enter") fetchRelated(); }}
+                    />
+                    <button className="btn-add-kw" type="button" onClick={fetchRelated} disabled={relBusy}>
+                      {relBusy ? "..." : "불러오기"}
+                    </button>
+                  </div>
+
+                  {relMsg && <div className="rel-msg">{relMsg}</div>}
+
+                  {relCands.length > 0 && (
+                    <>
+                      <div className="rel-warn">
+                        검색량이 크다고 다 담으면 안 됩니다. 같은 &quot;매트&quot;라도 용도가 다르면(쿨매트·주방매트 등)
+                        상품명에 넣었을 때 적합도가 오히려 깎입니다.
+                      </div>
+                      <div className="rel-list">
+                        {relCands.map((c) => {
+                          const on = relPicked.has(c.keyword);
+                          return (
+                            <label className={`rel-item ${on ? "on" : ""}`} key={c.keyword}>
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() =>
+                                  setRelPicked((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(c.keyword)) next.delete(c.keyword);
+                                    else next.add(c.keyword);
+                                    return next;
+                                  })
+                                }
+                              />
+                              <span className="rel-term">{c.keyword}</span>
+                              <span className="rel-vol">{c.monthlyTotal.toLocaleString()}</span>
+                              {c.compIdx && <span className="rel-comp">{c.compIdx}</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="btn-row">
+                        <button className="btn btn-primary" type="button" onClick={applyRelated} disabled={relPicked.size === 0}>
+                          선택한 {relPicked.size}개 담기
+                        </button>
+                        <button className="btn btn-ghost" type="button" onClick={() => { setRelOpen(false); setRelCands([]); setRelPicked(new Set()); setRelMsg(""); }}>
+                          닫기
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid2">
@@ -899,6 +1049,21 @@ const WONBU_CSS = `
 .wonbu-root .kw-row input.vol { width: 110px; }
 .wonbu-root .kw-row .rm { cursor: pointer; color: var(--danger); font-size: 12px; font-family: var(--mono); background: none; border: none; }
 .wonbu-root .btn-add-kw { font-family: var(--mono); font-size: 12px; color: var(--accent); background: var(--accent-soft); border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-top: 2px; }
+.wonbu-root .btn-add-kw:disabled { opacity: 0.5; cursor: default; }
+.wonbu-root .btn-add-kw.alt { background: var(--accent-deep); color: #fff; }
+.wonbu-root .kw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wonbu-root .rel-box { margin-top: 12px; border: 1px solid var(--line); border-radius: 5px; padding: 12px; background: #fff; }
+.wonbu-root .rel-head { display: flex; gap: 8px; align-items: center; }
+.wonbu-root .rel-head input { flex: 1; }
+.wonbu-root .rel-msg { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-top: 8px; line-height: 1.5; }
+.wonbu-root .rel-warn { background: var(--caution-soft); color: var(--caution); border-radius: 4px; padding: 8px 10px; font-size: 11.5px; line-height: 1.6; margin-top: 8px; }
+.wonbu-root .rel-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 10px; max-height: 320px; overflow-y: auto; }
+.wonbu-root .rel-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; font-family: var(--sans); font-size: 12px; color: var(--ink); margin-bottom: 0; }
+.wonbu-root .rel-item.on { background: var(--accent-soft); border-color: var(--accent); }
+.wonbu-root .rel-item input { width: auto; }
+.wonbu-root .rel-term { flex: 1; }
+.wonbu-root .rel-vol { font-family: var(--mono); font-size: 11px; color: var(--accent-deep); font-weight: 700; }
+.wonbu-root .rel-comp { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
 .wonbu-root .btn { font-family: var(--sans); font-size: 13px; font-weight: 600; padding: 10px 18px; border-radius: 4px; border: none; cursor: pointer; }
 .wonbu-root .btn:disabled { opacity: 0.6; cursor: default; }
 .wonbu-root .btn-primary { background: var(--accent-deep); color: #fff; }
