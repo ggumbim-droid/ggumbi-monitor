@@ -107,168 +107,68 @@ function TrendTooltip({ active, payload, label }: {
 }
 
 // 표의 브랜드명을 클릭하면 아래로 펼쳐지는 연관키워드 카드.
-// 그래프 지수가 어떤 키워드를 합쳐 나온 값인지 전체 목록으로 확인합니다.
-function KeywordCard({ brand, keywords, color }: {
-  brand: string; keywords: string[]; color?: string;
+// 그래프 지수가 어떤 키워드를 합쳐 나온 값인지 확인하고, 그 자리에서 고칠 수 있습니다.
+//
+// 여기서 고친 내용은 시트에 저장되지 않습니다.
+// 아래 "미리보기"로 데이터랩을 다시 조회해야 그래프에 반영됩니다.
+const MAX_KEYWORDS = 20;
+
+function KeywordCard({ brand, keywords, color, onRemove, onAdd }: {
+  brand: string;
+  keywords: string[];
+  color?: string;
+  onRemove?: (kw: string) => void;
+  onAdd?: (raw: string) => void;
 }) {
+  const [input, setInput] = useState("");
+  const editable = Boolean(onRemove && onAdd);
+  const full = keywords.length >= MAX_KEYWORDS;
+
+  function submit() {
+    const raw = input.trim();
+    if (!raw || !onAdd) return;
+    onAdd(raw);
+    setInput("");
+  }
+
   return (
     <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5 my-1">
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: color || "#cbd5e1" }} />
         <span className="text-[11px] font-bold" style={color ? { color } : undefined}>{brand}</span>
-        <span className="text-[10px] text-stone-400">반영 키워드 {keywords.length}개</span>
+        <span className={`text-[10px] ${full ? "text-rose-500 font-semibold" : "text-stone-400"}`}>
+          반영 키워드 {keywords.length}개{editable ? ` / 최대 ${MAX_KEYWORDS}` : ""}
+        </span>
       </div>
       <div className="flex flex-wrap gap-1">
+        {keywords.length === 0 && (
+          <span className="text-[10px] text-stone-400">키워드가 없습니다 — 이 브랜드는 조회에서 제외됩니다</span>
+        )}
         {keywords.map((k) => (
-          <span key={k} className="text-[10px] text-stone-600 bg-white border border-stone-200 rounded px-1.5 py-0.5">
+          <span key={k} className={`text-[10px] text-stone-600 bg-white border border-stone-200 rounded py-0.5 flex items-center gap-1 ${editable ? "pl-1.5 pr-0.5" : "px-1.5"}`}>
             {k}
+            {editable && (
+              <button onClick={() => onRemove!(k)}
+                className="w-4 h-4 flex items-center justify-center rounded-full text-stone-500 bg-stone-100 hover:bg-rose-500 hover:text-white font-bold text-[11px] leading-none transition-colors"
+                title="삭제">×</button>
+            )}
           </span>
         ))}
       </div>
-    </div>
-  );
-}
-
-// ── 연관키워드 편집 (미리보기) ─────────────────────────
-// 그래프를 보다가 "이 키워드는 빼고 저걸 넣자"는 피드백을 받으면
-// 그 자리에서 고쳐 데이터랩을 다시 조회해 결과를 확인합니다.
-//
-// 중요: 저장소(KV)에 있는 값은 시트의 예전 키워드로 계산된 것이라
-// 키워드만 바꾸고 저장된 수치를 쓰면 맞지 않는 그래프가 나옵니다.
-// 그래서 미리보기는 반드시 /api/trend-preview로 새로 조회합니다.
-//
-// 여기서 고친 내용은 시트에 저장되지 않습니다. 화면을 벗어나면 사라집니다.
-const MAX_GROUPS = 5;
-const MAX_KEYWORDS = 20;
-
-function KeywordEditor({ cat, baseKeywords, colorOf, onPreview, onReset, previewing, busy, err }: {
-  cat: string;
-  baseKeywords: Record<string, string[]>;
-  colorOf: (name: string) => string | undefined;
-  onPreview: (groups: { groupName: string; keywords: string[] }[]) => void;
-  onReset: () => void;
-  previewing: boolean;
-  busy: boolean;
-  err: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<Record<string, string[]>>({});
-  const [input, setInput] = useState<Record<string, string>>({});
-
-  // 시트에서 온 원본이 바뀌면 편집본을 초기화합니다.
-  useEffect(() => {
-    setDraft(JSON.parse(JSON.stringify(baseKeywords ?? {})));
-    setInput({});
-  }, [baseKeywords]);
-
-  const brandNames = Object.keys(draft);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseKeywords ?? {});
-  const overGroups = brandNames.filter((b) => draft[b]?.length > 0).length > MAX_GROUPS;
-
-  function removeKw(brand: string, kw: string) {
-    setDraft((p) => ({ ...p, [brand]: (p[brand] ?? []).filter((k) => k !== kw) }));
-  }
-  function addKw(brand: string) {
-    const raw = (input[brand] ?? "").trim();
-    if (!raw) return;
-    // 쉼표로 여러 개를 한 번에 넣을 수 있게 합니다.
-    const adds = raw.split(",").map((s) => s.trim()).filter(Boolean);
-    setDraft((p) => {
-      const cur = p[brand] ?? [];
-      const merged = Array.from(new Set([...cur, ...adds]));
-      return { ...p, [brand]: merged.slice(0, MAX_KEYWORDS) };
-    });
-    setInput((p) => ({ ...p, [brand]: "" }));
-  }
-  function restore() {
-    setDraft(JSON.parse(JSON.stringify(baseKeywords ?? {})));
-    setInput({});
-    onReset();
-  }
-
-  if (!baseKeywords || brandNames.length === 0) return null;
-
-  return (
-    <div className="mt-1 mb-3">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="text-[10px] text-stone-400 hover:text-kkumbi-600 transition-colors"
-      >
-        {open ? "▾" : "▸"} 반영된 키워드 {previewing ? "· 미리보기 중" : ""}
-      </button>
-
-      {previewing && (
-        <div className="mt-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-          아래 그래프는 <b>임시 조회 결과</b>입니다. 시트에 저장되지 않았습니다.
-        </div>
-      )}
-
-      {open && (
-        <div className="mt-2 border border-stone-200 rounded-lg p-3 bg-stone-50 space-y-2.5">
-          {brandNames.map((brand) => {
-            const kws = draft[brand] ?? [];
-            const c = colorOf(brand);
-            const full = kws.length >= MAX_KEYWORDS;
-            return (
-              <div key={brand}>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: c || "#cbd5e1" }} />
-                  <span className="text-[11px] font-bold" style={c ? { color: c } : undefined}>{brand}</span>
-                  <span className={`text-[10px] ${full ? "text-rose-500 font-semibold" : "text-stone-400"}`}>
-                    {kws.length}/{MAX_KEYWORDS}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1 mb-1">
-                  {kws.map((k) => (
-                    <span key={k} className="group text-[10px] text-stone-600 bg-white border border-stone-200 rounded px-1.5 py-0.5 flex items-center gap-1">
-                      {k}
-                      <button onClick={() => removeKw(brand, k)}
-                        className="text-stone-300 hover:text-rose-500 font-bold leading-none" title="삭제">×</button>
-                    </span>
-                  ))}
-                  {kws.length === 0 && <span className="text-[10px] text-stone-300">키워드 없음 — 조회에서 제외됩니다</span>}
-                </div>
-                <div className="flex gap-1">
-                  <input
-                    value={input[brand] ?? ""}
-                    onChange={(e) => setInput((p) => ({ ...p, [brand]: e.target.value }))}
-                    onKeyDown={(e) => { if (e.key === "Enter") addKw(brand); }}
-                    placeholder={full ? "상한 도달" : "키워드 추가 (쉼표로 여러 개)"}
-                    disabled={full}
-                    className="flex-1 text-[10px] border border-stone-200 rounded px-1.5 py-1 text-stone-600 disabled:bg-stone-100"
-                  />
-                  <button onClick={() => addKw(brand)} disabled={full}
-                    className="text-[10px] px-2 py-1 border border-stone-200 rounded text-stone-500 hover:border-kkumbi-300 disabled:opacity-40">
-                    추가
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-
-          {overGroups && (
-            <p className="text-[10px] text-rose-600">
-              브랜드가 {MAX_GROUPS}개를 넘습니다. 네이버가 한 번에 {MAX_GROUPS}개까지만 비교할 수 있어 조회가 거절됩니다.
-            </p>
-          )}
-          {err && <p className="text-[10px] text-rose-600">{err}</p>}
-
-          <div className="flex gap-1.5 pt-1">
-            <button
-              onClick={() => onPreview(brandNames.map((b) => ({ groupName: b, keywords: draft[b] ?? [] })))}
-              disabled={busy || overGroups || !dirty}
-              className="text-[10px] font-semibold px-2.5 py-1 bg-kkumbi-500 text-white rounded hover:bg-kkumbi-600 disabled:opacity-40"
-            >
-              {busy ? "조회 중…" : "미리보기"}
-            </button>
-            <button onClick={restore} disabled={busy || (!dirty && !previewing)}
-              className="text-[10px] px-2.5 py-1 border border-stone-200 rounded text-stone-500 hover:border-stone-300 disabled:opacity-40">
-              원래대로
-            </button>
-            <span className="text-[10px] text-stone-400 self-center">
-              {dirty ? "변경됨 · 시트 미반영" : "시트와 동일"}
-            </span>
-          </div>
+      {editable && (
+        <div className="flex gap-1 mt-1.5">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            placeholder={full ? `키워드는 ${MAX_KEYWORDS}개까지입니다` : "키워드 추가 (쉼표로 여러 개)"}
+            disabled={full}
+            className="flex-1 text-[10px] border border-stone-200 rounded px-1.5 py-1 text-stone-600 disabled:bg-stone-100"
+          />
+          <button onClick={submit} disabled={full}
+            className="text-[10px] px-2 py-1 border border-stone-200 rounded text-stone-500 hover:border-kkumbi-300 disabled:opacity-40">
+            추가
+          </button>
         </div>
       )}
     </div>
@@ -604,6 +504,28 @@ function CompBlockCard({ cat, block, chartBrands, colorOf, sortedRows, gCharts, 
 }) {
   const [openBrand, setOpenBrand] = useState<string>("");
 
+  // 편집본 — 시트에서 온 원본(keywords)을 복사해 두고 여기서만 고칩니다.
+  // 시트에는 쓰지 않으므로 화면을 벗어나면 사라집니다.
+  const [draft, setDraft] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    setDraft(keywords ? JSON.parse(JSON.stringify(keywords)) : {});
+  }, [keywords]);
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(keywords ?? {});
+
+  function removeKw(brand: string, kw: string) {
+    setDraft((p) => ({ ...p, [brand]: (p[brand] ?? []).filter((k) => k !== kw) }));
+  }
+  function addKw(brand: string, raw: string) {
+    // 쉼표로 여러 개를 한 번에 넣을 수 있게 합니다.
+    const adds = raw.split(",").map((x) => x.trim()).filter(Boolean);
+    if (adds.length === 0) return;
+    setDraft((p) => {
+      const merged = Array.from(new Set([...(p[brand] ?? []), ...adds]));
+      return { ...p, [brand]: merged.slice(0, MAX_KEYWORDS) };
+    });
+  }
+
   // 미리보기 상태 — 편집한 키워드로 새로 조회한 결과를 담습니다.
   // null이면 저장소에서 온 원래 그래프를 그대로 씁니다.
   const [preview, setPreview] = useState<Record<string, Row[]> | null>(null);
@@ -652,6 +574,11 @@ function CompBlockCard({ cat, block, chartBrands, colorOf, sortedRows, gCharts, 
   );
 
   function clearPreview() { setPreview(null); setPreviewBrands([]); setPvErr(""); }
+  function restore() {
+    setDraft(keywords ? JSON.parse(JSON.stringify(keywords)) : {});
+    clearPreview();
+  }
+  const overGroups = Object.keys(draft).filter((b) => (draft[b] ?? []).length > 0).length > 5;
 
   return (
     <div className="border border-stone-200 rounded-xl p-4 bg-white">
@@ -660,18 +587,32 @@ function CompBlockCard({ cat, block, chartBrands, colorOf, sortedRows, gCharts, 
         brands={preview ? previewBrands : chartBrands}
         gCharts={preview ?? gCharts}
       />
-      {keywords && (
-        <KeywordEditor
-          cat={cat}
-          baseKeywords={keywords}
-          colorOf={colorOf}
-          onPreview={runPreview}
-          onReset={clearPreview}
-          previewing={preview !== null}
-          busy={pvBusy}
-          err={pvErr}
-        />
+      {/* 키워드를 고쳤을 때만 나타나는 조작 줄.
+          평소에는 화면에 아무것도 늘어나지 않습니다. */}
+      {(dirty || preview !== null || pvErr) && (
+        <div className="mb-3 -mt-1 flex items-center gap-1.5 flex-wrap text-[10px] bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          <span className="text-amber-800">
+            {preview !== null
+              ? "임시 조회 결과입니다 · 시트에 저장되지 않았습니다"
+              : "키워드가 변경되었습니다 · 미리보기를 눌러야 그래프에 반영됩니다"}
+          </span>
+          <button onClick={() => runPreview(Object.keys(draft).map((b) => ({ groupName: b, keywords: draft[b] ?? [] })))}
+            disabled={pvBusy || overGroups}
+            className="ml-auto font-semibold px-2.5 py-1 bg-kkumbi-500 text-white rounded hover:bg-kkumbi-600 disabled:opacity-40">
+            {pvBusy ? "조회 중…" : "미리보기"}
+          </button>
+          <button onClick={restore} disabled={pvBusy}
+            className="px-2.5 py-1 border border-amber-300 rounded text-amber-800 hover:bg-amber-100 disabled:opacity-40">
+            원래대로
+          </button>
+        </div>
       )}
+      {overGroups && (
+        <p className="text-[10px] text-rose-600 mb-2">
+          키워드가 있는 브랜드가 5개를 넘습니다. 네이버가 한 번에 5개까지만 비교할 수 있어 조회가 거절됩니다.
+        </p>
+      )}
+      {pvErr && <p className="text-[10px] text-rose-600 mb-2">{pvErr}</p>}
                 <div className="font-bold text-sm text-stone-800 mb-3 mt-1">{block.cat} · 경쟁사 순위</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
@@ -687,7 +628,7 @@ function CompBlockCard({ cat, block, chartBrands, colorOf, sortedRows, gCharts, 
                     <tbody>
                       {sortedRows.map((r, i) => {
                         const c = colorOf(r.name);
-                        const kws = keywords?.[r.name] ?? [];
+                        const kws = draft[r.name] ?? [];
                         const isOpen = openBrand === r.name;
                         return (
                         <React.Fragment key={i}>
@@ -714,10 +655,14 @@ function CompBlockCard({ cat, block, chartBrands, colorOf, sortedRows, gCharts, 
                           <td className="py-1.5 px-1.5 text-stone-500 whitespace-nowrap">{r.pkDate || "—"}</td>
                           <td className="py-1.5 px-1.5">{stateBadge(r.state && isNaN(parseFloat(r.state)) ? r.state : "flat")}</td>
                         </tr>
-                        {isOpen && kws.length > 0 && (
+                        {/* 키워드를 모두 지워도 카드는 열어둡니다.
+                            닫아버리면 다시 추가할 방법이 없어집니다. */}
+                        {isOpen && (
                           <tr>
                             <td colSpan={7} className="px-1.5 pb-1">
-                              <KeywordCard brand={r.name} keywords={kws} color={c} />
+                              <KeywordCard brand={r.name} keywords={kws} color={c}
+                                onRemove={(k) => removeKw(r.name, k)}
+                                onAdd={(raw) => addKw(r.name, raw)} />
                             </td>
                           </tr>
                         )}
