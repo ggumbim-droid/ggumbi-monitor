@@ -122,6 +122,8 @@ export async function fetchDatalab(opts: {
   endDate: string;
   timeUnit: TimeUnit;
   groups: KeywordGroup[];
+  /** 응답 대기 상한(ms). 넘으면 이 조회만 포기합니다. */
+  timeoutMs?: number;
 }): Promise<DatalabResult> {
   const clientId = process.env.NAVER_CLIENT_ID?.trim();
   const clientSecret = process.env.NAVER_CLIENT_SECRET?.trim();
@@ -136,24 +138,41 @@ export async function fetchDatalab(opts: {
   const invalid = validateGroups(groups);
   if (invalid) throw new DatalabError(invalid);
 
-  const res = await fetch(DATALAB_URL, {
-    method: "POST",
-    headers: {
-      "X-Naver-Client-Id": clientId,
-      "X-Naver-Client-Secret": clientSecret,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      startDate: opts.startDate,
-      endDate: opts.endDate,
-      timeUnit: opts.timeUnit,
-      keywordGroups: groups.map((g) => ({
-        groupName: g.groupName,
-        keywords: g.keywords,
-      })),
-    }),
-    cache: "no-store",
-  });
+  // 응답 대기 상한. 이게 없으면 네이버가 답을 안 줄 때 무한정 기다리게 되어,
+  // 카테고리 하나 때문에 수집 전체가 시간 초과로 죽습니다.
+  const timeoutMs = opts.timeoutMs ?? 12_000;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(DATALAB_URL, {
+      method: "POST",
+      headers: {
+        "X-Naver-Client-Id": clientId,
+        "X-Naver-Client-Secret": clientSecret,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        startDate: opts.startDate,
+        endDate: opts.endDate,
+        timeUnit: opts.timeUnit,
+        keywordGroups: groups.map((g) => ({
+          groupName: g.groupName,
+          keywords: g.keywords,
+        })),
+      }),
+      cache: "no-store",
+      signal: ac.signal,
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new DatalabError(`데이터랩 응답이 ${timeoutMs / 1000}초를 넘겨 중단했습니다.`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
