@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { MonthlyReport } from "./MonthlyReport";
 import { WeeklyDashboard } from "./WeeklyDashboard";
 
@@ -32,6 +32,15 @@ interface MonthlyCat {
 }
 interface MonthlySummary { month: string; daysElapsed: number; daysInMonth: number; categories: MonthlyCat[]; }
 
+/** /api/weekly-report GET 응답 (세션 캐시에 그대로 저장) */
+interface WeeklyPayload {
+  week?: string;
+  weeks?: WeekListEntry[];
+  report?: WeeklyReportData | null;
+  monthly?: MonthlySummary | null;
+  error?: string;
+}
+
 function fmtMD(dateStr: string): string {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
@@ -62,22 +71,53 @@ export function WeeklyReport() {
     try { localStorage.setItem("ggumbi_font_scale", String(scale)); } catch {}
   }
 
-  const loadWeek = useCallback(async (w?: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/weekly-report${w ? `?week=${encodeURIComponent(w)}` : ""}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "오류 발생");
-      setWeeks(data.weeks ?? []);
-      setWeek(data.week ?? "");
-      setReport(data.report ?? null);
-      setMonthly(data.monthly ?? null);
-    } catch (e) {
-      console.error("주간보고 로드 실패:", e);
-    } finally {
-      setLoading(false);
-    }
+  // 한 세션 안에서 이미 본 주차는 다시 부르지 않습니다.
+  // (탭을 오갈 때마다 "불러오는 중..."이 뜨던 원인)
+  const cacheRef = useRef<Map<string, WeeklyPayload>>(new Map());
+
+  const applyPayload = useCallback((data: WeeklyPayload) => {
+    setWeeks(data.weeks ?? []);
+    setWeek(data.week ?? "");
+    setReport(data.report ?? null);
+    setMonthly(data.monthly ?? null);
   }, []);
+
+  const loadWeek = useCallback(
+    async (w?: string, fresh = false) => {
+      const key = w || "__latest__";
+
+      if (!fresh) {
+        const hit = cacheRef.current.get(key);
+        if (hit) {
+          applyPayload(hit);
+          setLoading(false);
+          return;
+        }
+      }
+
+      setLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        if (w) qs.set("week", w);
+        if (fresh) qs.set("fresh", "1");
+        const suffix = qs.toString() ? `?${qs.toString()}` : "";
+
+        const res = await fetch(`/api/weekly-report${suffix}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "오류 발생");
+
+        cacheRef.current.set(key, data);
+        // 최신 주차로 들어온 응답은 실제 주차키로도 저장해 중복 호출 방지
+        if (data.week) cacheRef.current.set(data.week, data);
+        applyPayload(data);
+      } catch (e) {
+        console.error("주간보고 로드 실패:", e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [applyPayload]
+  );
 
   useEffect(() => { loadWeek(); }, [loadWeek]);
 
@@ -118,7 +158,7 @@ export function WeeklyReport() {
               <option key={w.week} value={w.week}>{w.label || w.week}{w.startDate && w.endDate ? ` (${fmtMD(w.startDate)}~${fmtMD(w.endDate)})` : ""}</option>
             ))}
           </select>
-          <button onClick={() => loadWeek(week)} disabled={loading} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">{loading ? "새로고침 중…" : "↻ 새로고침"}</button>
+          <button onClick={() => loadWeek(week, true)} disabled={loading} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300 disabled:opacity-50">{loading ? "새로고침 중…" : "↻ 새로고침"}</button>
           <button onClick={() => window.print()} className="px-3 py-2 border border-stone-200 rounded-lg text-xs text-stone-600 hover:border-kkumbi-300">인쇄</button>
         </div>
       </div>
