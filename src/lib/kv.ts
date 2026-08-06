@@ -60,18 +60,68 @@ export async function kvSet(key: string, value: unknown): Promise<boolean> {
 }
 
 /** 여러 키를 한 번에 읽기 (일자 범위 조회용) */
+/** KV 응답값 파싱 (이중 인코딩까지 흡수) */
+function parseKvValue<T>(raw: unknown): T | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "string") return JSON.parse(parsed) as T;
+      return parsed as T;
+    } catch {
+      return null;
+    }
+  }
+  return raw as T;
+}
+
 export async function kvGetMany<T = unknown>(
   keys: string[]
 ): Promise<Record<string, T | null>> {
   const out: Record<string, T | null> = {};
-  // 동시 요청이 너무 많으면 제한에 걸리므로 10개씩 끊어서 처리
-  const CHUNK = 10;
-  for (let i = 0; i < keys.length; i += CHUNK) {
-    const slice = keys.slice(i, i + CHUNK);
-    const results = await Promise.all(slice.map((k) => kvGet<T>(k)));
-    slice.forEach((k, idx) => {
-      out[k] = results[idx];
-    });
+  if (!isKvConfigured() || keys.length === 0) {
+    keys.forEach((k) => { out[k] = null; });
+    return out;
+  }
+
+  // MGET으로 한 번에 여러 키를 가져옵니다.
+  // 예전에는 키 하나당 요청 하나를 10개씩 끊어 순차로 보냈습니다.
+  // 1100일치 조회 = 왕복 110번 → 몇 초가 그대로 대기 시간이 됐습니다.
+  const CHUNK = 100;
+  const chunks: string[][] = [];
+  for (let i = 0; i < keys.length; i += CHUNK) chunks.push(keys.slice(i, i + CHUNK));
+
+  const settled = await Promise.all(
+    chunks.map(async (slice) => {
+      try {
+        const res = await fetch(KV_URL as string, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${KV_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(["MGET", ...slice]),
+          cache: "no-store",
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return Array.isArray(data?.result) ? (data.result as unknown[]) : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  for (let c = 0; c < chunks.length; c++) {
+    const slice = chunks[c];
+    const arr = settled[c];
+    if (!arr) {
+      // MGET이 실패한 구간만 개별 조회로 되돌립니다 (동작 보장)
+      const fb = await Promise.all(slice.map((k) => kvGet<T>(k)));
+      slice.forEach((k, i) => { out[k] = fb[i]; });
+      continue;
+    }
+    slice.forEach((k, i) => { out[k] = parseKvValue<T>(arr[i]); });
   }
   return out;
 }
