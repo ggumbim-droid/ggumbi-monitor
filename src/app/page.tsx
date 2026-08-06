@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import Link from "next/link";
 import { KeywordInput } from "@/components/KeywordInput";
 import { DateRangeSelect, getDefaultDateRange } from "@/components/DateRangeSelect";
 import { MonitorPeriodBanner } from "@/components/MonitorPeriodBanner";
@@ -448,6 +449,32 @@ export default function HomePage() {
               )}
             </div>
           ))}
+
+          {/*
+            아래 두 개는 activeMenu 로 전환되는 탭이 아니라 별도 주소를 가진
+            페이지입니다. 지금까지는 주소를 직접 쳐야만 들어갈 수 있었습니다.
+            사이드바 개편 때 위 메뉴들과 함께 정리할 예정이라, 그때 걷어내기
+            쉽도록 구분선 아래에 따로 두었습니다.
+          */}
+          {sidebarOpen && (
+            <div className="pt-3 mt-3 border-t border-white/10 space-y-1">
+              <p className="px-3 pb-1 text-[10px] text-white/30 uppercase tracking-widest">도구</p>
+              <Link
+                href="/wonbu"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition"
+              >
+                <span className="text-base shrink-0">📕</span>
+                <span className="flex-1 text-left text-xs">원부 사전</span>
+              </Link>
+              <Link
+                href="/trend"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition"
+              >
+                <span className="text-base shrink-0">📉</span>
+                <span className="flex-1 text-left text-xs">트렌드 조회</span>
+              </Link>
+            </div>
+          )}
         </nav>
         {sidebarOpen && <div className="px-4 py-3 border-t border-white/10 text-xs text-white/40">꿈비 마케팅 인텔리전스</div>}
       </aside>
