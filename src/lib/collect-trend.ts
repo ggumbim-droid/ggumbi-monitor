@@ -21,6 +21,12 @@
 
 import { METRICS, type DailyFact } from "@/lib/daily-store";
 import { normalizeBrand, type Brand } from "@/lib/brands";
+import {
+  fetchDatalab,
+  resolvePeriodRange,
+  MAX_GROUPS,
+  MAX_KEYWORDS_PER_GROUP,
+} from "@/lib/naver-datalab";
 
 const TREND_WEBAPP_URL = process.env.GOOGLE_TREND_WEBAPP_URL;
 
@@ -222,10 +228,156 @@ export function chartToFacts(
   };
 }
 
+// ══════════════════════════════════════════════════
+//  ▶ 시트를 거치지 않는 직접 수집
+//
+//  기존 경로:  시트 → Apps Script(지수 계산) → 수집기 → 저장소 → 화면
+//  새 경로:    시트(키워드만) → 수집기 → 네이버 데이터랩 → 저장소 → 화면
+//
+//  Apps Script가 지수를 계산해 시트에 적어두고 그걸 다시 읽어오던 왕복이
+//  통째로 빠집니다. 키워드 목록은 팀에서 시트로 함께 관리하므로 시트가 원본으로 남습니다.
+//
+//  ※ 변환 로직(chartToFacts)은 건드리지 않았습니다.
+//    같은 ChartCategory 형태로 맞춰 돌려주므로 저장 결과는 동일합니다.
+// ══════════════════════════════════════════════════
+
+/** 시트의 연관키워드 목록: 카테고리 → 브랜드 → 키워드[] */
+type KeywordMap = Record<string, Record<string, string[]>>;
+
+async function fetchKeywordMap(): Promise<KeywordMap> {
+  if (!TREND_WEBAPP_URL) return {};
+  try {
+    // 키워드 목록만 읽는 가벼운 호출입니다 (지수 계산 없음).
+    const res = await fetch(`${TREND_WEBAPP_URL}?type=keywords`, {
+      redirect: "follow",
+      cache: "no-store",
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    const kw = data?.keywords;
+    return kw && typeof kw === "object" ? (kw as KeywordMap) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 동시 요청 수를 제한해 순차 실행합니다 (데이터랩 호출 제한 회피) */
+async function pooled<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+export interface DirectFetchReport {
+  chart: ChartCategory[];
+  /** 브랜드가 5개를 넘어 잘린 카테고리 */
+  truncated: string[];
+  /** 조회에 실패한 카테고리 */
+  failed: { cat: string; error: string }[];
+}
+
+/**
+ * 시트의 키워드로 데이터랩을 직접 조회합니다.
+ *
+ * 카테고리 하나당 호출 1회입니다. 카테고리가 18개면 하루 36회(3개월+3년)로,
+ * 데이터랩 일일 한도(1,000회) 안에서 여유가 큽니다.
+ */
+export async function fetchTrendChartDirect(
+  period: "3months" | "3years" = "3months"
+): Promise<DirectFetchReport> {
+  const map = await fetchKeywordMap();
+  const cats = Object.keys(map);
+  if (cats.length === 0) {
+    throw new Error("시트에서 연관키워드를 읽지 못했습니다.");
+  }
+
+  const { startDate, endDate, timeUnit } = resolvePeriodRange(period);
+  const truncated: string[] = [];
+  const failed: { cat: string; error: string }[] = [];
+
+  const results = await pooled(cats, 4, async (cat) => {
+    const byBrand = map[cat] ?? {};
+    let groups = Object.entries(byBrand)
+      .map(([groupName, keywords]) => ({
+        groupName,
+        keywords: (keywords ?? []).slice(0, MAX_KEYWORDS_PER_GROUP),
+      }))
+      .filter((g) => g.keywords.length > 0);
+
+    if (groups.length === 0) return null;
+
+    // 데이터랩은 한 번에 5개 그룹까지만 비교합니다.
+    // 넘치면 조용히 실패하지 않도록 잘라내고 보고합니다.
+    if (groups.length > MAX_GROUPS) {
+      truncated.push(`${cat}(${groups.length}→${MAX_GROUPS})`);
+      groups = groups.slice(0, MAX_GROUPS);
+    }
+
+    try {
+      const { rows, series } = await fetchDatalab({ startDate, endDate, timeUnit, groups });
+      if (rows.length === 0) return null;
+      // chartToFacts가 기대하는 형태로 맞춥니다 (date → period)
+      return {
+        name: cat,
+        brands: series,
+        data: rows.map((r) => {
+          const { date, ...rest } = r;
+          return { period: String(date), ...rest } as ChartEntry;
+        }),
+      } as ChartCategory;
+    } catch (e) {
+      failed.push({ cat, error: e instanceof Error ? e.message : String(e) });
+      return null;
+    }
+  });
+
+  return {
+    chart: results.filter((r): r is ChartCategory => r !== null),
+    truncated,
+    failed,
+  };
+}
+
 /** 일별(3개월) 트렌드 수집 */
 export async function collectTrend(): Promise<TrendCollectResult> {
-  const chart = await fetchTrendChart("3months");
-  return chartToFacts(chart, METRICS.TREND_INDEX);
+  return collectWith("3months", METRICS.TREND_INDEX);
+}
+
+/**
+ * 직접 수집을 먼저 시도하고, 실패하면 기존 웹앱 경로로 되돌립니다.
+ * 새 경로에 문제가 생겨도 수집이 통째로 멈추지는 않게 하기 위한 안전장치입니다.
+ */
+async function collectWith(
+  period: "3months" | "3years",
+  metric: string
+): Promise<TrendCollectResult> {
+  try {
+    const r = await fetchTrendChartDirect(period);
+    if (r.chart.length > 0) {
+      const out = chartToFacts(r.chart, metric);
+      if (r.truncated.length) out.unmappedCategories.push(`5개 초과로 잘림: ${r.truncated.join(", ")}`);
+      if (r.failed.length) {
+        out.skipped.push(...r.failed.map((f) => `${f.cat}(${f.error})`));
+      }
+      return out;
+    }
+  } catch (e) {
+    // 아래 웹앱 경로로 계속 진행합니다.
+    console.error("직접 수집 실패 — 기존 웹앱 경로로 전환:", e);
+  }
+  const chart = await fetchTrendChart(period);
+  return chartToFacts(chart, metric);
 }
 
 /**
@@ -234,6 +386,5 @@ export async function collectTrend(): Promise<TrendCollectResult> {
  * 일별 지표와 기준점이 달라 별도 지표로 저장합니다.
  */
 export async function collectTrendWeekly(): Promise<TrendCollectResult> {
-  const chart = await fetchTrendChart("3years");
-  return chartToFacts(chart, METRICS.TREND_INDEX_WEEKLY);
+  return collectWith("3years", METRICS.TREND_INDEX_WEEKLY);
 }
