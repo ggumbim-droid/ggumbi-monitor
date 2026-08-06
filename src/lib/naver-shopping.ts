@@ -4,6 +4,26 @@ import type { ChannelId, ChannelItem, ChannelResult, MonitorDateRange, SortOrder
 const NAVER_SHOPPING_ENDPOINT = "https://openapi.naver.com/v1/search/shop.json";
 const SHOPPING_DISPLAY = 50;
 
+// ══════════════════════════════════════════════════
+//  네이버 쇼핑 검색 오픈API 종료 (2026-08 확인)
+//
+//  openapi.naver.com/v1/search/shop.json 이 404(SE05)를 돌려줍니다.
+//  같은 자격증명으로 블로그 검색은 정상이므로 권한이 아니라 엔드포인트 문제입니다.
+//
+//  ▶ 이 플래그를 켜 두는 이유
+//    fetchNaverShopping 이 실패 시 throw 하기 때문에, 스마트스토어 채널을
+//    하나라도 선택하면 그 예외가 /api/monitor 최상위까지 올라가
+//    함께 선택한 블로그·카페·뉴스 결과까지 전부 날아갔습니다.
+//
+//  ▶ 대체 데이터 확보 후 되살리려면
+//    SHOP_SEARCH_AVAILABLE 를 true 로 바꾸고
+//    NAVER_SHOPPING_ENDPOINT 를 새 소스로 교체하면 됩니다.
+// ══════════════════════════════════════════════════
+const SHOP_SEARCH_AVAILABLE = false;
+
+const SHOP_API_NOTICE =
+  "네이버 쇼핑 검색 오픈API가 종료되어 상품 자동 수집이 불가합니다. 네이버쇼핑에서 직접 검색해 확인해 주세요.";
+
 function getNaverCredentials(): { clientId: string; clientSecret: string } {
   const clientId = process.env.NAVER_CLIENT_ID?.trim();
   const clientSecret = process.env.NAVER_CLIENT_SECRET?.trim();
@@ -148,6 +168,23 @@ export async function searchSmartstore(
   sortOrder: SortOrder,
   _period: MonitorDateRange
 ): Promise<ChannelResult> {
+  // 쇼핑 검색 API 종료 동안에는 조회를 시도하지 않습니다.
+  // 예외를 던지면 함께 선택한 다른 채널까지 같이 실패하므로,
+  // 이 채널만 "직접 확인 필요"로 표시하고 정상 반환합니다.
+  if (!SHOP_SEARCH_AVAILABLE) {
+    return {
+      channel: "smartstore",
+      publicItems: [],
+      loginRequired: keywords.map((keyword) => ({
+        channel: "smartstore" as ChannelId,
+        source: "네이버쇼핑",
+        title: `[${keyword}] 자동 수집 제공 중단`,
+        reason: SHOP_API_NOTICE,
+        link: `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`,
+      })),
+    };
+  }
+
   const sort = sortOrder === "latest" ? "date" : "sim";
   const collected: NaverShoppingItem[] = [];
 
