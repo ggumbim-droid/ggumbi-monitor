@@ -38,6 +38,15 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const dry = searchParams.get("dry") === "1";
   const daysParam = Number(searchParams.get("days"));
+  // 분할 수집용 — 한 번에 몇 개(limit), 몇 번째부터(offset)
+  const limitParam = Number(searchParams.get("limit"));
+  const offsetParam = Number(searchParams.get("offset"));
+  const slice = {
+    limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined,
+    offset: Number.isFinite(offsetParam) && offsetParam > 0 ? offsetParam : 0,
+    // 함수 상한 60초 안에서 여유를 두고 멈춥니다.
+    budgetMs: 40_000,
+  };
   const maxDays =
     Number.isFinite(daysParam) && daysParam > 0 ? daysParam : DEFAULT_MAX_DAYS;
 
@@ -65,7 +74,7 @@ export async function GET(request: NextRequest) {
   {
     const started = Date.now();
     try {
-      const r = await collectTrend();
+      const r = await collectTrend(slice);
       allDated.push(...r.dated);
       trendRaw = r.rawSample;
       const notes: string[] = [];
@@ -73,6 +82,11 @@ export async function GET(request: NextRequest) {
       if (r.dateRange) notes.push(`${r.dateRange.from} ~ ${r.dateRange.to}`);
       if (r.unmappedCategories.length) {
         notes.push(`매핑없음: ${r.unmappedCategories.join(", ")}`);
+      }
+      if (r.remaining?.length) notes.push(`남음 ${r.remaining.length}개: ${r.remaining.join(", ")}`);
+      if (r.timings?.length) {
+        const slow = r.timings.slice(0, 5).map((t) => `${t.cat} ${(t.ms / 1000).toFixed(1)}s(${t.rows}행)`);
+        notes.push(`느린순: ${slow.join(" · ")}`);
       }
       reports.push({
         name: "검색 트렌드",
@@ -99,7 +113,7 @@ export async function GET(request: NextRequest) {
   if (searchParams.get("skipWeekly") !== "1") {
     const started = Date.now();
     try {
-      const r = await collectTrendWeekly();
+      const r = await collectTrendWeekly({ ...slice, budgetMs: 15_000 });
       allDated.push(...r.dated);
       const notes: string[] = [`카테고리 ${r.categories.length}개`];
       if (r.dateRange) notes.push(`${r.dateRange.from} ~ ${r.dateRange.to}`);
