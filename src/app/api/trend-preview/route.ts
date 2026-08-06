@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   fetchDatalab,
+  resolvePeriodRange,
   DatalabError,
   MAX_GROUPS,
   MAX_KEYWORDS_PER_GROUP,
@@ -25,26 +26,6 @@ import {
 export const maxDuration = 60;
 export const preferredRegion = ["icn1"];
 
-/** 기간 프리셋 → 시작일 + 집계 단위 */
-function resolvePeriod(period: string): { start: string; end: string; unit: TimeUnit } {
-  const now = new Date();
-  const end = now.toISOString().slice(0, 10);
-  const d = new Date(now);
-
-  switch (period) {
-    case "1year":
-      d.setFullYear(d.getFullYear() - 1);
-      return { start: d.toISOString().slice(0, 10), end, unit: "week" };
-    case "3years":
-      d.setFullYear(d.getFullYear() - 3);
-      return { start: d.toISOString().slice(0, 10), end, unit: "week" };
-    case "3months":
-    default:
-      d.setMonth(d.getMonth() - 3);
-      return { start: d.toISOString().slice(0, 10), end, unit: "date" };
-  }
-}
-
 interface PreviewBody {
   groups?: KeywordGroup[];
   period?: string;
@@ -67,10 +48,11 @@ export async function POST(request: NextRequest) {
   }
 
   // 직접 날짜를 주면 그걸 쓰고, 아니면 프리셋으로 계산
-  const preset = resolvePeriod(String(body.period ?? "3months"));
-  const startDate = body.startDate || preset.start;
-  const endDate = body.endDate || preset.end;
-  const timeUnit: TimeUnit = body.timeUnit ?? preset.unit;
+  // 수집기(collect-trend)와 같은 함수를 씁니다 — 기준이 어긋나지 않도록.
+  const preset = resolvePeriodRange(String(body.period ?? "3months"));
+  const startDate = body.startDate || preset.startDate;
+  const endDate = body.endDate || preset.endDate;
+  const timeUnit: TimeUnit = body.timeUnit ?? preset.timeUnit;
 
   if (startDate > endDate) {
     return NextResponse.json({ error: "시작일이 종료일보다 늦습니다." }, { status: 400 });
