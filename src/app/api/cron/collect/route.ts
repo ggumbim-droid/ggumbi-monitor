@@ -66,13 +66,28 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  //
+  //  ▶ 자동 갱신 규칙
+  //   Hobby 플랜은 cron을 하루 한 번만 등록할 수 있어서, 요일로 나눕니다.
+  //   · 월~토 → 3개월(일별)만
+  //   · 일요일 → 3년(주간)만  ← 주간 데이터라 주 1회면 충분합니다
+  //   수동 실행은 ?weekly=1 / ?weekly=0 으로 언제든 덮어쓸 수 있습니다.
+  const weeklyParam = searchParams.get("weekly");
+  // 한국 시간 기준 요일 (0=일요일). cron은 UTC 20시 = KST 새벽 5시에 돕니다.
+  const kstDay = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay();
+  const isSunday = kstDay === 0;
+
+  const weeklyOnly =
+    weeklyParam === "1" ? true : weeklyParam === "0" ? false : isSunday;
+  const runWeekly = weeklyOnly || searchParams.get("skipWeekly") === "0";
+
   const reports: CollectorReport[] = [];
   const allDated: DailyFact[] = [];
   let trendRaw: unknown = null;
 
   // ── 수집기 ①: 검색 트렌드 ──
-  // weekly=1 이면 3년치만 돌리므로 여기는 건너뜁니다.
-  if (searchParams.get("weekly") !== "1") {
+  // 3년치만 돌리는 날(일요일 또는 weekly=1)에는 건너뜁니다.
+  if (!weeklyOnly) {
     const started = Date.now();
     try {
       const r = await collectTrend(slice);
@@ -114,8 +129,6 @@ export async function GET(request: NextRequest) {
   // 60초 상한을 넘깁니다. 그래서 기본은 건너뛰고 필요할 때만 돌립니다.
   //   ?weekly=1        3년치만 돌림 (3개월 건너뜀)
   //   ?skipWeekly=0    둘 다 (시간이 모자라면 남은 건 다음 실행으로)
-  const weeklyOnly = searchParams.get("weekly") === "1";
-  const runWeekly = weeklyOnly || searchParams.get("skipWeekly") === "0";
   if (runWeekly) {
     const started = Date.now();
     try {
