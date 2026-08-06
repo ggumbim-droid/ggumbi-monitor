@@ -21,6 +21,35 @@ export const MAX_KEYWORDS_PER_GROUP = 20;
 
 export type TimeUnit = "date" | "week" | "month";
 
+/**
+ * 기간 프리셋 → 시작·종료일 + 집계 단위
+ *
+ * 미리보기(/api/trend-preview)와 수집기(collect-trend)가 같은 함수를 씁니다.
+ * 따로 두면 한쪽만 고쳤을 때 화면과 저장값의 기준이 조용히 어긋납니다.
+ */
+export function resolvePeriodRange(period: string): {
+  startDate: string;
+  endDate: string;
+  timeUnit: TimeUnit;
+} {
+  const now = new Date();
+  const endDate = now.toISOString().slice(0, 10);
+  const d = new Date(now);
+
+  switch (period) {
+    case "1year":
+      d.setFullYear(d.getFullYear() - 1);
+      return { startDate: d.toISOString().slice(0, 10), endDate, timeUnit: "week" };
+    case "3years":
+      d.setFullYear(d.getFullYear() - 3);
+      return { startDate: d.toISOString().slice(0, 10), endDate, timeUnit: "week" };
+    case "3months":
+    default:
+      d.setMonth(d.getMonth() - 3);
+      return { startDate: d.toISOString().slice(0, 10), endDate, timeUnit: "date" };
+  }
+}
+
 export interface KeywordGroup {
   /** 화면에 표시될 이름 (보통 브랜드명) */
   groupName: string;
