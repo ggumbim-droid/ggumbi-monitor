@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
@@ -157,26 +157,50 @@ export default function TrendPage() {
     setFocusedBrand((prev) => prev === brandName ? "" : brandName);
   }
 
-  async function fetchTrend() {
-    setLoading(true);
+  // 같은 카테고리·기간 조합은 세션 안에서 재조회하지 않습니다.
+  const trendCache = useRef<Map<string, Record<string, string | number>[]>>(new Map());
+
+  async function fetchTrend(fresh = false) {
+    const isCustom = selectedPeriod === "custom";
+    const cacheKey = [
+      selectedGroup,
+      selectedPeriod,
+      isCustom ? customStart : "",
+      isCustom ? customEnd : "",
+    ].join("|");
+
     setError("");
-    setChartData([]);
     setHiddenBrands(new Set());
     setFocusedBrand("");
+
+    if (!fresh) {
+      const hit = trendCache.current.get(cacheKey);
+      if (hit) {
+        setChartData(hit);
+        setLoading(false);
+        return;
+      }
+    }
+
+    setLoading(true);
+    setChartData([]);
     try {
-      const res = await fetch("/api/trend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          groupId: selectedGroup,
-          period: selectedPeriod,
-          customStart: selectedPeriod === "custom" ? customStart : undefined,
-          customEnd: selectedPeriod === "custom" ? customEnd : undefined,
-        }),
+      // POST는 CDN 캐시가 불가능해 GET으로 호출합니다.
+      const qs = new URLSearchParams({
+        groupId: selectedGroup,
+        period: selectedPeriod,
       });
+      if (isCustom && customStart) qs.set("customStart", customStart);
+      if (isCustom && customEnd) qs.set("customEnd", customEnd);
+      if (fresh) qs.set("fresh", "1");
+
+      const res = await fetch(`/api/trend?${qs.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "오류 발생");
-      setChartData(data.results);
+
+      const results = data.results ?? [];
+      trendCache.current.set(cacheKey, results);
+      setChartData(results);
     } catch (e: unknown) {
       const err = e instanceof Error ? e : new Error("오류 발생");
       setError(err.message);
@@ -297,7 +321,7 @@ export default function TrendPage() {
           </div>
         )}
 
-        <button onClick={fetchTrend} disabled={loading}
+        <button onClick={() => fetchTrend()} disabled={loading}
           className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 mb-6">
           {loading ? "데이터 조회 중..." : "트렌드 조회"}
         </button>
